@@ -6,11 +6,10 @@
         class="flex h-12 w-full items-center rounded-md px-2 py-2 text-left duration-300 ease-in-out"
         :class="open ? 'bg-white shadow-sm' : 'hover:bg-gray-200'"
       >
-        <Avatar
-          size="sm"
-          :label="company.userFullname || company.user || 'LYQD'"
-          :image="company.userImage"
-          class="shrink-0"
+        <img
+          :src="logoUrl"
+          alt="LYQD"
+          class="size-7 shrink-0 rounded-lg"
         />
         <div class="ml-2 min-w-0 flex-1">
           <div class="truncate text-sm font-medium leading-none text-gray-900">LYQD</div>
@@ -27,13 +26,14 @@
 <script setup>
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { Avatar, Dropdown } from 'frappe-ui'
+import { Dropdown } from 'frappe-ui'
 import { useCompanyStore } from '@/stores/company'
 import { useSessionStore } from '@/stores/session'
 
 const company = useCompanyStore()
 const session = useSessionStore()
 const router = useRouter()
+const logoUrl = '/assets/lyqd/images/lyqd.svg'
 
 const dropdownOptions = computed(() => [
   {

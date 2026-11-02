@@ -11,7 +11,7 @@ required_apps = ["frappe", "erpnext"]
 add_to_apps_screen = [
 	{
 		"name": "lyqd",
-		"logo": "/assets/lyqd/images/lyqd-logo.svg",
+		"logo": "/assets/lyqd/images/lyqd.svg",
 		"title": "LYQD by Mytra",
 		"route": "/lyqd",
 		"has_permission": "lyqd.setup.permissions.has_app_permission",

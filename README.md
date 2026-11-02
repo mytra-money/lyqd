@@ -1,9 +1,9 @@
 <div align="center" markdown="1">
 
-<img src="lyqd/public/images/lyqd-logo.svg" alt="LYQD logo" width="80" />
+<img src="lyqd/public/images/lyqd.svg" alt="LYQD logo" width="80" />
 <h1>LYQD</h1>
 
-**Corporate liquidity for ERPNext — see free cash, plan commitments, invest the rest**
+**Know what cash you can invest — and when you’ll need it.**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](license.txt)
 
@@ -11,15 +11,37 @@
 
 ## LYQD
 
-LYQD gives finance teams a morning view of surplus cash on top of ERPNext. Bank statement balances, near-term commitments, and a liquidity policy feed one explainable free-cash number. From there you can open an investment request, issue an instruction, and track liquid holdings — without maintaining a second ledger outside the books.
+LYQD helps finance teams forecast upcoming payments, identify potential surplus cash, and manage mutual fund investment workflows with clear approvals and transaction tracking — on top of [ERPNext](https://github.com/frappe/erpnext).
 
-ERPNext remains the system of record for banks, vouchers, and GL. LYQD reads those masters, keeps a local plan of commitments, and runs the investment workflow in a Vue app at `/lyqd`.
+Bank statement balances, near-term commitments, and a liquidity policy feed one explainable free-cash number. From there you can open an investment request, issue an instruction, and track liquid holdings — without maintaining a second ledger outside the books.
 
-### Motivation
+Product overview: [mytra.money/lyqd](https://mytra.money/lyqd).
 
-Treasury work on ERPNext usually means exporting balances, juggling spreadsheets for “what is due this week”, and guessing how much is safe to put into liquid funds. Recommendations from payables or tax ledgers live in another report, and nothing ties bank cash, the payment plan, and an investable amount together.
+### Why this exists
 
-LYQD closes that loop. Cash position, commitments, free cash, invest, and portfolio share one company context and one formula. Optional ERPNext integration pulls liability suggestions from Payment Ledger and GL so the plan stays close to the books — on this site or a connected Other Site (read-only).
+Service businesses (IT, SaaS, consulting, BPO, professional services) often collect fees and retainers ahead of payroll, vendor bills, and taxes. Large balances then sit in current accounts because the next payment date feels unclear — teams fear a shortfall more than they value idle float.
+
+Typical gaps:
+
+1. **Large current-account balances** — Collections land before salaries, vendors, GST/TDS, and rent are due.
+2. **Unclear “safe to invest”** — Without a forecast, surplus stays idle.
+3. **Scattered approvals** — Spreadsheets and ad-hoc email make decisions hard to review later.
+4. **Hard to plan redemptions** — Without visible holdings and status, redeeming ahead of a due date feels risky.
+
+LYQD closes that loop on ERPNext: cash position, commitments, free cash, invest, and portfolio share one company context and one formula.
+
+### Why liquid mutual funds?
+
+Idle current-account cash typically earns little or nothing between known payment dates. Very short bank deposits, when available, are a different product from mutual funds and often carry lower illustrative rates than longer tenors.
+
+LYQD’s initial scheme focus is a **liquid mutual fund** because that category is commonly considered for **short-term surplus** — money that may be needed again for payroll, taxes, or vendors within days or weeks. Product-fit rationale (not a performance guarantee):
+
+- **Fits the payment calendar** — Parking cash between known obligation dates, not multi-year investing.
+- **Plan redemptions ahead** — Schedule redemption before a due date, subject to scheme cut-offs, business days, and settlement.
+- **Vs idle operating cash** — Operating balances are for day-to-day needs; invested surplus is what remains after dues and a buffer.
+- **What it is not** — Not a bank deposit, not a substitute for operating cash, and not a promise of fixed returns or same-day bank credit.
+
+Human approval before investment instructions — no autonomous trading. Mutual fund investments are subject to market risks; read all scheme-related documents carefully.
 
 ### The treasury app
 
@@ -116,7 +138,7 @@ bench --site <site> run-tests --app lyqd --module lyqd.cash.test_surplus
 
 ## About Mytra
 
-LYQD is developed by [Mytra](https://mytra.money) for corporate surplus cash on ERPNext.
+LYQD is developed by [Mytra](https://mytra.money) for corporate liquidity on ERPNext. Learn more on the product page: [mytra.money/lyqd](https://mytra.money/lyqd).
 
 ---
 

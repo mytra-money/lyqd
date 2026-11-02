@@ -27,10 +27,11 @@
   },
   {
    "default": "0",
-   "description": "When on, LYQD can create investment instructions from a confirmed request. When off, request opening an account via CRM first.",
+   "description": "Ops-owned. When on, SPA can create investment instructions. Customers request opening via CRM; they cannot toggle this in the SPA.",
    "fieldname": "investment_account_activated",
    "fieldtype": "Check",
-   "label": "Investment Account Activated"
+   "label": "Investment Account Activated",
+   "read_only": 1
   },
   {
    "description": "CRM Lead created when requesting to open an investment account.",

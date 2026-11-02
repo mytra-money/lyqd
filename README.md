@@ -82,7 +82,7 @@ Asset accounts (for example Input GST) can be added as **Setoff** so they reduce
 
 ### Investment account
 
-Instructions require an activated investment account (ops-controlled). Until then, users can raise a CRM request to open an account. Further activation fields and instruction acceptance on an internal site are planned separately.
+Instructions require an activated investment account. Activation is **ops-owned** (Desk / internal site) — the SPA only shows status when active, otherwise a **Request activation** CTA that creates a CRM Lead. Eligible schemes are Mytra-managed (`LYQD Scheme`); customers do not pick or add schemes in the SPA.
 
 ### Key features
 

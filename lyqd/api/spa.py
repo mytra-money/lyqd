@@ -662,8 +662,8 @@ def save_settings(doc: str | dict) -> dict:
 	if isinstance(doc, str):
 		doc = frappe.parse_json(doc)
 	s = frappe.get_single("LYQD Settings")
+	# investment_account_activated is ops-owned (Desk / internal site) — never via SPA save.
 	for key in (
-		"investment_account_activated",
 		"default_forecast_horizon_days",
 		"default_min_liquidity_buffer",
 		"default_restricted_cash",

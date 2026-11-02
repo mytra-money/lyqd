@@ -18,7 +18,8 @@ const routes = [
     component: () => import('@/pages/RunDetail.vue'),
     props: true,
   },
-  { path: '/schemes', name: 'Schemes', component: () => import('@/pages/Schemes.vue') },
+  // Schemes are Mytra-managed; SPA no longer exposes a catalogue editor.
+  { path: '/schemes', redirect: '/invest' },
   {
     path: '/instructions',
     name: 'Instructions',

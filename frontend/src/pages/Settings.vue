@@ -339,40 +339,45 @@
           </p>
         </div>
 
-        <!-- Investment account -->
+        <!-- Investment account (activation is ops-owned — SPA never toggles it) -->
         <div v-else class="space-y-4 rounded-md border border-gray-200 bg-white p-4">
           <div>
             <h3 class="text-sm font-semibold text-gray-900">Investment account</h3>
             <p class="mt-1 text-sm text-gray-600">
-              Instructions can only be created when the investment account is activated. If it is
-              not open yet, raise a CRM request to open one.
+              Activation is controlled by Mytra. Until the account is live you can request opening;
+              instructions unlock after activation.
             </p>
           </div>
 
-          <label class="flex items-start gap-3 text-sm">
-            <input
-              v-model="productForm.investment_account_activated"
-              type="checkbox"
-              class="mt-0.5 rounded"
-            />
-            <span>
-              <span class="font-medium text-gray-900">Investment Account Activated</span>
-              <span class="mt-0.5 block text-gray-600">
-                Tick this once the account is live so LYQD can issue investment instructions.
-              </span>
-            </span>
-          </label>
-
           <div
-            v-if="!productForm.investment_account_activated"
-            class="space-y-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-3"
+            v-if="productForm.investment_account_activated"
+            class="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-3 text-sm text-emerald-950"
           >
-            <p class="text-sm text-amber-950">
-              Account not activated. Create a CRM Lead so the team can open an investment account
-              for this site.
+            <div class="font-medium text-emerald-950">Investment account activated</div>
+            <p class="mt-1 text-emerald-900">
+              Confirmed investment requests can create instructions.
+            </p>
+            <p v-if="productForm.investment_account_crm_lead" class="mt-2 text-emerald-900">
+              Opening request:
+              <a
+                class="underline"
+                :href="`/app/crm-lead/${productForm.investment_account_crm_lead}`"
+                target="_blank"
+                rel="noopener"
+              >
+                {{ productForm.investment_account_crm_lead }}
+              </a>
+            </p>
+          </div>
+
+          <div v-else class="space-y-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-3">
+            <p class="text-sm font-medium text-amber-950">Investment account not activated</p>
+            <p class="text-sm text-amber-900">
+              Request Mytra to open an investment account for this company. You’ll be able to issue
+              instructions once activation is confirmed.
             </p>
             <div v-if="productForm.investment_account_crm_lead" class="text-sm text-amber-950">
-              Existing request:
+              Request on file:
               <a
                 class="font-medium underline"
                 :href="`/app/crm-lead/${productForm.investment_account_crm_lead}`"
@@ -388,28 +393,10 @@
             <Button variant="solid" :loading="requestingAccount" @click="requestInvestmentAccount">
               {{
                 productForm.investment_account_crm_lead
-                  ? 'View / reuse CRM request'
-                  : 'Request investment account (CRM)'
+                  ? 'Open CRM request'
+                  : 'Request activation'
               }}
             </Button>
-          </div>
-
-          <div
-            v-else
-            class="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-3 text-sm text-emerald-950"
-          >
-            Investment account is activated — confirmed requests can create instructions.
-            <span v-if="productForm.investment_account_crm_lead" class="mt-1 block text-emerald-900">
-              Linked CRM Lead:
-              <a
-                class="underline"
-                :href="`/app/crm-lead/${productForm.investment_account_crm_lead}`"
-                target="_blank"
-                rel="noopener"
-              >
-                {{ productForm.investment_account_crm_lead }}
-              </a>
-            </span>
           </div>
 
           <div class="border-t border-gray-100 pt-4 space-y-3">
@@ -859,14 +846,15 @@ async function savePolicy() {
 }
 
 async function saveProduct() {
+  // Never send investment_account_activated from SPA — ops / internal site owns it.
   const data = await call('lyqd.api.spa.save_settings', {
     doc: {
-      investment_account_activated: productForm.investment_account_activated ? 1 : 0,
       default_forecast_horizon_days: productForm.default_forecast_horizon_days,
       default_min_liquidity_buffer: productForm.default_min_liquidity_buffer,
       default_restricted_cash: productForm.default_restricted_cash,
     },
   })
+  productForm.investment_account_activated = !!data.investment_account_activated
   productForm.investment_account_crm_lead = data.investment_account_crm_lead || ''
   productForm.investment_account_requested_on = data.investment_account_requested_on || ''
   company.settings = {

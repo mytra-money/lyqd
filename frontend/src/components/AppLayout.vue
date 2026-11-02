@@ -92,7 +92,6 @@ const primaryNav = [
 
 const moreNav = [
   { to: '/instructions', label: 'Instructions', icon: 'send' },
-  { to: '/schemes', label: 'Schemes', icon: 'layers' },
   { to: '/cash', label: 'Bank balances', icon: 'credit-card' },
   { to: '/settings', label: 'Settings', icon: 'settings' },
 ]

@@ -22,13 +22,14 @@
       class="mb-5 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950"
     >
       <span class="font-medium">Investment account not activated.</span>
-      You can draft and confirm requests, but instructions stay locked until the account is open.
+      You can draft and confirm requests, but instructions stay locked until Mytra activates the
+      account.
       <button
         type="button"
         class="ml-1 font-medium underline"
         @click="$router.push({ path: '/settings', query: { tab: 'investment' } })"
       >
-        Open investment account settings
+        Request activation
       </button>
     </div>
 

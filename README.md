@@ -82,9 +82,21 @@ Asset accounts (for example Input GST) can be added as **Setoff** so they reduce
 
 ### Investment account
 
-Instructions require an activated investment account. Activation is **ops-owned** (Desk / internal site) — the SPA only shows status when active, otherwise a **Request activation** CTA that creates a CRM Lead.
+Instructions require an activated investment account. Activation is **ops-owned** (Desk / internal site) — the SPA only shows status when active; otherwise **Request activation** opens the Mytra WhatsApp chatbot (CRM Lead is created by the bot, not the SPA).
 
 Schemes and holdings come from **Mytra**. A Ready instruction is submitted to Mytra (creates a transaction); `mytra_transaction_ref` is used to track status and to show the same activity under Portfolio → transaction history. Position cards sync from Mytra balances — there is no manual “Add holding” in the SPA.
+
+**Soft-launch Portfolio demo** — while Mytra HTTP is not wired, `lyqd.mytra.portfolio` can return SAMPLE positions/transactions when **Investment Account Activated** is on (or `lyqd_demo_portfolio` site config is `1`). Disable with:
+
+```bash
+bench --site <site> set-config lyqd_demo_portfolio 0
+```
+
+Optional instruction bridge rows (matching sample Mytra refs):
+
+```bash
+bench --site <site> execute lyqd.setup.seed_portfolio_demo.seed_portfolio_demo --kwargs "{'company': '<Company>'}"
+```
 
 ### Key features
 

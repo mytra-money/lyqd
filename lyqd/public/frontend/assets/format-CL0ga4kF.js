@@ -1,2 +1,0 @@
-function e(t,r=0){const n=Number(t||0);return new Intl.NumberFormat("en-IN",{style:"currency",currency:"INR",maximumFractionDigits:r,minimumFractionDigits:r}).format(n)}function a(t){const r=Number(t||0),n=Math.abs(r);return n>=1e7?`${r<0?"-":""}₹${(n/1e7).toFixed(2)} Cr`:n>=1e5?`${r<0?"-":""}₹${(n/1e5).toFixed(2)} L`:e(r)}function m(t){if(!t)return"—";try{return new Intl.DateTimeFormat("en-IN",{day:"2-digit",month:"short",year:"numeric"}).format(new Date(t))}catch{return String(t)}}export{m as a,a as b,e as f};
-//# sourceMappingURL=format-CL0ga4kF.js.map

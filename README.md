@@ -109,12 +109,16 @@ bench --site <site> install-app lyqd
 bench --site <site> migrate
 ```
 
-### Frontend build
+### Frontend build (required)
+
+The Vue SPA is **not** committed. Build it after install or whenever you change `frontend/`:
 
 ```bash
 cd apps/lyqd/frontend && yarn && yarn build
 bench --site <site> clear-cache
 ```
+
+This writes assets to `lyqd/public/frontend/` and `lyqd/www/lyqd.html` (both gitignored).
 
 ### Demo data (optional)
 

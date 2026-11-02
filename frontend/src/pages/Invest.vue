@@ -20,7 +20,7 @@
       <button
         type="button"
         class="ml-1 font-medium underline"
-        @click="$router.push({ path: '/settings', query: { tab: 'investment' } })"
+        @click="openActivationWhatsApp"
       >
         Request activation
       </button>
@@ -128,6 +128,7 @@ import HorizonPicker from '@/components/HorizonPicker.vue'
 import { useCompanyStore } from '@/stores/company'
 import { useHorizon } from '@/composables/useHorizon'
 import { formatDate, formatINR } from '@/utils/format'
+import { LYQD_INVESTMENT_ACCOUNT_WHATSAPP_URL } from '@/utils/investmentAccount'
 
 const company = useCompanyStore()
 const router = useRouter()
@@ -198,6 +199,10 @@ function statusTheme(s) {
   if (s === 'Frozen') return 'green'
   if (s === 'Cancelled') return 'gray'
   return 'blue'
+}
+
+function openActivationWhatsApp() {
+  window.open(LYQD_INVESTMENT_ACCOUNT_WHATSAPP_URL, '_blank', 'noopener,noreferrer')
 }
 
 async function createFromSurplus() {

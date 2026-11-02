@@ -675,67 +675,25 @@ def _investment_account_active() -> bool:
 
 @frappe.whitelist()
 def request_investment_account(company: str | None = None, note: str | None = None) -> dict:
-	"""Create a CRM Lead to open an investment account when activation is off."""
-	if not frappe.db.exists("DocType", "CRM Lead"):
-		frappe.throw(_("Install the CRM app to request an investment account opening."))
-
+	"""Stamp that the SPA opened the WhatsApp activation flow (no CRM Lead create)."""
+	_ = company, note  # reserved for audit context; lead is created by the WhatsApp bot
 	settings = frappe.get_single("LYQD Settings")
 	if int(settings.investment_account_activated or 0):
-		frappe.throw(_("Investment account is already activated."))
-
-	existing = (settings.investment_account_crm_lead or "").strip()
-	if existing and frappe.db.exists("CRM Lead", existing):
 		return {
-			"lead": existing,
-			"already_requested": True,
+			"already_activated": True,
 			"requested_on": settings.investment_account_requested_on,
-			"message": _("A CRM request already exists: {0}").format(existing),
+			"message": _("Investment account is already activated."),
 		}
 
-	company = company or _default_company()
-	user = frappe.session.user
-	fullname = frappe.utils.get_fullname(user) or user
-	parts = fullname.split(None, 1)
-	first_name = parts[0]
-	last_name = parts[1] if len(parts) > 1 else ""
-	email = frappe.db.get_value("User", user, "email")
-
-	lead_kwargs = {
-		"doctype": "CRM Lead",
-		"first_name": first_name,
-		"last_name": last_name,
-		"email": email,
-		"organization": company or "",
-		"status": "New",
-		"job_title": _("Investment account opening (LYQD)"),
-	}
-	if frappe.db.exists("CRM Lead Source", "LYQD"):
-		lead_kwargs["source"] = "LYQD"
-	elif frappe.db.exists("DocType", "CRM Lead Source"):
-		# Prefer any existing source named Website / Other; else omit
-		for candidate in ("Website", "Other", "Referral"):
-			if frappe.db.exists("CRM Lead Source", candidate):
-				lead_kwargs["source"] = candidate
-				break
-
-	lead = frappe.get_doc(lead_kwargs)
-	lead.insert()
-
-	detail = note or _(
-		"LYQD request to open an investment account for company {0}. "
-		"Once opened, mark Investment Account Activated in LYQD Settings."
-	).format(company or _("(site)"))
-	lead.add_comment("Comment", text=detail)
-
-	settings.investment_account_crm_lead = lead.name
-	settings.investment_account_requested_on = frappe.utils.now_datetime()
-	settings.save()
+	already = bool(settings.investment_account_requested_on)
+	if not already:
+		settings.investment_account_requested_on = frappe.utils.now_datetime()
+		settings.save(ignore_permissions=True)
 
 	return {
-		"lead": lead.name,
-		"already_requested": False,
+		"already_requested": already,
 		"requested_on": settings.investment_account_requested_on,
-		"message": _("CRM Lead {0} created for investment account opening.").format(lead.name),
+		"message": _("Activation request noted."),
 	}
 
 

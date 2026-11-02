@@ -357,45 +357,22 @@
             <p class="mt-1 text-emerald-900">
               Confirmed investment requests can create instructions.
             </p>
-            <p v-if="productForm.investment_account_crm_lead" class="mt-2 text-emerald-900">
-              Opening request:
-              <a
-                class="underline"
-                :href="`/app/crm-lead/${productForm.investment_account_crm_lead}`"
-                target="_blank"
-                rel="noopener"
-              >
-                {{ productForm.investment_account_crm_lead }}
-              </a>
-            </p>
           </div>
 
           <div v-else class="space-y-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-3">
             <p class="text-sm font-medium text-amber-950">Investment account not activated</p>
             <p class="text-sm text-amber-900">
-              Request Mytra to open an investment account for this company. You’ll be able to issue
-              instructions once activation is confirmed.
+              Continue on WhatsApp to open an investment account with Mytra. Instructions unlock
+              after Mytra activates the account.
             </p>
-            <div v-if="productForm.investment_account_crm_lead" class="text-sm text-amber-950">
-              Request on file:
-              <a
-                class="font-medium underline"
-                :href="`/app/crm-lead/${productForm.investment_account_crm_lead}`"
-                target="_blank"
-                rel="noopener"
-              >
-                {{ productForm.investment_account_crm_lead }}
-              </a>
-              <span v-if="productForm.investment_account_requested_on" class="text-amber-800">
-                · {{ productForm.investment_account_requested_on }}
-              </span>
-            </div>
+            <p
+              v-if="productForm.investment_account_requested_on"
+              class="text-xs text-amber-800"
+            >
+              Request started · {{ productForm.investment_account_requested_on }}
+            </p>
             <Button variant="solid" :loading="requestingAccount" @click="requestInvestmentAccount">
-              {{
-                productForm.investment_account_crm_lead
-                  ? 'Open CRM request'
-                  : 'Request activation'
-              }}
+              Request activation
             </Button>
           </div>
 
@@ -467,6 +444,7 @@ import { call, createResource, toast } from 'frappe-ui'
 import PageHeader from '@/components/PageHeader.vue'
 import BankAccountCards from '@/components/BankAccountCards.vue'
 import { useCompanyStore } from '@/stores/company'
+import { LYQD_INVESTMENT_ACCOUNT_WHATSAPP_URL } from '@/utils/investmentAccount'
 
 const company = useCompanyStore()
 const route = useRoute()
@@ -866,26 +844,20 @@ async function saveProduct() {
 }
 
 async function requestInvestmentAccount() {
-  if (productForm.investment_account_crm_lead) {
-    window.open(`/app/crm-lead/${productForm.investment_account_crm_lead}`, '_blank')
-    return
-  }
+  window.open(LYQD_INVESTMENT_ACCOUNT_WHATSAPP_URL, '_blank', 'noopener,noreferrer')
   requestingAccount.value = true
   try {
     const res = await call('lyqd.api.spa.request_investment_account', {
       company: company.current,
     })
-    productForm.investment_account_crm_lead = res.lead || ''
     productForm.investment_account_requested_on = res.requested_on || ''
     company.settings = {
       ...(company.settings || {}),
-      investment_account_crm_lead: productForm.investment_account_crm_lead,
       investment_account_requested_on: productForm.investment_account_requested_on,
     }
-    toast.success(res.message || `CRM Lead ${res.lead} created`)
-    if (res.lead) window.open(`/app/crm-lead/${res.lead}`, '_blank')
   } catch (e) {
-    toast.error(e.messages?.[0] || e.message || 'Could not create CRM request')
+    // WhatsApp already opened; stamp is best-effort only
+    console.warn(e)
   } finally {
     requestingAccount.value = false
   }

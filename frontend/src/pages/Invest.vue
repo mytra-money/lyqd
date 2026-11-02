@@ -2,7 +2,7 @@
   <div>
     <PageHeader
       title="Invest"
-      subtitle="One open investment request per company. Creating a new one cancels the previous open request."
+      subtitle="Turn today’s free cash into one investment request, then create an instruction for Mytra."
     >
       <HorizonPicker v-model="horizon" />
       <Button variant="outline" @click="$router.push('/surplus')">View free cash</Button>
@@ -11,19 +11,12 @@
       </Button>
     </PageHeader>
 
-    <div class="mb-5 rounded-md border border-gray-200 bg-white px-4 py-3 text-sm text-gray-700">
-      <span class="font-medium text-gray-900">Flow:</span>
-      free cash → confirm request → one instruction → approve / ready.
-      Parallel confirmed requests are not allowed (same cash pool).
-    </div>
-
     <div
       v-if="!company.investmentAccountActivated"
       class="mb-5 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950"
     >
       <span class="font-medium">Investment account not activated.</span>
-      You can draft and confirm requests, but instructions stay locked until Mytra activates the
-      account.
+      You can prepare a request now; creating an instruction needs Mytra activation.
       <button
         type="button"
         class="ml-1 font-medium underline"
@@ -38,7 +31,7 @@
       <header class="border-b border-gray-100 px-4 py-3">
         <h2 class="text-sm font-semibold text-gray-900">Open request</h2>
         <p class="mt-0.5 text-xs text-gray-500">
-          At most one Draft or Confirmed request. Cash position tracks this amount.
+          Only one open request at a time. Starting a new one replaces the current amount.
         </p>
       </header>
 

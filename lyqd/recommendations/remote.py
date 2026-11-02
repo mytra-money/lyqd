@@ -29,8 +29,8 @@ def get_remote_client():
 	client = _client_from_cred(cred["url"], cred["api_key"], cred["api_secret"])
 	company = cred.get("company") or resolve_remote_company(client)
 	# Remember resolved company so Integrations UI stays in sync
-	if company and company != cred.get("company") and frappe.db.exists("DocType", "LYQD ERPNext Settings"):
-		doc = frappe.get_single("LYQD ERPNext Settings")
+	if company and company != cred.get("company") and frappe.db.exists("DocType", "LYQD Settings"):
+		doc = frappe.get_single("LYQD Settings")
 		if not (doc.remote_company or "").strip():
 			doc.remote_company = company
 			doc.save(ignore_permissions=True)
@@ -69,7 +69,7 @@ def probe_remote_connection(
 	"""
 	Validate draft credentials and return remote companies.
 
-	Does not require LYQD ERPNext Settings to be saved first.
+	Does not require LYQD Settings remote fields to be saved first.
 	"""
 	url = (url or "").strip().rstrip("/")
 	api_key = (api_key or "").strip()

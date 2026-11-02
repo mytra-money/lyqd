@@ -86,8 +86,8 @@ def get_boot():
 			"tagline": "Make idle cash work smarter.",
 			"app_name": "LYQD by Mytra",
 			"erpnext_integration_enabled": bool(
-				frappe.db.exists("DocType", "LYQD ERPNext Settings")
-				and frappe.db.get_single_value("LYQD ERPNext Settings", "enabled")
+				frappe.db.exists("DocType", "LYQD Settings")
+				and frappe.db.get_single_value("LYQD Settings", "erpnext_integration_enabled")
 			),
 		}
 	)

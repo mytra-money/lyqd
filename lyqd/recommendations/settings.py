@@ -1,4 +1,7 @@
-"""LYQD recommendation integration settings (local vs remote ERPNext)."""
+"""LYQD recommendation integration settings (local vs remote ERPNext).
+
+Stored on the Single DocType **LYQD Settings** (not a separate ERPNext Settings).
+"""
 
 from __future__ import annotations
 
@@ -12,7 +15,7 @@ SOURCE_OTHER_SITE = "Other Site"
 
 
 def get_integration_settings() -> dict[str, Any]:
-	if not frappe.db.exists("DocType", "LYQD ERPNext Settings"):
+	if not frappe.db.exists("DocType", "LYQD Settings"):
 		return {
 			"enabled": False,
 			"source": SOURCE_THIS_SITE,
@@ -21,14 +24,20 @@ def get_integration_settings() -> dict[str, Any]:
 			"remote_api_key": None,
 			"has_remote_api_secret": False,
 		}
-	doc = frappe.get_single("LYQD ERPNext Settings")
+	doc = frappe.get_single("LYQD Settings")
+	enabled = bool(doc.get("erpnext_integration_enabled"))
+	source = doc.get("erpnext_source") or SOURCE_THIS_SITE
 	return {
-		"enabled": bool(doc.enabled),
-		"source": doc.source or SOURCE_THIS_SITE,
-		"remote_site_url": (doc.remote_site_url or "").rstrip("/") or None,
-		"remote_company": (doc.remote_company or "").strip() or None,
-		"remote_api_key": (doc.remote_api_key or "").strip() or None,
-		"has_remote_api_secret": bool(doc.get_password("remote_api_secret", raise_exception=False)),
+		"enabled": enabled,
+		"source": source,
+		"remote_site_url": (doc.get("remote_site_url") or "").rstrip("/") or None,
+		"remote_company": (doc.get("remote_company") or "").strip() or None,
+		"remote_api_key": (doc.get("remote_api_key") or "").strip() or None,
+		"has_remote_api_secret": bool(
+			doc.get_password("remote_api_secret", raise_exception=False)
+			if hasattr(doc, "get_password")
+			else False
+		),
 	}
 
 
@@ -43,10 +52,10 @@ def is_remote_source() -> bool:
 
 def get_remote_credentials() -> dict[str, str]:
 	"""Return url, api_key, api_secret, company for Other Site mode."""
-	if not frappe.db.exists("DocType", "LYQD ERPNext Settings"):
-		frappe.throw(frappe._("LYQD ERPNext Settings not found"))
-	doc = frappe.get_single("LYQD ERPNext Settings")
-	if not doc.enabled or doc.source != SOURCE_OTHER_SITE:
+	if not frappe.db.exists("DocType", "LYQD Settings"):
+		frappe.throw(frappe._("LYQD Settings not found"))
+	doc = frappe.get_single("LYQD Settings")
+	if not doc.erpnext_integration_enabled or (doc.erpnext_source or "") != SOURCE_OTHER_SITE:
 		frappe.throw(frappe._("Remote ERPNext source is not enabled"))
 	secret = doc.get_password("remote_api_secret", raise_exception=False)
 	if not doc.remote_site_url or not doc.remote_api_key or not secret:
@@ -55,7 +64,6 @@ def get_remote_credentials() -> dict[str, str]:
 		"url": doc.remote_site_url.strip().rstrip("/"),
 		"api_key": doc.remote_api_key.strip(),
 		"api_secret": secret,
-		# May be blank — callers resolve via resolve_remote_company when needed
 		"company": (doc.remote_company or "").strip() or None,
 	}
 

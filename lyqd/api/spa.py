@@ -42,8 +42,8 @@ def get_boot_data() -> dict:
 		"settings": settings,
 		"tagline": settings.get("tagline") or "Make idle cash work smarter.",
 		"erpnext_integration_enabled": bool(
-			frappe.db.exists("DocType", "LYQD ERPNext Settings")
-			and frappe.db.get_single_value("LYQD ERPNext Settings", "enabled")
+			frappe.db.exists("DocType", "LYQD Settings")
+			and frappe.db.get_single_value("LYQD Settings", "erpnext_integration_enabled")
 		),
 	}
 
@@ -165,7 +165,7 @@ def get_company_bank_account_options(company: str | None = None) -> dict:
 	"""
 	Company bank accounts for Policy / Banks selection.
 
-	From This Site or Other Site based on LYQD ERPNext Settings.
+	From This Site or Other Site based on LYQD Settings → ERPNext integration.
 	"""
 	from lyqd.cash.bank_cash import get_company_bank_accounts
 	from lyqd.recommendations.settings import get_integration_settings, is_remote_source
@@ -350,7 +350,7 @@ def get_recommendation_account_options(
 	"""
 	Leaf accounts for the Integrations account picker.
 
-	Reads from This Site (local) or Other Site (remote API) based on LYQD ERPNext Settings.
+	Reads from This Site (local) or Other Site (remote API) based on LYQD Settings.
 	"""
 	from lyqd.recommendations.settings import SOURCE_OTHER_SITE, get_integration_settings
 
@@ -540,13 +540,15 @@ def save_erpnext_settings(doc: str | dict) -> dict:
 	if isinstance(doc, str):
 		doc = frappe.parse_json(doc)
 	frappe.only_for(("System Manager", "LYQD Manager"))
-	s = frappe.get_single("LYQD ERPNext Settings")
-	was_remote = bool(s.enabled and (s.source or "") == "Other Site")
-	s.enabled = 1 if doc.get("enabled") else 0
+	s = frappe.get_single("LYQD Settings")
+	was_remote = bool(
+		s.erpnext_integration_enabled and (s.erpnext_source or "") == "Other Site"
+	)
+	s.erpnext_integration_enabled = 1 if doc.get("enabled") else 0
 	source = doc.get("source") or "This Site"
 	if source not in ("This Site", "Other Site"):
 		source = "This Site"
-	s.source = source
+	s.erpnext_source = source
 	if source == "Other Site":
 		s.remote_site_url = (doc.get("remote_site_url") or "").strip()
 		s.remote_company = (doc.get("remote_company") or "").strip()
@@ -555,9 +557,6 @@ def save_erpnext_settings(doc: str | dict) -> dict:
 		new_secret = doc.get("remote_api_secret")
 		if new_secret:
 			s.remote_api_secret = new_secret
-	else:
-		# Clear remote fields when switching back to this site (keep secret stored but unused)
-		pass
 	s.save()
 
 	payload = settings_for_api()
@@ -611,8 +610,8 @@ def probe_remote_erpnext_connection(
 	secret = (api_secret or "").strip()
 	if not secret:
 		s = get_integration_settings()
-		if s.get("has_remote_api_secret") and frappe.db.exists("DocType", "LYQD ERPNext Settings"):
-			doc = frappe.get_single("LYQD ERPNext Settings")
+		if s.get("has_remote_api_secret") and frappe.db.exists("DocType", "LYQD Settings"):
+			doc = frappe.get_single("LYQD Settings")
 			secret = doc.get_password("remote_api_secret", raise_exception=False) or ""
 	result = probe_remote_connection(
 		url=url or "",
@@ -621,9 +620,13 @@ def probe_remote_erpnext_connection(
 		company=company,
 	)
 	# Persist resolved company onto settings if Other Site is already enabled
-	if result.get("company") and frappe.db.exists("DocType", "LYQD ERPNext Settings"):
-		doc = frappe.get_single("LYQD ERPNext Settings")
-		if doc.enabled and doc.source == "Other Site" and doc.remote_company != result["company"]:
+	if result.get("company") and frappe.db.exists("DocType", "LYQD Settings"):
+		doc = frappe.get_single("LYQD Settings")
+		if (
+			doc.erpnext_integration_enabled
+			and (doc.erpnext_source or "") == "Other Site"
+			and doc.remote_company != result["company"]
+		):
 			# Only auto-write when blank so an explicit pick is kept
 			if not (doc.remote_company or "").strip():
 				doc.remote_company = result["company"]

@@ -71,10 +71,12 @@ Overdue Planned commitments are included. Statement balances use ERPNext **Bank 
 
 ### ERPNext integration
 
-Integrations are opt-in under Settings.
+Integrations are opt-in on **LYQD Settings** (Single) — Enable Recommendations + This Site / Other Site credentials. There is no separate ERPNext Settings DocType.
 
 - **This site** — Liability suggestions from local Payment Ledger (Payable) and GL.
 - **Other site** — Remote ERPNext via URL + API key & secret. LYQD only **reads** the remote (liabilities and bank masters), mirrors company bank accounts locally, and stores balances and accepted plan rows on this site. Nothing is written back to the remote.
+
+**LYQD Policy** (one per company on *this* LYQD site) holds liquidity knobs the SPA edits under Settings: buffer, restricted cash, forecast horizon, eligible banks, and which GL accounts feed “From books” recommendations. For Other Site, recommendation *account names* must match the remote Chart of Accounts; the policy itself is never stored on the remote — only read via API.
 
 **Sync plan from books** updates Accepted rows from voucher outstanding or GL balances. Purchase Receipt suggestions exclude receipts that already have a Purchase Invoice.
 

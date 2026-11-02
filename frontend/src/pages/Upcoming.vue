@@ -320,12 +320,12 @@
           />
           <FormControl v-model="form.due_date" type="date" label="Due date" />
           <FormControl v-model="form.amount" type="number" label="Amount" />
-          <FormControl
-            v-model="form.cash_effect"
-            type="select"
-            label="Cash effect"
-            :options="cashEffectOptions"
-          />
+          <p
+            v-if="form.cash_effect === 'Setoff'"
+            class="rounded-md border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs text-emerald-900"
+          >
+            Setoff — reduces net commitments. Derived from the books account; not editable.
+          </p>
           <FormControl
             v-model="form.status"
             type="select"
@@ -344,8 +344,12 @@
     <Dialog v-model="showAccept" :options="{ title: 'Add to plan' }">
       <template #body-content>
         <div class="space-y-3">
-          <p v-if="acceptForm.cash_effect === 'Setoff'" class="text-xs text-emerald-800">
-            Setoff — reduces net commitments (e.g. Input GST against Output GST).
+          <p
+            v-if="acceptForm.cash_effect === 'Setoff'"
+            class="rounded-md border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs text-emerald-900"
+          >
+            Setoff — reduces net commitments (customer receipt / Input GST). From the books
+            account; not editable.
           </p>
           <FormControl v-model="acceptForm.title" label="Title" />
           <FormControl
@@ -356,12 +360,6 @@
           />
           <FormControl v-model="acceptForm.due_date" type="date" label="Due date" />
           <FormControl v-model="acceptForm.amount" type="number" label="Amount" />
-          <FormControl
-            v-model="acceptForm.cash_effect"
-            type="select"
-            label="Cash effect"
-            :options="cashEffectOptions"
-          />
           <p v-if="acceptForm.source_doctype" class="text-xs text-gray-500">
             Source {{ acceptForm.source_doctype }} {{ acceptForm.source_name }}
           </p>
@@ -408,15 +406,12 @@ const categoryOptions = [
   'Salary',
   'Import-LC',
   'Vendor',
+  'Customer',
   'Tax',
   'Loan',
   'Other',
 ].map((c) => ({ label: c, value: c }))
 const statusOptions = ['Planned', 'Paid', 'Cancelled'].map((s) => ({ label: s, value: s }))
-const cashEffectOptions = [
-  { label: 'Outflow (reserves cash)', value: 'Outflow' },
-  { label: 'Setoff (e.g. Input GST)', value: 'Setoff' },
-]
 
 const empty = () => ({
   name: null,
@@ -778,7 +773,6 @@ async function save() {
         category: form.category,
         due_date: form.due_date,
         amount: form.amount,
-        cash_effect: form.cash_effect || 'Outflow',
         status: form.status || 'Planned',
         notes: form.notes,
       },

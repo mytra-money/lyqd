@@ -235,6 +235,7 @@ const categoryOptions = [
   'Salary',
   'Import-LC',
   'Vendor',
+  'Customer',
   'Tax',
   'Loan',
   'Other',

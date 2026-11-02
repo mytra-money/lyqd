@@ -126,7 +126,7 @@ def _ple_voucher_rows(
 		if party_label:
 			title = f"{party_label} · {title}"
 		if is_receivable:
-			category = "Receivable" if voucher_type == "Sales Invoice" else "Other"
+			category = "Customer" if voucher_type == "Sales Invoice" else "Other"
 			cash_effect = "Setoff"
 		else:
 			category = "Vendor" if voucher_type == "Purchase Invoice" else "Other"
@@ -274,7 +274,7 @@ def _gl_voucher_rows(company: str, accounts: list[str], as_of: str) -> list[dict
 		category = "Tax"
 		an = (acc_name or "").lower()
 		if src_dt == "Sales Invoice" or party_type == "Customer":
-			category = "Receivable"
+			category = "Customer"
 		elif src_dt == "Purchase Receipt" or party_type == "Supplier":
 			category = "Vendor"
 		elif "tds" in an or "gst" in an or "duties" in an:

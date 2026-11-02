@@ -497,8 +497,7 @@ def save_upcoming_payment(doc: str | dict | None = None) -> dict:
 		payment.category = doc.get("category") or payment.category or "Other"
 		payment.due_date = doc.get("due_date") or payment.due_date
 		payment.amount = flt(doc.get("amount"))
-		if doc.get("cash_effect") in ("Outflow", "Setoff"):
-			payment.cash_effect = doc.get("cash_effect")
+		# cash_effect is account-derived — SPA cannot flip Outflow ↔ Setoff on edit
 		if doc.get("status") in ("Planned", "Paid", "Cancelled"):
 			payment.status = doc.get("status")
 		payment.notes = doc.get("notes")
@@ -515,9 +514,8 @@ def save_upcoming_payment(doc: str | dict | None = None) -> dict:
 			"category": doc.get("category") or "Other",
 			"due_date": doc.get("due_date") or today(),
 			"amount": flt(doc.get("amount")),
-			"cash_effect": doc.get("cash_effect")
-			if doc.get("cash_effect") in ("Outflow", "Setoff")
-			else "Outflow",
+			# Manual plan rows are always cash outflows; setoff comes only from books accept
+			"cash_effect": "Outflow",
 			"status": doc.get("status") if doc.get("status") in ("Planned", "Paid", "Cancelled") else "Planned",
 			"notes": doc.get("notes"),
 		}

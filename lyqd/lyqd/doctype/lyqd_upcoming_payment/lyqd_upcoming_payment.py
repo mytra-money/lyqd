@@ -15,11 +15,16 @@ class LYQDUpcomingPayment(Document):
 		from frappe.types import DF
 
 		amount: DF.Currency
-		category: DF.Literal["Salary", "Import-LC", "Vendor", "Tax", "Loan", "Other"]
+		cash_effect: DF.Literal["Outflow", "Setoff"]
+		category: DF.Literal["Salary", "Import-LC", "Vendor", "Customer", "Tax", "Loan", "Other"]
 		company: DF.Link
 		due_date: DF.Date
+		last_synced_on: DF.Datetime | None
 		naming_series: DF.Literal["LYQD-UP-.YYYY.-.#####"]
 		notes: DF.SmallText | None
+		source_account: DF.Data | None
+		source_doctype: DF.Data | None
+		source_name: DF.Data | None
 		status: DF.Literal["Planned", "Paid", "Cancelled"]
 		title: DF.Data
 	# end: auto-generated types

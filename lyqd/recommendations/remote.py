@@ -340,7 +340,7 @@ def _si_voucher_rows(
 				"source_doctype": "Sales Invoice",
 				"source_name": row["name"],
 				"title": title[:140],
-				"category": "Receivable",
+				"category": "Customer",
 				"due_date": str(row["due_date"]) if row.get("due_date") else None,
 				"amount": amount,
 				"cash_effect": "Setoff",
@@ -476,7 +476,7 @@ def _gl_voucher_rows(
 		else:
 			title = f"{acc_name} · {src_dt} {src_dn}"
 		if src_dt == "Sales Invoice" or party_type == "Customer":
-			category = "Receivable"
+			category = "Customer"
 		elif src_dt == "Purchase Receipt" or party_type == "Supplier":
 			category = "Vendor"
 		else:

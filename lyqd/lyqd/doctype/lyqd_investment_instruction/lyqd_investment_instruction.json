@@ -26,6 +26,7 @@
   "notes",
   "execution_section",
   "external_submit_status",
+  "mytra_transaction_ref",
   "external_submit_message"
  ],
  "fields": [
@@ -62,26 +63,22 @@
    "fieldtype": "Column Break"
   },
   {
+   "description": "Scheme key from Mytra (often ISIN). Not a local catalogue Link.",
    "fieldname": "scheme",
-   "fieldtype": "Link",
+   "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Scheme",
-   "options": "LYQD Scheme",
    "reqd": 1
   },
   {
-   "fetch_from": "scheme.isin",
    "fieldname": "scheme_isin",
    "fieldtype": "Data",
-   "label": "ISIN",
-   "read_only": 1
+   "label": "ISIN"
   },
   {
-   "fetch_from": "scheme.scheme_name",
    "fieldname": "scheme_label",
    "fieldtype": "Data",
-   "label": "Scheme Label",
-   "read_only": 1
+   "label": "Scheme Label"
   },
   {
    "fieldname": "amounts_section",
@@ -149,27 +146,34 @@
   {
    "fieldname": "execution_section",
    "fieldtype": "Section Break",
-   "label": "External Execution (PoC stub)"
+   "label": "Mytra execution"
   },
   {
    "default": "Not Submitted",
-   "description": "BSE / Mytra HTTP submit is disabled in this PoC.",
+   "description": "Submit creates / links a transaction on Mytra; status is refreshed from that reference.",
    "fieldname": "external_submit_status",
    "fieldtype": "Select",
-   "label": "External Submit Status",
-   "options": "Not Submitted\nBlocked (PoC)\nStubbed",
+   "in_list_view": 1,
+   "label": "Mytra Status",
+   "options": "Not Submitted\nSubmitted\nPending\nAllotted\nFailed\nBlocked",
    "read_only": 1
   },
   {
-   "default": "Submit to Mytra / BSE is not available in this PoC.",
+   "description": "Mytra transaction id used to poll status and show history on Portfolio.",
+   "fieldname": "mytra_transaction_ref",
+   "fieldtype": "Data",
+   "label": "Mytra Transaction Ref",
+   "read_only": 1
+  },
+  {
    "fieldname": "external_submit_message",
    "fieldtype": "Small Text",
-   "label": "External Submit Message",
+   "label": "Mytra Message",
    "read_only": 1
   }
  ],
  "links": [],
- "modified": "2026-10-29 13:00:00.000000",
+ "modified": "2026-11-02 18:20:00.000000",
  "modified_by": "Administrator",
  "module": "LYQD",
  "name": "LYQD Investment Instruction",

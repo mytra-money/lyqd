@@ -95,20 +95,11 @@ def get_morning_mis(company: str | None = None, horizon_days: int | str = 7) -> 
 	policy = get_policy(company)
 	upcoming = get_planned_upcoming_payments(company, as_of, horizon_days)
 
-	holdings = frappe.get_all(
-		"LYQD Holding",
-		filters={"company": company},
-		fields=["name", "scheme", "as_on", "units", "amount", "source"],
-		order_by="as_on desc",
-		limit=50,
-	)
-	# Latest amount per scheme
-	latest_by_scheme: dict[str, dict] = {}
-	for h in holdings:
-		if h.scheme not in latest_by_scheme:
-			latest_by_scheme[h.scheme] = h
-	liquid_rows = list(latest_by_scheme.values())
-	liquid_total = flt(sum(flt(r.amount) for r in liquid_rows))
+	from lyqd.mytra.portfolio import get_portfolio
+
+	portfolio = get_portfolio(company)
+	liquid_rows = portfolio.get("positions") or []
+	liquid_total = flt(portfolio.get("liquid_total") or 0)
 
 	required = (
 		flt(surplus.upcoming_total)
@@ -869,17 +860,25 @@ def create_instruction_from_proposal(proposal: str) -> dict:
 				existing
 			)
 		)
-	scheme = frappe.db.get_value("LYQD Scheme", {"is_default": 1, "is_active": 1}) or frappe.db.get_value(
-		"LYQD Scheme", {"isin": prop.display_scheme_isin or "INF109K01VQ1"}
+	settings = frappe.get_single("LYQD Settings")
+	scheme_isin = (
+		prop.display_scheme_isin
+		or settings.display_scheme_isin
+		or "INF109K01VQ1"
 	)
-	if not scheme:
-		frappe.throw(_("No LYQD Scheme found. Seed schemes or create one in Settings / Schemes."))
+	scheme_label = (
+		prop.display_scheme_label
+		or settings.display_scheme_label
+		or "ICICI Prudential Liquid Fund"
+	)
 	doc = frappe.get_doc(
 		{
 			"doctype": "LYQD Investment Instruction",
 			"company": prop.company,
 			"status": "Draft",
-			"scheme": scheme,
+			"scheme": scheme_isin,
+			"scheme_isin": scheme_isin,
+			"scheme_label": scheme_label,
 			"amount": prop.proposed_amount,
 			"as_of": prop.as_of,
 			"horizon_days": prop.horizon_days,
@@ -916,34 +915,8 @@ def instruction_action(name: str, action: str) -> dict:
 
 
 @frappe.whitelist()
-def ensure_default_schemes() -> list[dict]:
-	"""Idempotent default scheme catalogue."""
-	defaults = [
-		{
-			"isin": "INF109K01VQ1",
-			"scheme_name": "ICICI Prudential Liquid Fund",
-			"amc": "ICICI Prudential",
-			"category": "Liquid",
-			"is_default": 1,
-			"is_active": 1,
-			"description": "Default liquid scheme for investment instructions.",
-		},
-		{
-			"isin": "INF204KB1ZH5",
-			"scheme_name": "Nippon India Liquid Fund",
-			"amc": "Nippon India",
-			"category": "Liquid",
-			"is_default": 0,
-			"is_active": 1,
-			"description": "Catalogue scheme for investment instructions.",
-		},
-	]
-	out = []
-	for row in defaults:
-		if frappe.db.exists("LYQD Scheme", row["isin"]):
-			out.append(frappe.get_doc("LYQD Scheme", row["isin"]).as_dict())
-			continue
-		doc = frappe.get_doc({"doctype": "LYQD Scheme", **row})
-		doc.insert()
-		out.append(doc.as_dict())
-	return out
+def get_portfolio(company: str | None = None) -> dict:
+	"""Portfolio positions + transaction history (Mytra-backed; local instruction bridge)."""
+	from lyqd.mytra.portfolio import get_portfolio as _portfolio
+
+	return _portfolio(company or _default_company())

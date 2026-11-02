@@ -21,7 +21,7 @@
             <th class="py-2">Scheme</th>
             <th class="py-2">Status</th>
             <th class="py-2 text-right">Amount</th>
-            <th class="py-2">External</th>
+            <th class="py-2">Mytra</th>
             <th class="py-2"></th>
           </tr>
         </thead>
@@ -31,7 +31,12 @@
             <td class="py-3">{{ row.scheme_label || row.scheme }}</td>
             <td class="py-3"><Badge theme="blue">{{ row.status }}</Badge></td>
             <td class="py-3 text-right tabular-nums">{{ formatINR(row.amount) }}</td>
-            <td class="py-3 text-xs text-gray-500">{{ row.external_submit_status }}</td>
+            <td class="py-3 text-xs text-gray-500">
+              <div>{{ row.external_submit_status || '—' }}</div>
+              <div v-if="row.mytra_transaction_ref" class="font-mono">
+                {{ row.mytra_transaction_ref }}
+              </div>
+            </td>
             <td class="py-3 text-right space-x-1">
               <Button size="sm" variant="outline" @click="runMethod(row.name, 'mark_approved')">
                 Approve
@@ -70,6 +75,7 @@ const list = createListResource({
     'status',
     'amount',
     'external_submit_status',
+    'mytra_transaction_ref',
     'company',
   ],
   orderBy: 'modified desc',

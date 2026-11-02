@@ -51,7 +51,7 @@ A Vue 3 + [Frappe UI](https://github.com/frappe/frappe-ui) app served at `/lyqd`
 - **Commitments** — Planned payments that reserve cash (including overdue). Optional “from books” suggestions can be accepted onto the plan with a due date.
 - **Free cash** — Explainable waterfall: bank cash − planned commitments − buffer − restricted cash.
 - **Invest** — One open investment request per company; confirm amount, then create an instruction once the investment account is activated.
-- **Portfolio** — Liquid fund holdings for the company.
+- **Portfolio** — Holding balances and transaction history from Mytra (instructions link via Mytra transaction ref).
 
 ```
 Cash position  →  Commitments  →  Free cash  →  Invest  →  Portfolio
@@ -82,7 +82,9 @@ Asset accounts (for example Input GST) can be added as **Setoff** so they reduce
 
 ### Investment account
 
-Instructions require an activated investment account. Activation is **ops-owned** (Desk / internal site) — the SPA only shows status when active, otherwise a **Request activation** CTA that creates a CRM Lead. Eligible schemes are Mytra-managed (`LYQD Scheme`); customers do not pick or add schemes in the SPA.
+Instructions require an activated investment account. Activation is **ops-owned** (Desk / internal site) — the SPA only shows status when active, otherwise a **Request activation** CTA that creates a CRM Lead.
+
+Schemes and holdings come from **Mytra**. A Ready instruction is submitted to Mytra (creates a transaction); `mytra_transaction_ref` is used to track status and to show the same activity under Portfolio → transaction history. Position cards sync from Mytra balances — there is no manual “Add holding” in the SPA.
 
 ### Key features
 

@@ -1,6 +1,6 @@
 {
  "actions": [],
- "allow_import": 1,
+ "allow_import": 0,
  "allow_rename": 0,
  "autoname": "naming_series:",
  "creation": "2026-10-29 13:00:00.000000",
@@ -10,9 +10,12 @@
   "naming_series",
   "company",
   "scheme",
+  "scheme_isin",
+  "scheme_label",
   "column_break_top",
   "as_on",
   "source",
+  "mytra_position_ref",
   "amounts_section",
   "units",
   "amount",
@@ -40,12 +43,22 @@
    "reqd": 1
   },
   {
+   "description": "Mirrored from Mytra — not entered in the SPA.",
    "fieldname": "scheme",
-   "fieldtype": "Link",
+   "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Scheme",
-   "options": "LYQD Scheme",
    "reqd": 1
+  },
+  {
+   "fieldname": "scheme_isin",
+   "fieldtype": "Data",
+   "label": "ISIN"
+  },
+  {
+   "fieldname": "scheme_label",
+   "fieldtype": "Data",
+   "label": "Scheme Label"
   },
   {
    "fieldname": "column_break_top",
@@ -60,14 +73,20 @@
    "reqd": 1
   },
   {
-   "default": "Manual",
-   "description": "No BSE allotment sync in this PoC.",
+   "default": "Mytra",
    "fieldname": "source",
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Source",
-   "options": "Manual\nSimulated",
+   "options": "Mytra",
+   "read_only": 1,
    "reqd": 1
+  },
+  {
+   "fieldname": "mytra_position_ref",
+   "fieldtype": "Data",
+   "label": "Mytra Position Ref",
+   "read_only": 1
   },
   {
    "fieldname": "amounts_section",
@@ -97,7 +116,7 @@
   {
    "fieldname": "nav",
    "fieldtype": "Float",
-   "label": "NAV (display)"
+   "label": "NAV"
   },
   {
    "fieldname": "notes",
@@ -106,7 +125,7 @@
   }
  ],
  "links": [],
- "modified": "2026-10-29 13:00:00.000000",
+ "modified": "2026-11-02 18:20:00.000000",
  "modified_by": "Administrator",
  "module": "LYQD",
  "name": "LYQD Holding",
@@ -126,26 +145,20 @@
    "write": 1
   },
   {
-   "create": 1,
-   "delete": 1,
    "email": 1,
    "export": 1,
    "print": 1,
    "read": 1,
    "report": 1,
-   "role": "LYQD Manager",
-   "share": 1,
-   "write": 1
+   "role": "LYQD Manager"
   },
   {
-   "create": 1,
    "email": 1,
    "export": 1,
    "print": 1,
    "read": 1,
    "report": 1,
-   "role": "LYQD User",
-   "write": 1
+   "role": "LYQD User"
   }
  ],
  "sort_field": "as_on",

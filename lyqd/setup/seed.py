@@ -31,14 +31,6 @@ def seed_demo(force: bool = False) -> dict:
 	policy = ensure_policy(company)
 	payments = ensure_upcoming_payments(company, force=force)
 	ensure_settings()
-	schemes = []
-	try:
-		from lyqd.api.spa import ensure_default_schemes
-
-		schemes = ensure_default_schemes()
-	except Exception:
-		# DocTypes may not be migrated yet on older installs
-		pass
 
 	from lyqd.cash.surplus import compute_surplus
 
@@ -50,7 +42,6 @@ def seed_demo(force: bool = False) -> dict:
 		"bank_account": bank_account,
 		"policy": policy,
 		"upcoming_payments": payments,
-		"schemes": [s.get("name") for s in schemes] if schemes else [],
 		"surplus_7d": s7.investable_surplus,
 		"surplus_30d": s30.investable_surplus,
 		"upcoming_7d": s7.upcoming_total,

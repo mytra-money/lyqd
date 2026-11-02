@@ -151,19 +151,22 @@ def list_remote_recommendation_accounts(
 	return rows
 
 
-def _classify_accounts(client, account_names: list[str]) -> tuple[list[str], list[str]]:
+def _classify_accounts(client, account_names: list[str]) -> tuple[list[str], list[str], list[str]]:
 	if not account_names:
-		return [], []
+		return [], [], []
 	meta = client.get_list(
 		"Account",
 		filters={"name": ["in", account_names]},
 		fields=["name", "account_type", "root_type", "account_name"],
 		limit_page_length=len(account_names) + 5,
 	) or []
-	payable, other = [], []
+	payable, receivable, other = [], [], []
 	for a in meta:
-		if a.get("account_type") == "Payable":
+		atype = a.get("account_type")
+		if atype == "Payable":
 			payable.append(a["name"])
+		elif atype == "Receivable":
+			receivable.append(a["name"])
 		else:
 			other.append(a["name"])
 	# Keep unconfigured names as other so user selection still tries GL
@@ -171,7 +174,43 @@ def _classify_accounts(client, account_names: list[str]) -> tuple[list[str], lis
 	for name in account_names:
 		if name not in known:
 			other.append(name)
-	return payable, other
+	return payable, receivable, other
+
+
+def _remote_party_labels(client, party_type: str, parties: list[str]) -> dict[str, str]:
+	"""Map Customer/Supplier name → display label from remote site."""
+	parties = [p for p in parties if p]
+	if not parties or not party_type:
+		return {}
+	doctype = party_type
+	name_field = {
+		"Customer": "customer_name",
+		"Supplier": "supplier_name",
+		"Employee": "employee_name",
+	}.get(party_type)
+	if not name_field:
+		return {p: p for p in parties}
+	out: dict[str, str] = {}
+	for i in range(0, len(parties), 50):
+		chunk = parties[i : i + 50]
+		try:
+			rows = (
+				client.get_list(
+					doctype,
+					filters={"name": ["in", chunk]},
+					fields=["name", name_field],
+					limit_page_length=len(chunk) + 5,
+				)
+				or []
+			)
+			for r in rows:
+				out[r["name"]] = r.get(name_field) or r["name"]
+		except Exception:
+			for p in chunk:
+				out.setdefault(p, p)
+	for p in parties:
+		out.setdefault(p, p)
+	return out
 
 
 def _account_meta_map(client, account_names: list[str]) -> dict[str, dict]:
@@ -228,10 +267,10 @@ def _pi_voucher_rows(
 		amount = flt(row.get("outstanding_amount"))
 		if amount <= 0.01:
 			continue
-		party = row.get("supplier_name") or row.get("supplier")
+		party_label = row.get("supplier_name") or row.get("supplier")
 		title = f"Purchase Invoice {row['name']}"
-		if party:
-			title = f"{party} · {title}"
+		if party_label:
+			title = f"{party_label} · {title}"
 		out.append(
 			{
 				"grain": "voucher",
@@ -245,7 +284,70 @@ def _pi_voucher_rows(
 				"cash_effect": "Outflow",
 				"party_type": "Supplier",
 				"party": row.get("supplier"),
+				"party_name": party_label,
 				"engine": "remote_purchase_invoice",
+			}
+		)
+	return out
+
+
+def _si_voucher_rows(
+	client,
+	company: str,
+	receivable_accounts: list[str],
+	as_of: str,
+) -> list[dict[str, Any]]:
+	"""Open Sales Invoices on receivable accounts — outstanding already nets PE/JE allocations."""
+	if not receivable_accounts:
+		return []
+	filters: dict[str, Any] = {
+		"company": company,
+		"docstatus": 1,
+		"outstanding_amount": [">", 0.01],
+		"posting_date": ["<=", as_of],
+		"debit_to": ["in", receivable_accounts],
+	}
+	rows = (
+		client.get_list(
+			"Sales Invoice",
+			filters=filters,
+			fields=[
+				"name",
+				"customer",
+				"customer_name",
+				"outstanding_amount",
+				"due_date",
+				"debit_to",
+			],
+			order_by="due_date asc",
+			limit_page_length=100,
+		)
+		or []
+	)
+	out = []
+	for row in rows:
+		amount = flt(row.get("outstanding_amount"))
+		if amount <= 0.01:
+			continue
+		party_label = row.get("customer_name") or row.get("customer")
+		title = f"Sales Invoice {row['name']}"
+		if party_label:
+			title = f"{party_label} · {title}"
+		out.append(
+			{
+				"grain": "voucher",
+				"account": row.get("debit_to"),
+				"source_doctype": "Sales Invoice",
+				"source_name": row["name"],
+				"title": title[:140],
+				"category": "Receivable",
+				"due_date": str(row["due_date"]) if row.get("due_date") else None,
+				"amount": amount,
+				"cash_effect": "Setoff",
+				"party_type": "Customer",
+				"party": row.get("customer"),
+				"party_name": party_label,
+				"engine": "remote_sales_invoice",
 			}
 		)
 	return out
@@ -297,14 +399,13 @@ def _gl_voucher_rows(
 	as_of: str,
 	meta: dict[str, dict],
 ) -> list[dict[str, Any]]:
-	"""Open liability by against_voucher from remote GL Entry."""
+	"""Open GL by against_voucher so PE/JE settlements net against the invoice."""
 	if not accounts:
 		return []
-	# Pull recent GL lines and aggregate in LYQD
+	# Pull GL lines and aggregate in LYQD by against_voucher (+ party), not voucher_no
 	start = 0
 	page = 200
 	buckets: dict[tuple, float] = {}
-	bucket_meta: dict[tuple, dict] = {}
 	while True:
 		rows = (
 			client.get_list(
@@ -340,12 +441,21 @@ def _gl_voucher_rows(
 				continue
 			key = (r.get("account"), src_dt, src_dn, r.get("party_type"), r.get("party"))
 			buckets[key] = buckets.get(key, 0.0) + flt(r.get("credit")) - flt(r.get("debit"))
-			bucket_meta[key] = r
 		if len(rows) < page:
 			break
 		start += page
 		if start > 8000:
 			break
+
+	# Resolve customer/supplier display names in bulk
+	by_party_type: dict[str, set[str]] = {}
+	for _account, _src_dt, _src_dn, party_type, party in buckets:
+		if party_type and party:
+			by_party_type.setdefault(party_type, set()).add(party)
+	party_labels: dict[tuple[str, str], str] = {}
+	for ptype, parties in by_party_type.items():
+		for name, label in _remote_party_labels(client, ptype, list(parties)).items():
+			party_labels[(ptype, name)] = label
 
 	out = []
 	for key, raw_amt in buckets.items():
@@ -360,8 +470,17 @@ def _gl_voucher_rows(
 		if amount <= 0.01:
 			continue
 		acc_name = (meta.get(account) or {}).get("account_name") or account
-		title = f"{acc_name} · {src_dt} {src_dn}"
-		category = "Vendor" if src_dt == "Purchase Receipt" else "Tax"
+		party_label = party_labels.get((party_type or "", party or "")) or party
+		if party_label:
+			title = f"{party_label} · {src_dt} {src_dn}"
+		else:
+			title = f"{acc_name} · {src_dt} {src_dn}"
+		if src_dt == "Sales Invoice" or party_type == "Customer":
+			category = "Receivable"
+		elif src_dt == "Purchase Receipt" or party_type == "Supplier":
+			category = "Vendor"
+		else:
+			category = "Tax"
 		out.append(
 			{
 				"grain": "voucher",
@@ -375,6 +494,7 @@ def _gl_voucher_rows(
 				"cash_effect": cash_effect,
 				"party_type": party_type,
 				"party": party,
+				"party_name": party_label,
 				"engine": "remote_gl",
 			}
 		)
@@ -436,10 +556,11 @@ def fetch_remote_recommendation_items(
 	ref_accounts = [r["account"] for r in account_rows if r.get("show_references")]
 	bal_accounts = [r["account"] for r in account_rows if not r.get("show_references")]
 
-	payable_ref, other_ref = _classify_accounts(client, ref_accounts)
+	payable_ref, receivable_ref, other_ref = _classify_accounts(client, ref_accounts)
 
 	items: list[dict[str, Any]] = []
 	items.extend(_pi_voucher_rows(client, company, payable_ref, as_of))
+	items.extend(_si_voucher_rows(client, company, receivable_ref, as_of))
 	items.extend(_gl_voucher_rows(client, company, other_ref, as_of, meta))
 	items.extend(_account_balance_rows(client, company, bal_accounts, as_of, meta))
 	return _exclude_billed_purchase_receipts_remote(client, items)
@@ -516,9 +637,17 @@ def _exclude_billed_purchase_receipts_remote(client, items: list[dict[str, Any]]
 
 
 def remote_purchase_invoice_outstanding(name: str) -> dict[str, Any]:
+	return _remote_invoice_outstanding("Purchase Invoice", name)
+
+
+def remote_sales_invoice_outstanding(name: str) -> dict[str, Any]:
+	return _remote_invoice_outstanding("Sales Invoice", name)
+
+
+def _remote_invoice_outstanding(doctype: str, name: str) -> dict[str, Any]:
 	client, _company = get_remote_client()
 	rows = client.get_list(
-		"Purchase Invoice",
+		doctype,
 		filters={"name": name},
 		fields=["name", "outstanding_amount", "docstatus", "due_date", "status"],
 		limit_page_length=1,
@@ -629,8 +758,13 @@ def remote_gl_voucher_outstanding(
 			)
 			or []
 		)
-	amt = sum(flt(r.get("credit")) - flt(r.get("debit")) for r in rows)
-	amt = max(flt(amt), 0.0)
+	liability_amt = sum(flt(r.get("credit")) - flt(r.get("debit")) for r in rows)
+	asset_amt = sum(flt(r.get("debit")) - flt(r.get("credit")) for r in rows)
+	root = None
+	if account:
+		meta = _account_meta_map(client, [account])
+		root = (meta.get(account) or {}).get("root_type")
+	amt = max(flt(asset_amt if root == "Asset" else liability_amt), 0.0)
 	return {
 		"ok": True,
 		"grain": "voucher",

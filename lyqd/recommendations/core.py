@@ -46,36 +46,59 @@ def _already_accepted(company: str) -> set[tuple[str, str]]:
 	return {(r.source_doctype, r.source_name) for r in rows if r.source_doctype and r.source_name}
 
 
-def _classify_accounts(account_names: list[str]) -> tuple[list[str], list[str]]:
+def _classify_accounts(account_names: list[str]) -> tuple[list[str], list[str], list[str]]:
+	"""Split selected accounts into payable / receivable / other (GL)."""
 	if not account_names:
-		return [], []
+		return [], [], []
 	meta = frappe.get_all(
 		"Account",
 		filters={"name": ("in", account_names)},
 		fields=["name", "account_type", "root_type"],
 	)
-	payable, other = [], []
+	payable, receivable, other = [], [], []
 	for a in meta:
 		if a.account_type == "Payable":
 			payable.append(a.name)
-		elif a.root_type == "Liability":
-			other.append(a.name)
+		elif a.account_type == "Receivable":
+			receivable.append(a.name)
 		else:
-			# Still allow Expense/other if user explicitly selected them — treat as GL liability-style
+			# Liability tax/GST, Asset ITC, Expense, etc. → GL open items / balance
 			other.append(a.name)
-	return payable, other
+	return payable, receivable, other
 
 
-def _ple_voucher_rows(company: str, accounts: list[str], as_of: str) -> list[dict[str, Any]]:
+def _party_display_name(party_type: str | None, party: str | None) -> str | None:
+	"""Human label for Customer / Supplier (not the link name alone)."""
+	if not party:
+		return None
+	party_type = (party_type or "").strip()
+	if party_type == "Customer" and frappe.db.exists("Customer", party):
+		return frappe.db.get_value("Customer", party, "customer_name") or party
+	if party_type == "Supplier" and frappe.db.exists("Supplier", party):
+		return frappe.db.get_value("Supplier", party, "supplier_name") or party
+	if party_type == "Employee" and frappe.db.exists("Employee", party):
+		return frappe.db.get_value("Employee", party, "employee_name") or party
+	return party
+
+
+def _ple_voucher_rows(
+	company: str,
+	accounts: list[str],
+	as_of: str,
+	*,
+	account_type: str = "Payable",
+) -> list[dict[str, Any]]:
+	"""Open Payment Ledger invoices for Payable (outflow) or Receivable (setoff)."""
 	from erpnext.accounts.utils import QueryPaymentLedger
 
 	if not accounts:
 		return []
+	is_receivable = account_type == "Receivable"
 	ple = qb.DocType("Payment Ledger Entry")
 	common_filter = [
 		ple.company == company,
 		ple.account.isin(accounts),
-		ple.account_type == "Payable",
+		ple.account_type == account_type,
 	]
 	posting_date = [ple.posting_date.lte(as_of)]
 	rows = QueryPaymentLedger().get_voucher_outstandings(
@@ -94,23 +117,34 @@ def _ple_voucher_rows(company: str, accounts: list[str], as_of: str) -> list[dic
 		due = row.get("due_date")
 		if not due and voucher_type == "Purchase Invoice" and voucher_no:
 			due = frappe.db.get_value("Purchase Invoice", voucher_no, "due_date")
+		elif not due and voucher_type == "Sales Invoice" and voucher_no:
+			due = frappe.db.get_value("Sales Invoice", voucher_no, "due_date")
 		party = row.get("party")
+		party_type = row.get("party_type")
+		party_label = _party_display_name(party_type, party) or party
 		title = f"{voucher_type} {voucher_no}"
-		if party:
-			title = f"{party} · {title}"
+		if party_label:
+			title = f"{party_label} · {title}"
+		if is_receivable:
+			category = "Receivable" if voucher_type == "Sales Invoice" else "Other"
+			cash_effect = "Setoff"
+		else:
+			category = "Vendor" if voucher_type == "Purchase Invoice" else "Other"
+			cash_effect = "Outflow"
 		out.append(
 			{
 				"grain": "voucher",
 				"account": row.get("account"),
 				"source_doctype": voucher_type,
 				"source_name": voucher_no,
-				"title": title,
-				"category": "Vendor" if voucher_type == "Purchase Invoice" else "Other",
+				"title": title[:140],
+				"category": category,
 				"due_date": str(due) if due else None,
 				"amount": amount,
-				"cash_effect": "Outflow",
-				"party_type": row.get("party_type"),
+				"cash_effect": cash_effect,
+				"party_type": party_type,
 				"party": party,
+				"party_name": party_label,
 				"engine": "payment_ledger",
 			}
 		)
@@ -166,7 +200,11 @@ def exclude_billed_purchase_receipts(items: list[dict[str, Any]]) -> list[dict[s
 
 
 def _gl_voucher_rows(company: str, accounts: list[str], as_of: str) -> list[dict[str, Any]]:
-	"""Open liability items for Tax / TDS / GST / other non-PLE accounts."""
+	"""Open GL items for Tax / TDS / GST / other non-PLE accounts.
+
+	Aggregate by against_voucher (+ party) so Payment Entry / Journal Entry
+	settlements net against the original Sales/Purchase Invoice.
+	"""
 	if not accounts:
 		return []
 	gle = qb.DocType("GL Entry")
@@ -178,8 +216,6 @@ def _gl_voucher_rows(company: str, accounts: list[str], as_of: str) -> list[dict
 		qb.from_(gle)
 		.select(
 			gle.account,
-			gle.voucher_type,
-			gle.voucher_no,
 			gle.party_type,
 			gle.party,
 			against_voucher_type.as_("against_voucher_type"),
@@ -194,8 +230,6 @@ def _gl_voucher_rows(company: str, accounts: list[str], as_of: str) -> list[dict
 		)
 		.groupby(
 			gle.account,
-			gle.voucher_type,
-			gle.voucher_no,
 			gle.party_type,
 			gle.party,
 			against_voucher_type,
@@ -226,17 +260,25 @@ def _gl_voucher_rows(company: str, accounts: list[str], as_of: str) -> list[dict
 			cash_effect = "Outflow"
 		if amount <= 0.01:
 			continue
-		# Prefer against voucher as the payable reference when present
-		src_dt = row.get("against_voucher_type") or row.get("voucher_type")
-		src_dn = row.get("against_voucher") or row.get("voucher_no")
+		src_dt = row.get("against_voucher_type")
+		src_dn = row.get("against_voucher")
+		if not src_dt or not src_dn:
+			continue
 		acc_name = frappe.db.get_value("Account", row.account, "account_name") or row.account
+		party = row.get("party")
+		party_type = row.get("party_type")
+		party_label = _party_display_name(party_type, party) or party
 		title = f"{acc_name} · {src_dt} {src_dn}"
+		if party_label:
+			title = f"{party_label} · {src_dt} {src_dn}"
 		category = "Tax"
 		an = (acc_name or "").lower()
-		if "tds" in an or "gst" in an or "duties" in an:
-			category = "Tax"
-		elif src_dt == "Purchase Receipt":
+		if src_dt == "Sales Invoice" or party_type == "Customer":
+			category = "Receivable"
+		elif src_dt == "Purchase Receipt" or party_type == "Supplier":
 			category = "Vendor"
+		elif "tds" in an or "gst" in an or "duties" in an:
+			category = "Tax"
 		out.append(
 			{
 				"grain": "voucher",
@@ -248,8 +290,9 @@ def _gl_voucher_rows(company: str, accounts: list[str], as_of: str) -> list[dict
 				"due_date": None,
 				"amount": amount,
 				"cash_effect": cash_effect,
-				"party_type": row.get("party_type"),
-				"party": row.get("party"),
+				"party_type": party_type,
+				"party": party,
+				"party_name": party_label,
 				"engine": "gl",
 			}
 		)
@@ -389,8 +432,11 @@ def get_liability_recommendations(
 		else:
 			ref_accounts = [r.account for r in rows_cfg if r.show_references]
 			bal_accounts = [r.account for r in rows_cfg if not r.show_references]
-			payable_ref, other_ref = _classify_accounts(ref_accounts)
-			items.extend(_ple_voucher_rows(company, payable_ref, as_of))
+			payable_ref, receivable_ref, other_ref = _classify_accounts(ref_accounts)
+			items.extend(_ple_voucher_rows(company, payable_ref, as_of, account_type="Payable"))
+			items.extend(
+				_ple_voucher_rows(company, receivable_ref, as_of, account_type="Receivable")
+			)
 			items.extend(_gl_voucher_rows(company, other_ref, as_of))
 			items.extend(_account_balance_rows(company, bal_accounts, as_of))
 			items = exclude_billed_purchase_receipts(items)
@@ -520,15 +566,19 @@ def _ple_voucher_outstanding(
 	voucher_no: str,
 	as_of: str,
 	account: str | None = None,
+	account_type: str | None = None,
 ) -> float:
 	from erpnext.accounts.utils import QueryPaymentLedger
 
 	ple = qb.DocType("Payment Ledger Entry")
+	if not account_type and account:
+		account_type = frappe.db.get_value("Account", account, "account_type")
+	account_type = account_type or "Payable"
 	common_filter = [
 		ple.company == company,
 		ple.voucher_no == voucher_no,
 		ple.voucher_type == voucher_type,
-		ple.account_type == "Payable",
+		ple.account_type == account_type,
 	]
 	if account:
 		common_filter.append(ple.account == account)
@@ -551,6 +601,7 @@ def _gl_voucher_outstanding(
 	as_of: str,
 	account: str | None = None,
 ) -> float:
+	"""Net open amount for a voucher on GL. Asset accounts use debit − credit."""
 	gle = qb.DocType("GL Entry")
 	against_voucher_type = IfNull(gle.against_voucher_type, gle.voucher_type)
 	against_voucher = IfNull(gle.against_voucher, gle.voucher_no)
@@ -567,11 +618,19 @@ def _gl_voucher_outstanding(
 		where = where & (gle.account == account)
 	row = (
 		qb.from_(gle)
-		.select((Sum(gle.credit) - Sum(gle.debit)).as_("outstanding"))
+		.select(
+			(Sum(gle.credit) - Sum(gle.debit)).as_("liability_outstanding"),
+			(Sum(gle.debit) - Sum(gle.credit)).as_("asset_outstanding"),
+		)
 		.where(where)
 		.run(as_dict=True)
 	)
-	return max(flt(row[0].outstanding) if row else 0.0, 0.0)
+	if not row:
+		return 0.0
+	root = frappe.db.get_value("Account", account, "root_type") if account else None
+	if root == "Asset":
+		return max(flt(row[0].asset_outstanding), 0.0)
+	return max(flt(row[0].liability_outstanding), 0.0)
 
 
 def resolve_books_outstanding(
@@ -593,6 +652,8 @@ def resolve_books_outstanding(
 			return remote_src.remote_account_balance(source_name, as_of=as_of)
 		if source_doctype == "Purchase Invoice":
 			return remote_src.remote_purchase_invoice_outstanding(source_name)
+		if source_doctype == "Sales Invoice":
+			return remote_src.remote_sales_invoice_outstanding(source_name)
 		# Purchase Receipt (+ other vouchers): remote GL; billed PRs cleared inside helper
 		return remote_src.remote_gl_voucher_outstanding(
 			source_doctype, source_name, account=account, as_of=as_of
@@ -613,8 +674,8 @@ def resolve_books_outstanding(
 			"due_date": None,
 		}
 
-	if source_doctype == "Purchase Invoice":
-		if not frappe.db.exists("Purchase Invoice", source_name):
+	if source_doctype in ("Purchase Invoice", "Sales Invoice"):
+		if not frappe.db.exists(source_doctype, source_name):
 			return {
 				"ok": True,
 				"grain": "voucher",
@@ -623,7 +684,7 @@ def resolve_books_outstanding(
 				"missing": True,
 			}
 		inv = frappe.db.get_value(
-			"Purchase Invoice",
+			source_doctype,
 			source_name,
 			["outstanding_amount", "docstatus", "due_date", "status"],
 			as_dict=True,
@@ -674,9 +735,16 @@ def resolve_books_outstanding(
 		}
 
 	account_type = frappe.db.get_value("Account", account, "account_type") if account else None
-	if account_type == "Payable" or not account:
-		amt = _ple_voucher_outstanding(company, source_doctype, source_name, as_of, account)
-		if amt > 0.01 or account_type == "Payable":
+	if account_type in ("Payable", "Receivable") or not account:
+		amt = _ple_voucher_outstanding(
+			company,
+			source_doctype,
+			source_name,
+			as_of,
+			account,
+			account_type=account_type,
+		)
+		if amt > 0.01 or account_type in ("Payable", "Receivable"):
 			return {
 				"ok": True,
 				"grain": "voucher",
@@ -754,7 +822,7 @@ def sync_upcoming_payment_from_books(name: str) -> dict[str, Any]:
 			doc.status = "Planned"
 			action = "status_updated"
 
-		if live.get("due_date") and doc.source_doctype == "Purchase Invoice":
+		if live.get("due_date") and doc.source_doctype in ("Purchase Invoice", "Sales Invoice"):
 			doc.due_date = live["due_date"]
 		elif live.get("due_date") and not doc.due_date:
 			doc.due_date = live["due_date"]

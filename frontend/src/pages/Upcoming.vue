@@ -1,0 +1,789 @@
+<template>
+  <div>
+    <PageHeader
+      title="Commitments"
+      subtitle="Plan on the left reserves free cash. From books on the right is optional until you add to plan."
+    >
+      <Button
+        variant="outline"
+        :loading="syncing"
+        :disabled="!recsEnabled"
+        @click="syncFromBooks"
+      >
+        Sync plan from books
+      </Button>
+      <Button variant="outline" :loading="planLoading || recsLoading" @click="reloadAll">
+        Refresh
+      </Button>
+      <Button variant="solid" @click="openNew">Add payment</Button>
+    </PageHeader>
+
+    <div class="grid gap-4 lg:grid-cols-2 lg:items-start">
+    <!-- ── On the plan ── -->
+    <section class="min-w-0 rounded-lg border border-gray-200 bg-white">
+      <header class="border-b border-gray-100 px-4 py-3">
+        <div class="flex items-baseline justify-between gap-2">
+          <h2 class="text-base font-semibold text-gray-900">On the plan</h2>
+          <span class="text-xs tabular-nums text-gray-500">{{ activePlanCount }} active</span>
+        </div>
+        <p class="mt-0.5 text-xs text-gray-500">These amounts reduce free cash when Planned.</p>
+        <div class="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+          <div
+            class="inline-flex w-fit max-w-full overflow-x-auto rounded-md border border-gray-200 p-0.5"
+          >
+            <button
+              v-for="f in plannedViews"
+              :key="f.id"
+              type="button"
+              class="whitespace-nowrap rounded px-2.5 py-1 text-xs font-medium transition-colors"
+              :class="
+                plannedView === f.id
+                  ? 'bg-gray-900 text-white'
+                  : 'text-gray-600 hover:text-gray-900'
+              "
+              @click="plannedView = f.id"
+            >
+              {{ f.label }}
+              <span v-if="f.count != null" class="tabular-nums opacity-70">{{ f.count }}</span>
+            </button>
+          </div>
+          <div class="flex min-w-0 flex-1 gap-2">
+            <div class="relative min-w-0 flex-1">
+              <FeatherIcon
+                name="search"
+                class="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400"
+              />
+              <input
+                v-model="plannedQuery"
+                type="search"
+                placeholder="Search plan"
+                class="w-full rounded-md border border-gray-200 py-1.5 pl-8 pr-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-gray-400 focus:outline-none"
+              />
+            </div>
+            <select
+              v-model="categoryFilter"
+              class="max-w-[9rem] shrink-0 rounded-md border border-gray-200 bg-white px-2 py-1.5 text-sm text-gray-700"
+            >
+              <option value="all">Category</option>
+              <option v-for="c in plannedCategories" :key="c" :value="c">{{ c }}</option>
+            </select>
+          </div>
+        </div>
+      </header>
+
+      <div v-if="!filteredList.length" class="px-4 py-10 text-center text-sm text-gray-500">
+        Nothing in this view.
+        <button
+          v-if="plannedFiltersActive"
+          type="button"
+          class="ml-1 text-gray-800 underline"
+          @click="resetPlannedFilters"
+        >
+          Clear filters
+        </button>
+        <button v-else type="button" class="ml-1 text-gray-800 underline" @click="openNew">
+          Add a payment
+        </button>
+      </div>
+
+      <ul v-else class="max-h-[70vh] divide-y divide-gray-100 overflow-y-auto">
+        <li
+          v-for="row in filteredList"
+          :key="row.name"
+          class="flex items-center gap-3 px-4 py-3 hover:bg-gray-50/80"
+        >
+          <div class="min-w-0 flex-1">
+            <div class="truncate text-sm font-medium text-gray-900">{{ row.title }}</div>
+            <div class="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-gray-500">
+              <span
+                :class="
+                  row.status === 'Planned' && isOverdue(row.due_date)
+                    ? 'font-medium text-red-600'
+                    : ''
+                "
+              >
+                {{ dueLabel(row.due_date) }}
+              </span>
+              <span>· {{ row.category }}</span>
+              <span
+                v-if="row.cash_effect === 'Setoff'"
+                class="rounded bg-emerald-50 px-1 font-medium text-emerald-800"
+              >
+                Setoff
+              </span>
+              <span v-if="row.status !== 'Planned'" class="text-gray-400">· {{ row.status }}</span>
+            </div>
+            <div v-if="row.source_doctype" class="mt-0.5 truncate text-xs text-gray-400">
+              Ref {{ row.source_doctype }} {{ row.source_name }}
+              <span v-if="row.source_account"> · {{ shortAccount(row.source_account) }}</span>
+            </div>
+          </div>
+          <div class="shrink-0 text-right">
+            <div
+              class="tabular-nums text-sm font-semibold"
+              :class="row.cash_effect === 'Setoff' ? 'text-emerald-800' : 'text-gray-900'"
+            >
+              {{ row.cash_effect === 'Setoff' ? '−' : '' }}{{ formatINR(row.amount) }}
+            </div>
+            <div class="mt-1 flex justify-end gap-1.5">
+              <button
+                v-if="row.source_doctype && row.source_name"
+                type="button"
+                class="text-xs text-gray-500 hover:text-gray-900"
+                :disabled="refreshing === row.name"
+                @click="refreshRow(row)"
+              >
+                Refresh
+              </button>
+              <button
+                v-if="row.status === 'Planned'"
+                type="button"
+                class="text-xs font-medium text-gray-600 hover:text-gray-900"
+                :disabled="marking === row.name"
+                @click="markPaid(row)"
+              >
+                Mark paid
+              </button>
+              <button
+                type="button"
+                class="text-xs text-gray-400 hover:text-gray-700"
+                @click="edit(row)"
+              >
+                Edit
+              </button>
+            </div>
+          </div>
+        </li>
+      </ul>
+    </section>
+
+    <!-- ── From books ── -->
+    <section class="min-w-0 rounded-lg border border-gray-200 bg-white">
+      <header class="border-b border-gray-100 px-4 py-3">
+        <div class="flex flex-wrap items-start justify-between gap-2">
+          <div>
+            <h2 class="text-base font-semibold text-gray-900">From books</h2>
+            <p class="mt-0.5 text-xs text-gray-500">
+              Optional intake — not reserved until you add to plan.
+            </p>
+          </div>
+          <button
+            v-if="recsEnabled"
+            type="button"
+            class="text-xs text-gray-500 hover:text-gray-800"
+            @click="$router.push('/settings?tab=integrations')"
+          >
+            Configure accounts
+          </button>
+        </div>
+
+        <template v-if="recsEnabled">
+          <div class="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+            <div
+              class="inline-flex w-fit max-w-full overflow-x-auto rounded-md border border-gray-200 p-0.5"
+            >
+              <button
+                v-for="f in suggestionViews"
+                :key="f.id"
+                type="button"
+                class="whitespace-nowrap rounded px-2.5 py-1 text-xs font-medium transition-colors"
+                :class="
+                  suggestionView === f.id
+                    ? 'bg-gray-900 text-white'
+                    : 'text-gray-600 hover:text-gray-900'
+                "
+                @click="suggestionView = f.id"
+              >
+                {{ f.label }}
+                <span v-if="f.count != null" class="tabular-nums opacity-70">{{ f.count }}</span>
+              </button>
+            </div>
+            <div class="flex min-w-0 flex-1 gap-2">
+              <div class="relative min-w-0 flex-1">
+                <FeatherIcon
+                  name="search"
+                  class="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400"
+                />
+                <input
+                  v-model="recQuery"
+                  type="search"
+                  placeholder="Search suggestions"
+                  class="w-full rounded-md border border-gray-200 py-1.5 pl-8 pr-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-gray-400 focus:outline-none"
+                />
+              </div>
+              <select
+                v-model="recAccount"
+                class="max-w-[11rem] shrink-0 rounded-md border border-gray-200 bg-white px-2 py-1.5 text-sm text-gray-700"
+                :title="recAccount === 'all' ? 'All accounts' : recAccount"
+              >
+                <option value="all">Account</option>
+                <option v-for="a in suggestionAccounts" :key="a" :value="a">
+                  {{ shortAccount(a) }}
+                </option>
+              </select>
+            </div>
+          </div>
+        </template>
+      </header>
+
+      <div v-if="recsLoaded && !recsEnabled" class="px-4 py-10 text-center">
+        <p class="text-sm text-gray-600">
+          {{ recsMessage || 'Turn on ERPNext to see liability suggestions.' }}
+        </p>
+        <Button
+          class="mt-3"
+          size="sm"
+          variant="outline"
+          @click="$router.push('/settings?tab=integrations')"
+        >
+          Open integrations
+        </Button>
+      </div>
+
+      <div
+        v-else-if="!recsLoaded || (recsLoading && !allRecs.length)"
+        class="px-4 py-10 text-center text-sm text-gray-500"
+      >
+        Loading suggestions…
+      </div>
+
+      <div
+        v-else-if="recsLoaded && recsMessage && !allRecs.length"
+        class="px-4 py-10 text-center text-sm text-gray-500"
+      >
+        {{ recsMessage }}
+      </div>
+
+      <div
+        v-else-if="recsLoaded && !allRecs.length"
+        class="px-4 py-10 text-center text-sm text-gray-500"
+      >
+        No open suggestions right now.
+      </div>
+
+      <div v-else-if="!filteredRecs.length" class="px-4 py-10 text-center text-sm text-gray-500">
+        Nothing matches.
+        <button type="button" class="ml-1 text-gray-800 underline" @click="resetRecFilters">
+          Clear filters
+        </button>
+      </div>
+
+      <ul v-else class="max-h-[70vh] divide-y divide-gray-100 overflow-y-auto">
+        <li
+          v-for="item in filteredRecs"
+          :key="`${item.source_doctype}:${item.source_name}:${item.account}`"
+          class="flex items-center gap-3 px-4 py-3 hover:bg-gray-50/80"
+        >
+          <div class="min-w-0 flex-1">
+            <div class="truncate text-sm font-medium text-gray-900">{{ item.title }}</div>
+            <div class="mt-0.5 truncate text-xs text-gray-500">
+              <span :class="isOverdue(item.due_date) ? 'font-medium text-red-600' : ''">
+                {{ dueLabel(item.due_date) }}
+              </span>
+              <span v-if="item.account"> · {{ shortAccount(item.account) }}</span>
+              <span v-if="item.category"> · {{ item.category }}</span>
+              <span v-if="item.cash_effect === 'Setoff'" class="font-medium text-emerald-800">
+                · Setoff
+              </span>
+            </div>
+          </div>
+          <div class="shrink-0 text-right">
+            <div
+              class="tabular-nums text-sm font-semibold"
+              :class="item.cash_effect === 'Setoff' ? 'text-emerald-800' : 'text-gray-900'"
+            >
+              {{ item.cash_effect === 'Setoff' ? '−' : '' }}{{ formatINR(item.amount) }}
+            </div>
+            <button
+              type="button"
+              class="mt-1 text-xs font-medium text-gray-900 hover:underline disabled:opacity-50"
+              :disabled="accepting === item.source_name"
+              @click="openAccept(item)"
+            >
+              Add to plan
+            </button>
+          </div>
+        </li>
+      </ul>
+    </section>
+    </div>
+
+    <Dialog v-model="show" :options="{ title: form.name ? 'Edit payment' : 'Add payment' }">
+      <template #body-content>
+        <div class="space-y-3">
+          <FormControl v-model="form.title" label="Title" />
+          <FormControl
+            v-model="form.category"
+            type="select"
+            label="Category"
+            :options="categoryOptions"
+          />
+          <FormControl v-model="form.due_date" type="date" label="Due date" />
+          <FormControl v-model="form.amount" type="number" label="Amount" />
+          <FormControl
+            v-model="form.cash_effect"
+            type="select"
+            label="Cash effect"
+            :options="cashEffectOptions"
+          />
+          <FormControl
+            v-model="form.status"
+            type="select"
+            label="Status"
+            :options="statusOptions"
+          />
+          <FormControl v-model="form.notes" type="textarea" label="Notes" />
+        </div>
+      </template>
+      <template #actions>
+        <Button variant="solid" :loading="saving" @click="save">Save</Button>
+        <Button variant="outline" @click="show = false">Cancel</Button>
+      </template>
+    </Dialog>
+
+    <Dialog v-model="showAccept" :options="{ title: 'Add to plan' }">
+      <template #body-content>
+        <div class="space-y-3">
+          <p v-if="acceptForm.cash_effect === 'Setoff'" class="text-xs text-emerald-800">
+            Setoff — reduces net commitments (e.g. Input GST against Output GST).
+          </p>
+          <FormControl v-model="acceptForm.title" label="Title" />
+          <FormControl
+            v-model="acceptForm.category"
+            type="select"
+            label="Category"
+            :options="categoryOptions"
+          />
+          <FormControl v-model="acceptForm.due_date" type="date" label="Due date" />
+          <FormControl v-model="acceptForm.amount" type="number" label="Amount" />
+          <FormControl
+            v-model="acceptForm.cash_effect"
+            type="select"
+            label="Cash effect"
+            :options="cashEffectOptions"
+          />
+          <p v-if="acceptForm.source_doctype" class="text-xs text-gray-500">
+            Source {{ acceptForm.source_doctype }} {{ acceptForm.source_name }}
+          </p>
+        </div>
+      </template>
+      <template #actions>
+        <Button variant="solid" :loading="!!accepting" @click="confirmAccept">Add to plan</Button>
+        <Button variant="outline" @click="showAccept = false">Cancel</Button>
+      </template>
+    </Dialog>
+  </div>
+</template>
+
+<script setup>
+import { computed, onActivated, reactive, ref, watch } from 'vue'
+import { call, toast } from 'frappe-ui'
+import PageHeader from '@/components/PageHeader.vue'
+import { useCompanyStore } from '@/stores/company'
+import { useTreasuryCacheStore } from '@/stores/treasuryCache'
+import { formatDate, formatINR } from '@/utils/format'
+
+defineOptions({ name: 'Upcoming' })
+
+const company = useCompanyStore()
+const cache = useTreasuryCacheStore()
+const show = ref(false)
+const showAccept = ref(false)
+const saving = ref(false)
+const accepting = ref(null)
+const marking = ref(null)
+const syncing = ref(false)
+const refreshing = ref(null)
+let recsDeferTimer = null
+
+const plannedView = ref('active')
+const categoryFilter = ref('all')
+const plannedQuery = ref('')
+
+const suggestionView = ref('all')
+const recAccount = ref('all')
+const recQuery = ref('')
+
+const categoryOptions = [
+  'Salary',
+  'Import-LC',
+  'Vendor',
+  'Tax',
+  'Loan',
+  'Other',
+].map((c) => ({ label: c, value: c }))
+const statusOptions = ['Planned', 'Paid', 'Cancelled'].map((s) => ({ label: s, value: s }))
+const cashEffectOptions = [
+  { label: 'Outflow (reserves cash)', value: 'Outflow' },
+  { label: 'Setoff (e.g. Input GST)', value: 'Setoff' },
+]
+
+const empty = () => ({
+  name: null,
+  title: '',
+  category: 'Other',
+  due_date: '',
+  amount: 0,
+  cash_effect: 'Outflow',
+  status: 'Planned',
+  notes: '',
+})
+const form = reactive(empty())
+
+const emptyAccept = () => ({
+  source_doctype: '',
+  source_name: '',
+  account: '',
+  title: '',
+  category: 'Other',
+  due_date: '',
+  amount: 0,
+  cash_effect: 'Outflow',
+})
+const acceptForm = reactive(emptyAccept())
+
+const planLoading = computed(() => cache.planLoading)
+const recsLoading = computed(() => cache.recsLoading)
+const recsPayload = computed(() => cache.getRecommendations(company.current))
+const recsLoaded = computed(() => recsPayload.value != null)
+const recsEnabled = computed(() => !!recsPayload.value?.enabled)
+const recsMessage = computed(() => recsPayload.value?.message || '')
+
+const todayStr = () => new Date().toISOString().slice(0, 10)
+
+async function loadPlan(force = false) {
+  if (!company.current) return
+  await cache.ensurePlan({ company: company.current, force })
+}
+
+function scheduleRecs(force = false) {
+  clearTimeout(recsDeferTimer)
+  // Let the plan column paint first; remote / books suggestions are secondary.
+  recsDeferTimer = setTimeout(() => {
+    if (!company.current) return
+    cache.ensureRecommendations({ company: company.current, force }).catch(() => {})
+  }, force ? 0 : 50)
+}
+
+async function reloadAll() {
+  await loadPlan(true)
+  scheduleRecs(true)
+}
+
+function daysUntil(due) {
+  if (!due) return null
+  const a = new Date(todayStr())
+  const b = new Date(due)
+  return Math.round((b - a) / 86400000)
+}
+
+function isOverdue(due) {
+  const d = daysUntil(due)
+  return d !== null && d < 0
+}
+
+function dueLabel(due) {
+  if (!due) return 'No due date'
+  const d = daysUntil(due)
+  if (d === null) return formatDate(due)
+  if (d < 0) return `Overdue · ${formatDate(due)}`
+  if (d === 0) return 'Due today'
+  if (d === 1) return 'Due tomorrow'
+  if (d <= 7) return `Due in ${d}d · ${formatDate(due)}`
+  return formatDate(due)
+}
+
+function shortAccount(account) {
+  if (!account) return ''
+  const parts = String(account).split(' - ')
+  return parts.length > 1 ? parts.slice(1).join(' - ') : account
+}
+
+const allRows = computed(() => cache.getPlan(company.current) || [])
+const allRecs = computed(() => recsPayload.value?.items || [])
+
+const activePlanCount = computed(
+  () => allRows.value.filter((r) => r.status === 'Planned').length,
+)
+
+const plannedViews = computed(() => {
+  const rows = allRows.value
+  const active = rows.filter((r) => r.status === 'Planned')
+  return [
+    { id: 'active', label: 'Active', count: active.length },
+    {
+      id: 'overdue',
+      label: 'Overdue',
+      count: active.filter((r) => isOverdue(r.due_date)).length,
+    },
+    { id: 'paid', label: 'Paid', count: rows.filter((r) => r.status === 'Paid').length },
+  ]
+})
+
+const suggestionViews = computed(() => {
+  const items = allRecs.value
+  return [
+    { id: 'all', label: 'All', count: items.length },
+    {
+      id: 'overdue',
+      label: 'Overdue',
+      count: items.filter((i) => isOverdue(i.due_date)).length,
+    },
+    {
+      id: 'soon',
+      label: '7 days',
+      count: items.filter((i) => {
+        const d = daysUntil(i.due_date)
+        return d !== null && d >= 0 && d <= 7
+      }).length,
+    },
+  ]
+})
+
+const plannedCategories = computed(() => {
+  const set = new Set(allRows.value.map((r) => r.category).filter(Boolean))
+  return [...set].sort()
+})
+
+const suggestionAccounts = computed(() => {
+  const fromItems = allRecs.value.map((i) => i.account).filter(Boolean)
+  const fromCfg = recsPayload.value?.account_filter || []
+  return [...new Set([...fromCfg, ...fromItems])].sort()
+})
+
+const plannedFiltersActive = computed(
+  () =>
+    plannedView.value !== 'active' ||
+    categoryFilter.value !== 'all' ||
+    !!plannedQuery.value.trim(),
+)
+
+const filteredList = computed(() => {
+  const q = plannedQuery.value.trim().toLowerCase()
+  return allRows.value.filter((r) => {
+    if (plannedView.value === 'active' && r.status !== 'Planned') return false
+    if (plannedView.value === 'overdue') {
+      if (r.status !== 'Planned' || !isOverdue(r.due_date)) return false
+    }
+    if (plannedView.value === 'paid' && r.status !== 'Paid') return false
+    if (categoryFilter.value !== 'all' && r.category !== categoryFilter.value) return false
+    if (q) {
+      const hay = `${r.title || ''} ${r.category || ''} ${r.source_name || ''}`.toLowerCase()
+      if (!hay.includes(q)) return false
+    }
+    return true
+  })
+})
+
+const filteredRecs = computed(() => {
+  const q = recQuery.value.trim().toLowerCase()
+  return allRecs.value.filter((item) => {
+    if (suggestionView.value === 'overdue' && !isOverdue(item.due_date)) return false
+    if (suggestionView.value === 'soon') {
+      const d = daysUntil(item.due_date)
+      if (d === null || d < 0 || d > 7) return false
+    }
+    if (recAccount.value !== 'all' && item.account !== recAccount.value) return false
+    if (q) {
+      const hay = `${item.title || ''} ${item.account || ''} ${item.source_name || ''} ${item.category || ''}`.toLowerCase()
+      if (!hay.includes(q)) return false
+    }
+    return true
+  })
+})
+
+watch(
+  () => company.current,
+  (c) => {
+    if (!c) return
+    loadPlan(false)
+    scheduleRecs(false)
+    resetPlannedFilters()
+    resetRecFilters()
+  },
+  { immediate: true },
+)
+
+onActivated(() => {
+  if (!company.current) return
+  loadPlan(false)
+  scheduleRecs(false)
+})
+
+function resetPlannedFilters() {
+  plannedView.value = 'active'
+  categoryFilter.value = 'all'
+  plannedQuery.value = ''
+}
+
+function resetRecFilters() {
+  suggestionView.value = 'all'
+  recAccount.value = 'all'
+  recQuery.value = ''
+}
+
+function openNew() {
+  Object.assign(form, empty())
+  show.value = true
+}
+
+function edit(row) {
+  Object.assign(form, {
+    name: row.name,
+    title: row.title,
+    category: row.category,
+    due_date: row.due_date,
+    amount: row.amount,
+    cash_effect: row.cash_effect || 'Outflow',
+    status: row.status,
+    notes: row.notes || '',
+  })
+  show.value = true
+}
+
+function syncToast(summary) {
+  const parts = []
+  if (summary.marked_paid) parts.push(`${summary.marked_paid} voucher(s) paid`)
+  if (summary.amount_updated) parts.push(`${summary.amount_updated} amount(s) updated`)
+  if (summary.cancelled) parts.push(`${summary.cancelled} cancelled`)
+  if (summary.reopened) parts.push(`${summary.reopened} reopened`)
+  return parts.length ? parts.join(' · ') : 'Plan already in sync with books'
+}
+
+async function syncFromBooks() {
+  syncing.value = true
+  try {
+    const res = await call('lyqd.api.spa.sync_upcoming_from_books', {
+      company: company.current,
+    })
+    if (!res.enabled) {
+      toast.error(res.message || 'ERPNext integration is off')
+      return
+    }
+    toast.success(syncToast(res.summary || {}))
+    cache.invalidatePlanRelated(company.current)
+    await reloadAll()
+  } catch (e) {
+    toast.error(e.messages?.[0] || e.message || 'Sync failed')
+  } finally {
+    syncing.value = false
+  }
+}
+
+async function refreshRow(row) {
+  refreshing.value = row.name
+  try {
+    const res = await call('lyqd.api.spa.refresh_upcoming_from_books', { name: row.name })
+    const labels = {
+      marked_paid: 'Marked paid from books (voucher cleared)',
+      amount_updated: 'Amount updated from books',
+      cancelled: 'Cancelled — missing/cancelled in books',
+      reopened: 'Back on plan from books',
+      unchanged: 'Already up to date',
+      skipped: 'Skipped',
+    }
+    toast.success(labels[res.action] || `Synced (${res.action})`)
+    cache.invalidatePlanRelated(company.current)
+    await reloadAll()
+  } catch (e) {
+    toast.error(e.messages?.[0] || e.message || 'Refresh failed')
+  } finally {
+    refreshing.value = null
+  }
+}
+
+async function markPaid(row) {
+  marking.value = row.name
+  try {
+    await call('lyqd.api.spa.save_upcoming_payment', {
+      doc: {
+        name: row.name,
+        company: company.current,
+        title: row.title,
+        category: row.category,
+        due_date: row.due_date,
+        amount: row.amount,
+        status: 'Paid',
+        notes: row.notes,
+      },
+    })
+    toast.success('Marked paid')
+    cache.invalidatePlanRelated(company.current)
+    await loadPlan(true)
+  } catch (e) {
+    toast.error(e.messages?.[0] || e.message || 'Could not mark paid')
+  } finally {
+    marking.value = null
+  }
+}
+
+function openAccept(item) {
+  Object.assign(acceptForm, {
+    source_doctype: item.source_doctype,
+    source_name: item.source_name,
+    account: item.account || '',
+    title: item.title || '',
+    category: item.category || 'Other',
+    due_date: item.due_date || todayStr(),
+    amount: item.amount || 0,
+    cash_effect: item.cash_effect || 'Outflow',
+  })
+  showAccept.value = true
+}
+
+async function confirmAccept() {
+  if (!acceptForm.due_date) {
+    toast.error('Due date is required')
+    return
+  }
+  accepting.value = acceptForm.source_name
+  try {
+    await call('lyqd.api.spa.accept_upcoming_recommendation', {
+      company: company.current,
+      source_doctype: acceptForm.source_doctype,
+      source_name: acceptForm.source_name,
+      amount: acceptForm.amount,
+      title: acceptForm.title,
+      category: acceptForm.category,
+      due_date: acceptForm.due_date,
+      account: acceptForm.account || null,
+      cash_effect: acceptForm.cash_effect || 'Outflow',
+    })
+    toast.success('Added to plan')
+    showAccept.value = false
+    cache.invalidatePlanRelated(company.current)
+    await reloadAll()
+  } catch (e) {
+    toast.error(e.messages?.[0] || e.message || 'Accept failed')
+  } finally {
+    accepting.value = null
+  }
+}
+
+async function save() {
+  saving.value = true
+  try {
+    await call('lyqd.api.spa.save_upcoming_payment', {
+      doc: {
+        name: form.name,
+        company: company.current,
+        title: form.title,
+        category: form.category,
+        due_date: form.due_date,
+        amount: form.amount,
+        cash_effect: form.cash_effect || 'Outflow',
+        status: form.status || 'Planned',
+        notes: form.notes,
+      },
+    })
+    toast.success('Saved')
+    show.value = false
+    cache.invalidatePlanRelated(company.current)
+    await loadPlan(true)
+  } catch (e) {
+    toast.error(e.messages?.[0] || e.message || 'Save failed')
+  } finally {
+    saving.value = false
+  }
+}
+</script>

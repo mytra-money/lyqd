@@ -1,0 +1,640 @@
+"""Fetch liability recommendations from a remote ERPNext site (API Key + Secret).
+
+Uses stock Frappe REST only — no custom app required on the remote site.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+import frappe
+from frappe.utils import flt, getdate, today
+
+from lyqd.recommendations.settings import get_remote_credentials
+
+
+def _client_from_cred(url: str, api_key: str, api_secret: str):
+	from frappe.frappeclient import FrappeClient
+
+	return FrappeClient(
+		(url or "").strip().rstrip("/"),
+		api_key=(api_key or "").strip(),
+		api_secret=api_secret,
+		verify=True,
+	)
+
+
+def get_remote_client():
+	cred = get_remote_credentials()
+	client = _client_from_cred(cred["url"], cred["api_key"], cred["api_secret"])
+	company = cred.get("company") or resolve_remote_company(client)
+	# Remember resolved company so Integrations UI stays in sync
+	if company and company != cred.get("company") and frappe.db.exists("DocType", "LYQD ERPNext Settings"):
+		doc = frappe.get_single("LYQD ERPNext Settings")
+		if not (doc.remote_company or "").strip():
+			doc.remote_company = company
+			doc.save(ignore_permissions=True)
+	return client, company
+
+
+def list_remote_companies(client) -> list[str]:
+	rows = client.get_list("Company", fields=["name"], order_by="name asc", limit_page_length=100) or []
+	return [r["name"] for r in rows if r.get("name")]
+
+
+def resolve_remote_company(client, preferred: str | None = None) -> str:
+	"""Pick a company on the remote site (preferred → Global Defaults → sole company → first)."""
+	preferred = (preferred or "").strip() or None
+	companies = list_remote_companies(client)
+	if not companies:
+		frappe.throw(frappe._("No Company found on the remote ERPNext site."))
+	if preferred and preferred in companies:
+		return preferred
+	try:
+		gd = client.get_doc("Global Defaults", "Global Defaults") or {}
+		default = (gd.get("default_company") or "").strip()
+		if default and default in companies:
+			return default
+	except Exception:
+		pass
+	return companies[0]
+
+
+def probe_remote_connection(
+	url: str,
+	api_key: str,
+	api_secret: str,
+	company: str | None = None,
+) -> dict[str, Any]:
+	"""
+	Validate draft credentials and return remote companies.
+
+	Does not require LYQD ERPNext Settings to be saved first.
+	"""
+	url = (url or "").strip().rstrip("/")
+	api_key = (api_key or "").strip()
+	if not url or not api_key or not api_secret:
+		frappe.throw(frappe._("Site URL, API Key, and API Secret are required."))
+	if not url.startswith("http://") and not url.startswith("https://"):
+		frappe.throw(frappe._("Site URL must start with http:// or https://"))
+
+	client = _client_from_cred(url, api_key, api_secret)
+	companies = list_remote_companies(client)
+	if not companies:
+		frappe.throw(frappe._("Connected, but no Company was found on that site."))
+	resolved = resolve_remote_company(client, company)
+	# Confirm books access for the resolved company
+	client.get_list("Account", filters={"company": resolved}, fields=["name"], limit_page_length=1)
+	return {
+		"ok": True,
+		"company": resolved,
+		"companies": companies,
+		"message": frappe._("Connected. Using company {0} on the remote site.").format(resolved),
+	}
+
+
+def test_remote_connection() -> dict[str, Any]:
+	client, company = get_remote_client()
+	companies = list_remote_companies(client)
+	if company not in companies:
+		frappe.throw(
+			frappe._("Connected, but company {0} was not found on the remote site.").format(company)
+		)
+	client.get_list("Account", filters={"company": company}, fields=["name"], limit_page_length=1)
+	return {
+		"ok": True,
+		"company": company,
+		"companies": companies,
+		"message": frappe._("Connected to remote ERPNext as company {0}.").format(company),
+	}
+
+
+def list_remote_recommendation_accounts(
+	root_types: list[str] | None = None,
+	account_type: str | None = None,
+	search: str | None = None,
+	limit: int = 500,
+) -> list[dict[str, Any]]:
+	"""Leaf accounts from the configured remote ERPNext (for Integrations picker)."""
+	client, company = get_remote_client()
+	root_types = root_types or ["Liability", "Expense", "Asset"]
+	filters: dict[str, Any] = {
+		"company": company,
+		"is_group": 0,
+		"root_type": ["in", root_types],
+	}
+	if account_type and account_type != "All":
+		filters["account_type"] = account_type
+
+	rows = (
+		client.get_list(
+			"Account",
+			filters=filters,
+			fields=["name", "account_name", "account_type", "root_type"],
+			order_by="root_type asc, account_name asc",
+			limit_page_length=min(int(limit or 500), 500),
+		)
+		or []
+	)
+	q = (search or "").strip().lower()
+	if q:
+		rows = [
+			r
+			for r in rows
+			if q in (r.get("name") or "").lower()
+			or q in (r.get("account_name") or "").lower()
+			or q in (r.get("account_type") or "").lower()
+		]
+	for r in rows:
+		r["source"] = "Other Site"
+		r["books_company"] = company
+	return rows
+
+
+def _classify_accounts(client, account_names: list[str]) -> tuple[list[str], list[str]]:
+	if not account_names:
+		return [], []
+	meta = client.get_list(
+		"Account",
+		filters={"name": ["in", account_names]},
+		fields=["name", "account_type", "root_type", "account_name"],
+		limit_page_length=len(account_names) + 5,
+	) or []
+	payable, other = [], []
+	for a in meta:
+		if a.get("account_type") == "Payable":
+			payable.append(a["name"])
+		else:
+			other.append(a["name"])
+	# Keep unconfigured names as other so user selection still tries GL
+	known = {a["name"] for a in meta}
+	for name in account_names:
+		if name not in known:
+			other.append(name)
+	return payable, other
+
+
+def _account_meta_map(client, account_names: list[str]) -> dict[str, dict]:
+	if not account_names:
+		return {}
+	rows = (
+		client.get_list(
+			"Account",
+			filters={"name": ["in", account_names]},
+			fields=["name", "account_name", "account_type", "root_type"],
+			limit_page_length=len(account_names) + 5,
+		)
+		or []
+	)
+	return {r["name"]: r for r in rows}
+
+
+def _pi_voucher_rows(
+	client,
+	company: str,
+	payable_accounts: list[str],
+	as_of: str,
+) -> list[dict[str, Any]]:
+	"""Open Purchase Invoices (stock fields) — no custom remote method."""
+	if not payable_accounts:
+		return []
+	filters: dict[str, Any] = {
+		"company": company,
+		"docstatus": 1,
+		"outstanding_amount": [">", 0.01],
+		"posting_date": ["<=", as_of],
+		"credit_to": ["in", payable_accounts],
+	}
+	rows = (
+		client.get_list(
+			"Purchase Invoice",
+			filters=filters,
+			fields=[
+				"name",
+				"supplier",
+				"supplier_name",
+				"outstanding_amount",
+				"due_date",
+				"credit_to",
+				"bill_no",
+			],
+			order_by="due_date asc",
+			limit_page_length=100,
+		)
+		or []
+	)
+	out = []
+	for row in rows:
+		amount = flt(row.get("outstanding_amount"))
+		if amount <= 0.01:
+			continue
+		party = row.get("supplier_name") or row.get("supplier")
+		title = f"Purchase Invoice {row['name']}"
+		if party:
+			title = f"{party} · {title}"
+		out.append(
+			{
+				"grain": "voucher",
+				"account": row.get("credit_to"),
+				"source_doctype": "Purchase Invoice",
+				"source_name": row["name"],
+				"title": title[:140],
+				"category": "Vendor",
+				"due_date": str(row["due_date"]) if row.get("due_date") else None,
+				"amount": amount,
+				"cash_effect": "Outflow",
+				"party_type": "Supplier",
+				"party": row.get("supplier"),
+				"engine": "remote_purchase_invoice",
+			}
+		)
+	return out
+
+
+def _sum_gl_for_account(
+	client, company: str, account: str, as_of: str, *, as_asset: bool = False
+) -> float:
+	"""Net GL from remote. Liability = credit−debit; Asset setoff = debit−credit."""
+	total_credit = 0.0
+	total_debit = 0.0
+	start = 0
+	page = 200
+	while True:
+		rows = (
+			client.get_list(
+				"GL Entry",
+				filters={
+					"company": company,
+					"account": account,
+					"is_cancelled": 0,
+					"posting_date": ["<=", as_of],
+				},
+				fields=["debit", "credit"],
+				limit_start=start,
+				limit_page_length=page,
+			)
+			or []
+		)
+		if not rows:
+			break
+		for r in rows:
+			total_debit += flt(r.get("debit"))
+			total_credit += flt(r.get("credit"))
+		if len(rows) < page:
+			break
+		start += page
+		if start > 5000:
+			break
+	if as_asset:
+		return flt(total_debit - total_credit)
+	return flt(total_credit - total_debit)
+
+
+def _gl_voucher_rows(
+	client,
+	company: str,
+	accounts: list[str],
+	as_of: str,
+	meta: dict[str, dict],
+) -> list[dict[str, Any]]:
+	"""Open liability by against_voucher from remote GL Entry."""
+	if not accounts:
+		return []
+	# Pull recent GL lines and aggregate in LYQD
+	start = 0
+	page = 200
+	buckets: dict[tuple, float] = {}
+	bucket_meta: dict[tuple, dict] = {}
+	while True:
+		rows = (
+			client.get_list(
+				"GL Entry",
+				filters={
+					"company": company,
+					"account": ["in", accounts],
+					"is_cancelled": 0,
+					"posting_date": ["<=", as_of],
+				},
+				fields=[
+					"account",
+					"voucher_type",
+					"voucher_no",
+					"against_voucher_type",
+					"against_voucher",
+					"party_type",
+					"party",
+					"debit",
+					"credit",
+				],
+				limit_start=start,
+				limit_page_length=page,
+			)
+			or []
+		)
+		if not rows:
+			break
+		for r in rows:
+			src_dt = r.get("against_voucher_type") or r.get("voucher_type")
+			src_dn = r.get("against_voucher") or r.get("voucher_no")
+			if not src_dt or not src_dn:
+				continue
+			key = (r.get("account"), src_dt, src_dn, r.get("party_type"), r.get("party"))
+			buckets[key] = buckets.get(key, 0.0) + flt(r.get("credit")) - flt(r.get("debit"))
+			bucket_meta[key] = r
+		if len(rows) < page:
+			break
+		start += page
+		if start > 8000:
+			break
+
+	out = []
+	for key, raw_amt in buckets.items():
+		account, src_dt, src_dn, party_type, party = key
+		root = (meta.get(account) or {}).get("root_type") or "Liability"
+		if root == "Asset":
+			amount = -flt(raw_amt)
+			cash_effect = "Setoff"
+		else:
+			amount = flt(raw_amt)
+			cash_effect = "Outflow"
+		if amount <= 0.01:
+			continue
+		acc_name = (meta.get(account) or {}).get("account_name") or account
+		title = f"{acc_name} · {src_dt} {src_dn}"
+		category = "Vendor" if src_dt == "Purchase Receipt" else "Tax"
+		out.append(
+			{
+				"grain": "voucher",
+				"account": account,
+				"source_doctype": src_dt,
+				"source_name": src_dn,
+				"title": title[:140],
+				"category": category,
+				"due_date": None,
+				"amount": amount,
+				"cash_effect": cash_effect,
+				"party_type": party_type,
+				"party": party,
+				"engine": "remote_gl",
+			}
+		)
+	return _exclude_billed_purchase_receipts_remote(client, out)
+
+
+def _account_balance_rows(
+	client,
+	company: str,
+	accounts: list[str],
+	as_of: str,
+	meta: dict[str, dict],
+) -> list[dict[str, Any]]:
+	out = []
+	for account in accounts:
+		root = (meta.get(account) or {}).get("root_type")
+		acc_name = (meta.get(account) or {}).get("account_name") or account
+		if root == "Asset":
+			amount = _sum_gl_for_account(client, company, account, as_of, as_asset=True)
+			cash_effect = "Setoff"
+			category = "Tax"
+			title = f"{acc_name} · setoff (asset)"
+		else:
+			amount = _sum_gl_for_account(client, company, account, as_of)
+			cash_effect = "Outflow"
+			category = "Tax" if root == "Liability" else "Other"
+			title = f"{acc_name} · GL balance"
+		if amount <= 0.01:
+			continue
+		out.append(
+			{
+				"grain": "account",
+				"account": account,
+				"source_doctype": "Account",
+				"source_name": account,
+				"title": title[:140],
+				"category": category,
+				"due_date": None,
+				"amount": amount,
+				"cash_effect": cash_effect,
+				"party_type": None,
+				"party": None,
+				"engine": "remote_gl_balance",
+			}
+		)
+	return out
+
+
+def fetch_remote_recommendation_items(
+	account_rows: list[dict[str, Any]],
+	as_of: str | None = None,
+) -> list[dict[str, Any]]:
+	"""Build recommendation items from remote site for configured accounts."""
+	client, company = get_remote_client()
+	as_of = str(getdate(as_of or today()))
+	all_accounts = [r.get("account") for r in account_rows if r.get("account")]
+	meta = _account_meta_map(client, all_accounts)
+
+	ref_accounts = [r["account"] for r in account_rows if r.get("show_references")]
+	bal_accounts = [r["account"] for r in account_rows if not r.get("show_references")]
+
+	payable_ref, other_ref = _classify_accounts(client, ref_accounts)
+
+	items: list[dict[str, Any]] = []
+	items.extend(_pi_voucher_rows(client, company, payable_ref, as_of))
+	items.extend(_gl_voucher_rows(client, company, other_ref, as_of, meta))
+	items.extend(_account_balance_rows(client, company, bal_accounts, as_of, meta))
+	return _exclude_billed_purchase_receipts_remote(client, items)
+
+
+def remote_purchase_receipts_with_invoice(client, names: list[str]) -> set[str]:
+	"""Remote PRs that already have a Purchase Invoice (per_billed or PI Item link)."""
+	names = [n for n in names if n]
+	if not names:
+		return set()
+	billed: set[str] = set()
+	# Chunk to stay within API filter limits
+	for i in range(0, len(names), 50):
+		chunk = names[i : i + 50]
+		try:
+			rows = (
+				client.get_list(
+					"Purchase Receipt",
+					filters={"name": ["in", chunk], "per_billed": [">", 0]},
+					fields=["name"],
+					limit_page_length=len(chunk) + 5,
+				)
+				or []
+			)
+			billed.update(r["name"] for r in rows if r.get("name"))
+		except Exception:
+			# Fallback: check each PR's per_billed
+			for name in chunk:
+				try:
+					one = client.get_list(
+						"Purchase Receipt",
+						filters={"name": name},
+						fields=["name", "per_billed"],
+						limit_page_length=1,
+					) or []
+					if one and flt(one[0].get("per_billed")) > 0:
+						billed.add(name)
+				except Exception:
+					pass
+		try:
+			pi_rows = (
+				client.get_list(
+					"Purchase Invoice Item",
+					filters={"purchase_receipt": ["in", chunk], "docstatus": 1},
+					fields=["purchase_receipt"],
+					limit_page_length=500,
+				)
+				or []
+			)
+			billed.update(r["purchase_receipt"] for r in pi_rows if r.get("purchase_receipt"))
+		except Exception:
+			pass
+	return billed
+
+
+def _exclude_billed_purchase_receipts_remote(client, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+	pr_names = [
+		i.get("source_name")
+		for i in items
+		if i.get("source_doctype") == "Purchase Receipt" and i.get("source_name")
+	]
+	if not pr_names:
+		return items
+	billed = remote_purchase_receipts_with_invoice(client, pr_names)
+	if not billed:
+		return items
+	return [
+		i
+		for i in items
+		if not (
+			i.get("source_doctype") == "Purchase Receipt" and i.get("source_name") in billed
+		)
+	]
+
+
+def remote_purchase_invoice_outstanding(name: str) -> dict[str, Any]:
+	client, _company = get_remote_client()
+	rows = client.get_list(
+		"Purchase Invoice",
+		filters={"name": name},
+		fields=["name", "outstanding_amount", "docstatus", "due_date", "status"],
+		limit_page_length=1,
+	)
+	if not rows:
+		return {"ok": True, "grain": "voucher", "amount": 0.0, "cleared": True, "missing": True}
+	inv = rows[0]
+	if int(inv.get("docstatus") or 0) == 2:
+		return {
+			"ok": True,
+			"grain": "voucher",
+			"amount": 0.0,
+			"cleared": True,
+			"cancelled": True,
+			"due_date": inv.get("due_date"),
+		}
+	amt = flt(inv.get("outstanding_amount"))
+	return {
+		"ok": True,
+		"grain": "voucher",
+		"amount": amt,
+		"cleared": amt <= 0.01,
+		"due_date": inv.get("due_date"),
+	}
+
+
+def remote_account_balance(account: str, as_of: str | None = None) -> dict[str, Any]:
+	client, company = get_remote_client()
+	as_of = str(getdate(as_of or today()))
+	meta = _account_meta_map(client, [account])
+	root = (meta.get(account) or {}).get("root_type")
+	amt = _sum_gl_for_account(client, company, account, as_of, as_asset=(root == "Asset"))
+	return {
+		"ok": True,
+		"grain": "account",
+		"amount": amt,
+		"cleared": amt <= 0.01,
+		"due_date": None,
+	}
+
+
+def remote_gl_voucher_outstanding(
+	source_doctype: str,
+	source_name: str,
+	account: str | None = None,
+	as_of: str | None = None,
+) -> dict[str, Any]:
+	client, company = get_remote_client()
+	as_of = str(getdate(as_of or today()))
+
+	if source_doctype == "Purchase Receipt":
+		if source_name in remote_purchase_receipts_with_invoice(client, [source_name]):
+			return {
+				"ok": True,
+				"grain": "voucher",
+				"amount": 0.0,
+				"cleared": True,
+				"billed": True,
+			}
+		# Missing PR on remote → treat as cleared
+		exists = client.get_list(
+			"Purchase Receipt",
+			filters={"name": source_name},
+			fields=["name"],
+			limit_page_length=1,
+		)
+		if not exists:
+			return {
+				"ok": True,
+				"grain": "voucher",
+				"amount": 0.0,
+				"cleared": True,
+				"missing": True,
+			}
+
+	filters: dict[str, Any] = {
+		"company": company,
+		"is_cancelled": 0,
+		"posting_date": ["<=", as_of],
+	}
+	if account:
+		filters["account"] = account
+	# Prefer against_voucher match; also try voucher_no
+	rows = (
+		client.get_list(
+			"GL Entry",
+			filters={
+				**filters,
+				"against_voucher_type": source_doctype,
+				"against_voucher": source_name,
+			},
+			fields=["debit", "credit"],
+			limit_page_length=500,
+		)
+		or []
+	)
+	if not rows:
+		rows = (
+			client.get_list(
+				"GL Entry",
+				filters={
+					**filters,
+					"voucher_type": source_doctype,
+					"voucher_no": source_name,
+				},
+				fields=["debit", "credit"],
+				limit_page_length=500,
+			)
+			or []
+		)
+	amt = sum(flt(r.get("credit")) - flt(r.get("debit")) for r in rows)
+	amt = max(flt(amt), 0.0)
+	return {
+		"ok": True,
+		"grain": "voucher",
+		"amount": amt,
+		"cleared": amt <= 0.01,
+		"engine": "remote_gl",
+	}

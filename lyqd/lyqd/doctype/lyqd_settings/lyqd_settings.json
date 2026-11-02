@@ -1,0 +1,147 @@
+{
+ "actions": [],
+ "creation": "2026-10-29 12:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "investment_account_section",
+  "investment_account_activated",
+  "investment_account_crm_lead",
+  "investment_account_requested_on",
+  "defaults_section",
+  "default_forecast_horizon_days",
+  "default_min_liquidity_buffer",
+  "column_break_defaults",
+  "default_restricted_cash",
+  "legacy_section",
+  "tagline",
+  "display_scheme_label",
+  "display_scheme_isin",
+  "enable_draft_proposals"
+ ],
+ "fields": [
+  {
+   "fieldname": "investment_account_section",
+   "fieldtype": "Section Break",
+   "label": "Investment Account"
+  },
+  {
+   "default": "0",
+   "description": "When on, LYQD can create investment instructions from a confirmed request. When off, request opening an account via CRM first.",
+   "fieldname": "investment_account_activated",
+   "fieldtype": "Check",
+   "label": "Investment Account Activated"
+  },
+  {
+   "description": "CRM Lead created when requesting to open an investment account.",
+   "fieldname": "investment_account_crm_lead",
+   "fieldtype": "Data",
+   "label": "CRM Lead",
+   "read_only": 1
+  },
+  {
+   "fieldname": "investment_account_requested_on",
+   "fieldtype": "Datetime",
+   "label": "Account Requested On",
+   "read_only": 1
+  },
+  {
+   "fieldname": "defaults_section",
+   "fieldtype": "Section Break",
+   "label": "Defaults (used when no Policy exists)"
+  },
+  {
+   "default": "7",
+   "fieldname": "default_forecast_horizon_days",
+   "fieldtype": "Int",
+   "label": "Default Forecast Horizon (Days)",
+   "non_negative": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "default_min_liquidity_buffer",
+   "fieldtype": "Currency",
+   "label": "Default Min Liquidity Buffer"
+  },
+  {
+   "fieldname": "column_break_defaults",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "fieldname": "default_restricted_cash",
+   "fieldtype": "Currency",
+   "label": "Default Restricted Cash"
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "legacy_section",
+   "fieldtype": "Section Break",
+   "label": "Legacy (internal)"
+  },
+  {
+   "default": "Make idle cash work smarter.",
+   "fieldname": "tagline",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Tagline"
+  },
+  {
+   "default": "ICICI Prudential Liquid Fund",
+   "fieldname": "display_scheme_label",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Display Scheme Label"
+  },
+  {
+   "default": "INF109K01VQ1",
+   "fieldname": "display_scheme_isin",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Display Scheme ISIN"
+  },
+  {
+   "default": "1",
+   "fieldname": "enable_draft_proposals",
+   "fieldtype": "Check",
+   "hidden": 1,
+   "label": "Enable Draft Proposals"
+  }
+ ],
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-11-02 16:20:00.000000",
+ "modified_by": "Administrator",
+ "module": "LYQD",
+ "name": "LYQD Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "LYQD Manager",
+   "write": 1
+  },
+  {
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "LYQD User"
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

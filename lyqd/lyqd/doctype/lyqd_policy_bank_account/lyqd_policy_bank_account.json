@@ -1,0 +1,47 @@
+{
+ "actions": [],
+ "creation": "2026-10-29 15:30:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "bank_account",
+  "account_name",
+  "gl_account"
+ ],
+ "fields": [
+  {
+   "description": "Bank Account name from the configured ERPNext source (this site or remote).",
+   "fieldname": "bank_account",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Bank Account",
+   "reqd": 1
+  },
+  {
+   "fieldname": "account_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Account Name",
+   "read_only": 1
+  },
+  {
+   "fieldname": "gl_account",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "GL Account",
+   "read_only": 1
+  }
+ ],
+ "istable": 1,
+ "links": [],
+ "modified": "2026-11-02 15:30:00.000000",
+ "modified_by": "Administrator",
+ "module": "LYQD",
+ "name": "LYQD Policy Bank Account",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

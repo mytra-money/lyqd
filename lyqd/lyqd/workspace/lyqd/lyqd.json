@@ -1,0 +1,183 @@
+{
+ "app": "lyqd",
+ "charts": [],
+ "content": "[{\"id\":\"lyqdhdr01\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\">LYQD by Mytra</span><br><span class=\\\"text-muted\\\">Make idle cash work smarter.</span>\",\"col\":12}},{\"id\":\"lyqdnc01\",\"type\":\"number_card\",\"data\":{\"number_card_name\":\"LYQD Bank Cash\",\"col\":3}},{\"id\":\"lyqdnc02\",\"type\":\"number_card\",\"data\":{\"number_card_name\":\"LYQD Upcoming (7d)\",\"col\":3}},{\"id\":\"lyqdnc03\",\"type\":\"number_card\",\"data\":{\"number_card_name\":\"LYQD Liquidity Buffer\",\"col\":3}},{\"id\":\"lyqdnc04\",\"type\":\"number_card\",\"data\":{\"number_card_name\":\"LYQD Investable Surplus\",\"col\":3}},{\"id\":\"lyqdsc01\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"New Upcoming Payment\",\"col\":4}},{\"id\":\"lyqdsc02\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Update Cash\",\"col\":4}},{\"id\":\"lyqdsc03\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Open Surplus\",\"col\":4}},{\"id\":\"lyqdcard1\",\"type\":\"card\",\"data\":{\"card_name\":\"Cash & Forecast\",\"col\":4}},{\"id\":\"lyqdcard2\",\"type\":\"card\",\"data\":{\"card_name\":\"Surplus\",\"col\":4}},{\"id\":\"lyqdcard3\",\"type\":\"card\",\"data\":{\"card_name\":\"Setup\",\"col\":4}}]",
+ "creation": "2026-10-29 12:00:00.000000",
+ "custom_blocks": [],
+ "docstatus": 0,
+ "doctype": "Workspace",
+ "for_user": "",
+ "hide_custom": 0,
+ "icon": "wallet",
+ "idx": 0,
+ "indicator_color": "green",
+ "is_hidden": 0,
+ "label": "LYQD",
+ "links": [
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Cash & Forecast",
+   "link_count": 3,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Upcoming Payment",
+   "link_count": 0,
+   "link_to": "LYQD Upcoming Payment",
+   "link_type": "DocType",
+   "onboard": 1,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Cash Snapshot",
+   "link_count": 0,
+   "link_to": "LYQD Cash Snapshot",
+   "link_type": "DocType",
+   "onboard": 1,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Bank Account",
+   "link_count": 0,
+   "link_to": "Bank Account",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Surplus",
+   "link_count": 3,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Surplus Explanation",
+   "link_count": 0,
+   "link_to": "lyqd-surplus",
+   "link_type": "Page",
+   "onboard": 1,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Surplus Run",
+   "link_count": 0,
+   "link_to": "LYQD Surplus Run",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Draft Proposal",
+   "link_count": 0,
+   "link_to": "LYQD Draft Proposal",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Setup",
+   "link_count": 2,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "LYQD Policy",
+   "link_count": 0,
+   "link_to": "LYQD Policy",
+   "link_type": "DocType",
+   "onboard": 1,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "LYQD Settings",
+   "link_count": 0,
+   "link_to": "LYQD Settings",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  }
+ ],
+ "modified": "2026-10-29 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "LYQD",
+ "name": "LYQD",
+ "number_cards": [
+  {
+   "label": "LYQD Bank Cash",
+   "number_card_name": "LYQD Bank Cash"
+  },
+  {
+   "label": "LYQD Upcoming (7d)",
+   "number_card_name": "LYQD Upcoming (7d)"
+  },
+  {
+   "label": "LYQD Liquidity Buffer",
+   "number_card_name": "LYQD Liquidity Buffer"
+  },
+  {
+   "label": "LYQD Investable Surplus",
+   "number_card_name": "LYQD Investable Surplus"
+  }
+ ],
+ "owner": "Administrator",
+ "parent_page": "",
+ "public": 1,
+ "quick_lists": [],
+ "roles": [
+  {
+   "role": "System Manager"
+  },
+  {
+   "role": "LYQD Manager"
+  },
+  {
+   "role": "LYQD User"
+  }
+ ],
+ "sequence_id": 1.0,
+ "shortcuts": [
+  {
+   "color": "Blue",
+   "doc_view": "List",
+   "label": "New Upcoming Payment",
+   "link_to": "LYQD Upcoming Payment",
+   "type": "DocType"
+  },
+  {
+   "color": "Green",
+   "doc_view": "List",
+   "label": "Update Cash",
+   "link_to": "LYQD Cash Snapshot",
+   "type": "DocType"
+  },
+  {
+   "color": "Orange",
+   "label": "Open Surplus",
+   "link_to": "lyqd-surplus",
+   "type": "Page"
+  }
+ ],
+ "title": "LYQD"
+}

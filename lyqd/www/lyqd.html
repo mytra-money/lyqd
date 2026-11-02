@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html class="h-full" lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/assets/lyqd/images/lyqd-logo.svg" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no"
+    />
+    <title>LYQD by Mytra</title>
+    <script type="module" crossorigin src="/assets/lyqd/frontend/assets/index-DaumXdT-.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/lyqd/frontend/assets/index-qjqg6GXX.css">
+  </head>
+  <body class="h-full font-sans antialiased text-gray-900">
+    <div id="app" class="h-full"></div>
+  
+          <script>
+              {% for key in boot %}
+              window["{{ key }}"] = {{ boot[key] | tojson }};
+              {% endfor %}
+          </script>
+          </body>
+          
+</html>

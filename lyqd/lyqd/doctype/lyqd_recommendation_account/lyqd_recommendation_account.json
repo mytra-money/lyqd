@@ -1,0 +1,44 @@
+{
+ "actions": [],
+ "creation": "2026-10-29 16:50:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": ["account", "account_name", "show_references"],
+ "fields": [
+  {
+   "description": "Account name from the configured ERPNext source (this site or remote). Stored as Data so Other Site accounts need not exist locally.",
+   "fieldname": "account",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Account",
+   "reqd": 1
+  },
+  {
+   "fieldname": "account_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Account Name",
+   "read_only": 1
+  },
+  {
+   "default": "1",
+   "description": "On: recommend open vouchers / references (PI, JE, tax provisions). Off: recommend the account's net GL liability as one line.",
+   "fieldname": "show_references",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Voucher references"
+  }
+ ],
+ "istable": 1,
+ "links": [],
+ "modified": "2026-11-02 15:15:00.000000",
+ "modified_by": "Administrator",
+ "module": "LYQD",
+ "name": "LYQD Recommendation Account",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

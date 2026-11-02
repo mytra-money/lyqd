@@ -1,0 +1,218 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "naming_series:",
+ "creation": "2026-10-29 13:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "naming_series",
+  "company",
+  "status",
+  "column_break_top",
+  "scheme",
+  "scheme_isin",
+  "scheme_label",
+  "amounts_section",
+  "amount",
+  "as_of",
+  "horizon_days",
+  "column_break_amounts",
+  "proposal",
+  "surplus_run",
+  "workflow_section",
+  "approved_by",
+  "approved_on",
+  "notes",
+  "execution_section",
+  "external_submit_status",
+  "external_submit_message"
+ ],
+ "fields": [
+  {
+   "default": "LYQD-INS-.YYYY.-.#####",
+   "fieldname": "naming_series",
+   "fieldtype": "Select",
+   "hidden": 1,
+   "label": "Series",
+   "options": "LYQD-INS-.YYYY.-.#####",
+   "reqd": 1
+  },
+  {
+   "fieldname": "company",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Company",
+   "options": "Company",
+   "reqd": 1
+  },
+  {
+   "default": "Draft",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "Draft\nApproved\nReady\nCancelled",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_top",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "scheme",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Scheme",
+   "options": "LYQD Scheme",
+   "reqd": 1
+  },
+  {
+   "fetch_from": "scheme.isin",
+   "fieldname": "scheme_isin",
+   "fieldtype": "Data",
+   "label": "ISIN",
+   "read_only": 1
+  },
+  {
+   "fetch_from": "scheme.scheme_name",
+   "fieldname": "scheme_label",
+   "fieldtype": "Data",
+   "label": "Scheme Label",
+   "read_only": 1
+  },
+  {
+   "fieldname": "amounts_section",
+   "fieldtype": "Section Break",
+   "label": "Amount"
+  },
+  {
+   "fieldname": "amount",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Amount",
+   "non_negative": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "as_of",
+   "fieldtype": "Date",
+   "label": "As Of"
+  },
+  {
+   "default": "7",
+   "fieldname": "horizon_days",
+   "fieldtype": "Int",
+   "label": "Horizon (Days)"
+  },
+  {
+   "fieldname": "column_break_amounts",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "proposal",
+   "fieldtype": "Link",
+   "label": "Draft Proposal",
+   "options": "LYQD Draft Proposal"
+  },
+  {
+   "fieldname": "surplus_run",
+   "fieldtype": "Link",
+   "label": "Surplus Run",
+   "options": "LYQD Surplus Run"
+  },
+  {
+   "fieldname": "workflow_section",
+   "fieldtype": "Section Break",
+   "label": "Workflow"
+  },
+  {
+   "fieldname": "approved_by",
+   "fieldtype": "Link",
+   "label": "Approved By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "approved_on",
+   "fieldtype": "Datetime",
+   "label": "Approved On",
+   "read_only": 1
+  },
+  {
+   "fieldname": "notes",
+   "fieldtype": "Small Text",
+   "label": "Notes"
+  },
+  {
+   "fieldname": "execution_section",
+   "fieldtype": "Section Break",
+   "label": "External Execution (PoC stub)"
+  },
+  {
+   "default": "Not Submitted",
+   "description": "BSE / Mytra HTTP submit is disabled in this PoC.",
+   "fieldname": "external_submit_status",
+   "fieldtype": "Select",
+   "label": "External Submit Status",
+   "options": "Not Submitted\nBlocked (PoC)\nStubbed",
+   "read_only": 1
+  },
+  {
+   "default": "Submit to Mytra / BSE is not available in this PoC.",
+   "fieldname": "external_submit_message",
+   "fieldtype": "Small Text",
+   "label": "External Submit Message",
+   "read_only": 1
+  }
+ ],
+ "links": [],
+ "modified": "2026-10-29 13:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "LYQD",
+ "name": "LYQD Investment Instruction",
+ "naming_rule": "By \"Naming Series\" field",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "LYQD Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "LYQD User",
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

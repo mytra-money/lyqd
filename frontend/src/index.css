@@ -1,0 +1,13 @@
+@import 'frappe-ui/style.css';
+
+html,
+body,
+#app {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background-color: theme('colors.white');
+  color: theme('colors.gray.900');
+}

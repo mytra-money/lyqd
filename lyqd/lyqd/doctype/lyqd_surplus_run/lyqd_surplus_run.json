@@ -1,0 +1,192 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "naming_series:",
+ "creation": "2026-10-29 12:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "naming_series",
+  "company",
+  "policy",
+  "column_break_top",
+  "as_of",
+  "horizon_days",
+  "horizon_end",
+  "is_shortfall",
+  "totals_section",
+  "bank_cash",
+  "upcoming_total",
+  "column_break_totals",
+  "min_liquidity_buffer",
+  "restricted_cash",
+  "investable_surplus",
+  "explanation_section",
+  "lines",
+  "explanation_json"
+ ],
+ "fields": [
+  {
+   "default": "LYQD-SR-.YYYY.-.#####",
+   "fieldname": "naming_series",
+   "fieldtype": "Select",
+   "hidden": 1,
+   "label": "Series",
+   "options": "LYQD-SR-.YYYY.-.#####",
+   "reqd": 1
+  },
+  {
+   "fieldname": "company",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Company",
+   "options": "Company",
+   "reqd": 1
+  },
+  {
+   "fieldname": "policy",
+   "fieldtype": "Link",
+   "label": "Policy",
+   "options": "LYQD Policy",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_top",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "as_of",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "As Of",
+   "reqd": 1
+  },
+  {
+   "fieldname": "horizon_days",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Horizon (Days)",
+   "reqd": 1
+  },
+  {
+   "fieldname": "horizon_end",
+   "fieldtype": "Date",
+   "label": "Horizon End",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "is_shortfall",
+   "fieldtype": "Check",
+   "label": "Is Shortfall",
+   "read_only": 1
+  },
+  {
+   "fieldname": "totals_section",
+   "fieldtype": "Section Break",
+   "label": "Totals"
+  },
+  {
+   "fieldname": "bank_cash",
+   "fieldtype": "Currency",
+   "label": "Bank Cash",
+   "read_only": 1
+  },
+  {
+   "fieldname": "upcoming_total",
+   "fieldtype": "Currency",
+   "label": "Upcoming Reserved",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_totals",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "min_liquidity_buffer",
+   "fieldtype": "Currency",
+   "label": "Min Liquidity Buffer",
+   "read_only": 1
+  },
+  {
+   "fieldname": "restricted_cash",
+   "fieldtype": "Currency",
+   "label": "Restricted Cash",
+   "read_only": 1
+  },
+  {
+   "bold": 1,
+   "fieldname": "investable_surplus",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Investable Surplus",
+   "read_only": 1
+  },
+  {
+   "fieldname": "explanation_section",
+   "fieldtype": "Section Break",
+   "label": "Explanation"
+  },
+  {
+   "fieldname": "lines",
+   "fieldtype": "Table",
+   "label": "Explanation Lines",
+   "options": "LYQD Surplus Run Line"
+  },
+  {
+   "fieldname": "explanation_json",
+   "fieldtype": "Code",
+   "label": "Explanation JSON",
+   "options": "JSON",
+   "read_only": 1
+  }
+ ],
+ "links": [],
+ "modified": "2026-10-29 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "LYQD",
+ "name": "LYQD Surplus Run",
+ "naming_rule": "By \"Naming Series\" field",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "LYQD Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "LYQD User",
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

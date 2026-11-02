@@ -1,0 +1,202 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "naming_series:",
+ "creation": "2026-10-29 12:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "naming_series",
+  "company",
+  "status",
+  "column_break_top",
+  "as_of",
+  "horizon_days",
+  "surplus_run",
+  "amounts_section",
+  "bank_cash",
+  "upcoming_total",
+  "column_break_amounts",
+  "min_liquidity_buffer",
+  "restricted_cash",
+  "proposed_amount",
+  "scheme_section",
+  "display_scheme_label",
+  "display_scheme_isin",
+  "notes",
+  "freeze_section",
+  "frozen_explanation"
+ ],
+ "fields": [
+  {
+   "default": "LYQD-PROP-.YYYY.-.#####",
+   "fieldname": "naming_series",
+   "fieldtype": "Select",
+   "hidden": 1,
+   "label": "Series",
+   "options": "LYQD-PROP-.YYYY.-.#####",
+   "reqd": 1
+  },
+  {
+   "fieldname": "company",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Company",
+   "options": "Company",
+   "reqd": 1
+  },
+  {
+   "default": "Draft",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Status",
+   "options": "Draft\nFrozen\nCancelled",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_top",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "as_of",
+   "fieldtype": "Date",
+   "label": "As Of",
+   "reqd": 1
+  },
+  {
+   "default": "7",
+   "fieldname": "horizon_days",
+   "fieldtype": "Int",
+   "label": "Horizon (Days)",
+   "reqd": 1
+  },
+  {
+   "fieldname": "surplus_run",
+   "fieldtype": "Link",
+   "label": "Surplus Run",
+   "options": "LYQD Surplus Run"
+  },
+  {
+   "fieldname": "amounts_section",
+   "fieldtype": "Section Break",
+   "label": "Frozen Numbers"
+  },
+  {
+   "fieldname": "bank_cash",
+   "fieldtype": "Currency",
+   "label": "Bank Cash",
+   "read_only": 1
+  },
+  {
+   "fieldname": "upcoming_total",
+   "fieldtype": "Currency",
+   "label": "Upcoming Reserved",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_amounts",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "min_liquidity_buffer",
+   "fieldtype": "Currency",
+   "label": "Min Liquidity Buffer",
+   "read_only": 1
+  },
+  {
+   "fieldname": "restricted_cash",
+   "fieldtype": "Currency",
+   "label": "Restricted Cash",
+   "read_only": 1
+  },
+  {
+   "bold": 1,
+   "fieldname": "proposed_amount",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Proposed Invest Amount",
+   "read_only": 1
+  },
+  {
+   "fieldname": "scheme_section",
+   "fieldtype": "Section Break",
+   "label": "Display Scheme (no execution)"
+  },
+  {
+   "fieldname": "display_scheme_label",
+   "fieldtype": "Data",
+   "label": "Scheme Label",
+   "read_only": 1
+  },
+  {
+   "fieldname": "display_scheme_isin",
+   "fieldtype": "Data",
+   "label": "ISIN",
+   "read_only": 1
+  },
+  {
+   "fieldname": "notes",
+   "fieldtype": "Small Text",
+   "label": "Notes"
+  },
+  {
+   "fieldname": "freeze_section",
+   "fieldtype": "Section Break",
+   "label": "Snapshot"
+  },
+  {
+   "fieldname": "frozen_explanation",
+   "fieldtype": "Code",
+   "label": "Frozen Explanation JSON",
+   "options": "JSON",
+   "read_only": 1
+  }
+ ],
+ "links": [],
+ "modified": "2026-10-29 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "LYQD",
+ "name": "LYQD Draft Proposal",
+ "naming_rule": "By \"Naming Series\" field",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "LYQD Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "LYQD User"
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

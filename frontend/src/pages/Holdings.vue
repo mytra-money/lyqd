@@ -2,7 +2,7 @@
   <div>
     <PageHeader
       title="Portfolio"
-      subtitle="Liquid fund positions (manual / simulated in beta — no allotment API)."
+      subtitle="Liquid fund holdings for the company. Units update after confirmed allotment."
     >
       <Button variant="solid" @click="openNew">Add holding</Button>
     </PageHeader>
@@ -108,7 +108,7 @@ function openNew() {
   form.source = 'Simulated'
   form.units = 0
   form.amount = 0
-  form.notes = 'PoC simulated holding'
+  form.notes = ''
   show.value = true
 }
 

@@ -2,7 +2,7 @@
   <div>
     <PageHeader
       title="Scheme catalogue"
-      subtitle="Display-only PoC schemes. No BSE catalogue fetch."
+      subtitle="Eligible schemes for investment instructions. Catalogue is maintained here."
     >
       <Button variant="outline" :loading="seeding" @click="seedDefaults">Ensure defaults</Button>
       <Button variant="solid" @click="openNew">Add scheme</Button>

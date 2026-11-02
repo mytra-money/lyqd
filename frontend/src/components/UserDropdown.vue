@@ -33,7 +33,7 @@ import { useSessionStore } from '@/stores/session'
 const company = useCompanyStore()
 const session = useSessionStore()
 const router = useRouter()
-const logoUrl = '/assets/lyqd/images/lyqd.svg'
+const logoUrl = '/assets/lyqd/images/lyqd.svg?v=3'
 
 const dropdownOptions = computed(() => [
   {

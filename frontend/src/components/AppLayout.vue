@@ -49,7 +49,6 @@
           <div class="text-sm font-medium text-gray-900">LYQD</div>
         </div>
         <div class="hidden items-center gap-2 text-sm text-gray-600 md:flex">
-          <Badge theme="orange" variant="subtle">Beta</Badge>
           <span>{{ pageHint }}</span>
         </div>
         <div class="flex items-center gap-2">
@@ -112,6 +111,6 @@ const pageHint = computed(() => {
     '/settings': 'Banks, policy, ERPNext integration',
   }
   if (route.path.startsWith('/runs')) return 'Saved free-cash calculation snapshot'
-  return map[route.path] || 'Corporate surplus cash · beta'
+  return map[route.path] || 'Corporate surplus cash'
 })
 </script>

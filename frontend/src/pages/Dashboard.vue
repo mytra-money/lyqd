@@ -2,7 +2,7 @@
   <div>
     <PageHeader
       title="Cash position"
-      :subtitle="`As of ${d?.as_of || '—'} · ${company.current || '—'} · morning view (beta)`"
+      :subtitle="`As of ${d?.as_of || '—'} · ${company.current || '—'}`"
     >
       <HorizonPicker v-model="horizon" />
       <Button variant="outline" :loading="loading" @click="refresh">Refresh</Button>

@@ -102,7 +102,7 @@ def get_morning_mis(company: str | None = None, horizon_days: int | str = 7) -> 
 		order_by="as_on desc",
 		limit=50,
 	)
-	# Latest amount per scheme (simple PoC)
+	# Latest amount per scheme
 	latest_by_scheme: dict[str, dict] = {}
 	for h in holdings:
 		if h.scheme not in latest_by_scheme:
@@ -885,7 +885,7 @@ def create_instruction_from_proposal(proposal: str) -> dict:
 			"horizon_days": prop.horizon_days,
 			"proposal": prop.name,
 			"surplus_run": prop.surplus_run,
-			"notes": "Created from investment request (PoC — no external submit)",
+			"notes": "Created from investment request",
 		}
 	)
 	doc.insert()
@@ -917,7 +917,7 @@ def instruction_action(name: str, action: str) -> dict:
 
 @frappe.whitelist()
 def ensure_default_schemes() -> list[dict]:
-	"""Idempotent PoC catalogue (display-only)."""
+	"""Idempotent default scheme catalogue."""
 	defaults = [
 		{
 			"isin": "INF109K01VQ1",
@@ -926,7 +926,7 @@ def ensure_default_schemes() -> list[dict]:
 			"category": "Liquid",
 			"is_default": 1,
 			"is_active": 1,
-			"description": "PoC default scheme — display only; no BSE fetch.",
+			"description": "Default liquid scheme for investment instructions.",
 		},
 		{
 			"isin": "INF204KB1ZH5",
@@ -935,7 +935,7 @@ def ensure_default_schemes() -> list[dict]:
 			"category": "Liquid",
 			"is_default": 0,
 			"is_active": 1,
-			"description": "PoC catalogue scheme — display only.",
+			"description": "Catalogue scheme for investment instructions.",
 		},
 	]
 	out = []

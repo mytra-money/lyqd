@@ -2,16 +2,15 @@
   <div>
     <PageHeader
       title="Investment instructions"
-      subtitle="Local Draft → Approved / Ready workflow. Submit to Mytra / BSE is disabled in this PoC."
+      subtitle="Draft → Approved → Ready. External exchange submit is handled on Mytra’s transaction site."
     >
-      <Badge theme="orange">Execution stubbed</Badge>
     </PageHeader>
 
     <div
       class="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
     >
-      External submit stays on Mytra’s closed-source site. You can approve and mark Ready here; the
-      Submit action only records a blocked PoC status.
+      Approve and mark Ready here. Final submit to the exchange runs through Mytra’s mutual fund
+      workflow — not from this app directly in the soft launch.
     </div>
 
     <div class="rounded-md border border-gray-200 bg-white p-4 overflow-x-auto">
@@ -92,7 +91,7 @@ async function runMethod(name, method) {
   try {
     const result = await call('lyqd.api.spa.instruction_action', { name, action })
     if (action === 'submit') {
-      toast.error(result?.message || 'Submit blocked in PoC')
+      toast.error(result?.message || 'External submit is not available from this app yet')
     } else {
       toast.success('Updated')
     }

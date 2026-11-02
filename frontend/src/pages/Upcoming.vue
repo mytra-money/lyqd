@@ -216,7 +216,7 @@
                 class="max-w-[11rem] shrink-0 rounded-md border border-gray-200 bg-white px-2 py-1.5 text-sm text-gray-700"
                 :title="recAccount === 'all' ? 'All accounts' : recAccount"
               >
-                <option value="all">Account</option>
+                <option value="all">All accounts</option>
                 <option v-for="a in suggestionAccounts" :key="a" :value="a">
                   {{ shortAccount(a) }}
                 </option>
@@ -494,9 +494,11 @@ function dueLabel(due) {
 }
 
 function shortAccount(account) {
+  // ERPNext leaf accounts are "{Account Name} - {Company Abbr}" — show the name, not the abbr.
   if (!account) return ''
   const parts = String(account).split(' - ')
-  return parts.length > 1 ? parts.slice(1).join(' - ') : account
+  if (parts.length < 2) return String(account)
+  return parts.slice(0, -1).join(' - ')
 }
 
 const allRows = computed(() => cache.getPlan(company.current) || [])
@@ -546,9 +548,14 @@ const plannedCategories = computed(() => {
 })
 
 const suggestionAccounts = computed(() => {
+  // Prefer accounts that currently have open suggestions; fall back to configured list.
   const fromItems = allRecs.value.map((i) => i.account).filter(Boolean)
-  const fromCfg = recsPayload.value?.account_filter || []
-  return [...new Set([...fromCfg, ...fromItems])].sort()
+  const accounts = fromItems.length
+    ? [...new Set(fromItems)]
+    : [...new Set((recsPayload.value?.account_filter || []).filter(Boolean))]
+  return accounts.sort((a, b) =>
+    shortAccount(a).localeCompare(shortAccount(b), undefined, { sensitivity: 'base' }),
+  )
 })
 
 const plannedFiltersActive = computed(

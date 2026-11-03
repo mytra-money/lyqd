@@ -6,12 +6,14 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
+  "details_tab",
   "company_name",
   "abbr",
   "is_active",
-  "column_break_top",
+  "column_break_details",
   "default_currency",
-  "books_section",
+  "notes",
+  "books_tab",
   "books_source",
   "books_company",
   "section_remote",
@@ -19,13 +21,27 @@
   "column_break_remote",
   "remote_api_key",
   "remote_api_secret",
-  "investment_section",
+  "policy_tab",
+  "min_liquidity_buffer",
+  "restricted_cash",
+  "column_break_policy",
+  "default_forecast_horizon_days",
+  "bank_accounts_section",
+  "eligible_bank_accounts",
+  "recommendations_tab",
+  "enable_purchase_invoice_recommendations",
+  "recommendation_accounts",
+  "investment_tab",
   "investment_account_activated",
   "investment_account_requested_on",
-  "investment_account_crm_lead",
-  "notes"
+  "investment_account_crm_lead"
  ],
  "fields": [
+  {
+   "fieldname": "details_tab",
+   "fieldtype": "Tab Break",
+   "label": "Details"
+  },
   {
    "fieldname": "company_name",
    "fieldtype": "Data",
@@ -48,7 +64,7 @@
    "label": "Is Active"
   },
   {
-   "fieldname": "column_break_top",
+   "fieldname": "column_break_details",
    "fieldtype": "Column Break"
   },
   {
@@ -58,9 +74,14 @@
    "label": "Currency"
   },
   {
-   "fieldname": "books_section",
-   "fieldtype": "Section Break",
-   "label": "Books (ERPNext)"
+   "fieldname": "notes",
+   "fieldtype": "Small Text",
+   "label": "Notes"
+  },
+  {
+   "fieldname": "books_tab",
+   "fieldtype": "Tab Break",
+   "label": "Books"
   },
   {
    "default": "Manual",
@@ -111,9 +132,74 @@
    "mandatory_depends_on": "eval:doc.books_source==\"Other Site\""
   },
   {
-   "fieldname": "investment_section",
+   "fieldname": "policy_tab",
+   "fieldtype": "Tab Break",
+   "label": "Policy"
+  },
+  {
+   "default": "0",
+   "description": "Cash that must remain uninvested regardless of upcoming payments.",
+   "fieldname": "min_liquidity_buffer",
+   "fieldtype": "Currency",
+   "label": "Min Liquidity Buffer",
+   "non_negative": 1
+  },
+  {
+   "default": "0",
+   "description": "Earmarked / ring-fenced cash excluded from investable surplus.",
+   "fieldname": "restricted_cash",
+   "fieldtype": "Currency",
+   "label": "Restricted Cash",
+   "non_negative": 1
+  },
+  {
+   "fieldname": "column_break_policy",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "7",
+   "description": "Days ahead to reserve Planned Upcoming Payments.",
+   "fieldname": "default_forecast_horizon_days",
+   "fieldtype": "Int",
+   "label": "Default Forecast Horizon (Days)",
+   "non_negative": 1
+  },
+  {
+   "fieldname": "bank_accounts_section",
    "fieldtype": "Section Break",
-   "label": "Investment Account"
+   "label": "Eligible Bank Accounts"
+  },
+  {
+   "description": "Bank accounts included when computing investable surplus. Leave empty to use all company bank accounts.",
+   "fieldname": "eligible_bank_accounts",
+   "fieldtype": "Table",
+   "label": "Eligible Bank Accounts",
+   "options": "LYQD Policy Bank Account"
+  },
+  {
+   "fieldname": "recommendations_tab",
+   "fieldtype": "Tab Break",
+   "label": "Recommendations"
+  },
+  {
+   "default": "1",
+   "description": "Suggest unpaid Purchase Invoices and other books rows as commitment candidates.",
+   "fieldname": "enable_purchase_invoice_recommendations",
+   "fieldtype": "Check",
+   "label": "Recommend from books"
+  },
+  {
+   "depends_on": "enable_purchase_invoice_recommendations",
+   "description": "Account names from the configured books source. Leave empty to recommend from all accounts.",
+   "fieldname": "recommendation_accounts",
+   "fieldtype": "Table",
+   "label": "Recommendation Accounts",
+   "options": "LYQD Recommendation Account"
+  },
+  {
+   "fieldname": "investment_tab",
+   "fieldtype": "Tab Break",
+   "label": "Investment"
   },
   {
    "default": "0",
@@ -135,15 +221,10 @@
    "hidden": 1,
    "label": "CRM Lead",
    "read_only": 1
-  },
-  {
-   "fieldname": "notes",
-   "fieldtype": "Small Text",
-   "label": "Notes"
   }
  ],
  "links": [],
- "modified": "2026-11-03 14:30:00.000000",
+ "modified": "2026-11-03 15:30:00.000000",
  "modified_by": "Administrator",
  "module": "LYQD",
  "name": "LYQD Company",

@@ -45,10 +45,11 @@
    "reqd": 1
   },
   {
+   "description": "LYQD Company whose Policy tab produced this run.",
    "fieldname": "policy",
    "fieldtype": "Link",
-   "label": "Policy",
-   "options": "LYQD Policy",
+   "label": "Company Policy",
+   "options": "LYQD Company",
    "read_only": 1
   },
   {

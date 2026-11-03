@@ -66,28 +66,57 @@ class SurplusResult:
 
 
 def get_policy(company: str) -> frappe._dict:
-	"""Load LYQD Policy for company, falling back to LYQD Settings defaults."""
-	policy = frappe.db.get_value(
-		"LYQD Policy",
-		{"company": company},
-		[
-			"name",
-			"min_liquidity_buffer",
-			"restricted_cash",
-			"default_forecast_horizon_days",
-		],
-		as_dict=True,
-	)
-	if policy:
-		return policy
+	"""Load Policy fields from LYQD Company, falling back to LYQD Settings defaults."""
+	if company and frappe.db.exists("LYQD Company", company):
+		row = frappe.db.get_value(
+			"LYQD Company",
+			company,
+			[
+				"name",
+				"min_liquidity_buffer",
+				"restricted_cash",
+				"default_forecast_horizon_days",
+			],
+			as_dict=True,
+		)
+		if row:
+			# Defaults when company exists but policy scalars were never set
+			if row.default_forecast_horizon_days is None:
+				settings = (
+					frappe.get_single("LYQD Settings")
+					if frappe.db.exists("DocType", "LYQD Settings")
+					else None
+				)
+				row.min_liquidity_buffer = flt(
+					row.min_liquidity_buffer
+					if row.min_liquidity_buffer is not None
+					else (settings.get("default_min_liquidity_buffer") if settings else 0)
+				)
+				row.restricted_cash = flt(
+					row.restricted_cash
+					if row.restricted_cash is not None
+					else (settings.get("default_restricted_cash") if settings else 0)
+				)
+				row.default_forecast_horizon_days = int(
+					(settings.get("default_forecast_horizon_days") if settings else None) or 7
+				)
+			return row
 
-	settings = frappe.get_single("LYQD Settings")
+	settings = (
+		frappe.get_single("LYQD Settings")
+		if frappe.db.exists("DocType", "LYQD Settings")
+		else None
+	)
 	return frappe._dict(
 		{
 			"name": None,
-			"min_liquidity_buffer": flt(settings.get("default_min_liquidity_buffer")),
-			"restricted_cash": flt(settings.get("default_restricted_cash")),
-			"default_forecast_horizon_days": int(settings.get("default_forecast_horizon_days") or 7),
+			"min_liquidity_buffer": flt(
+				settings.get("default_min_liquidity_buffer") if settings else 0
+			),
+			"restricted_cash": flt(settings.get("default_restricted_cash") if settings else 0),
+			"default_forecast_horizon_days": int(
+				(settings.get("default_forecast_horizon_days") if settings else None) or 7
+			),
 		}
 	)
 
@@ -245,7 +274,7 @@ def compute_surplus(
 				label="Minimum liquidity buffer (policy)",
 				amount=min_liquidity_buffer,
 				sign="-",
-				ref_doctype="LYQD Policy",
+				ref_doctype="LYQD Company",
 				ref_name=policy.get("name"),
 			)
 		)
@@ -257,7 +286,7 @@ def compute_surplus(
 				label="Restricted cash (policy)",
 				amount=restricted_cash,
 				sign="-",
-				ref_doctype="LYQD Policy",
+				ref_doctype="LYQD Company",
 				ref_name=policy.get("name"),
 			)
 		)

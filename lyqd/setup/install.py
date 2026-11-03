@@ -15,7 +15,7 @@ LYQD_ROLES = (
 	{
 		"role_name": "LYQD Manager",
 		"desk_access": 1,
-		"description": "Edit LYQD Policy and draft proposals; full surplus workflow",
+		"description": "Edit LYQD Company (policy, books) and draft proposals; full surplus workflow",
 	},
 )
 

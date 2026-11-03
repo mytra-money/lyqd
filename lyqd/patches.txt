@@ -7,3 +7,4 @@ lyqd.patches.v1_0.merge_erpnext_settings_into_lyqd_settings
 lyqd.patches.v1_0.delete_lyqd_bank_balance
 lyqd.patches.v1_0.migrate_to_lyqd_company_and_banks
 lyqd.patches.v1_0.migrate_settings_to_lyqd_company
+lyqd.patches.v1_0.fold_policy_into_lyqd_company

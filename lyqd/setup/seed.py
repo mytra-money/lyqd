@@ -115,24 +115,14 @@ def ensure_cash(company: str, bank_account: str) -> str:
 
 
 def ensure_policy(company: str) -> str:
-	name = frappe.db.get_value("LYQD Policy", {"company": company})
-	payload = {
-		"company": company,
-		"min_liquidity_buffer": BUFFER,
-		"restricted_cash": RESTRICTED,
-		"default_forecast_horizon_days": 7,
-		"is_active": 1,
-		"notes": "Demo policy — 7d default horizon; dashboard also shows 30d",
-	}
-	if name:
-		doc = frappe.get_doc("LYQD Policy", name)
-		doc.update(payload)
-		doc.flags.ignore_permissions = True
-		doc.save()
-		return doc.name
-
-	doc = frappe.get_doc({"doctype": "LYQD Policy", **payload})
-	doc.insert(ignore_permissions=True)
+	"""Set Policy tab fields on the LYQD Company (demo buffers / horizon)."""
+	doc = frappe.get_doc("LYQD Company", company)
+	doc.min_liquidity_buffer = BUFFER
+	doc.restricted_cash = RESTRICTED
+	doc.default_forecast_horizon_days = 7
+	doc.notes = doc.notes or "Demo policy — 7d default horizon; dashboard also shows 30d"
+	doc.flags.ignore_permissions = True
+	doc.save()
 	return doc.name
 
 

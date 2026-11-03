@@ -9,13 +9,12 @@ from frappe.utils import flt, getdate, today
 
 
 def get_policy_selected_bank_accounts(company: str) -> list[str] | None:
-	"""Return selected LYQD Bank Account names from Policy, or None if all apply."""
-	policy_name = frappe.db.get_value("LYQD Policy", {"company": company})
-	if not policy_name:
+	"""Return selected LYQD Bank Account names from Company Policy tab, or None if all apply."""
+	if not company or not frappe.db.exists("LYQD Company", company):
 		return None
 	selected = frappe.get_all(
 		"LYQD Policy Bank Account",
-		filters={"parent": policy_name, "parenttype": "LYQD Policy"},
+		filters={"parent": company, "parenttype": "LYQD Company"},
 		pluck="bank_account",
 	)
 	return selected or None
@@ -277,16 +276,14 @@ def create_company_bank_account(
 	if flt(opening_balance):
 		set_statement_balance(ba_name, flt(opening_balance), today())
 
-	if add_to_policy:
-		policy_name = frappe.db.get_value("LYQD Policy", {"company": company})
-		if policy_name:
-			policy = frappe.get_doc("LYQD Policy", policy_name)
-			if ba_name not in [r.bank_account for r in policy.eligible_bank_accounts]:
-				policy.append(
-					"eligible_bank_accounts",
-					{"bank_account": ba_name, "account_name": account_name},
-				)
-				policy.save(ignore_permissions=True)
+	if add_to_policy and frappe.db.exists("LYQD Company", company):
+		co = frappe.get_doc("LYQD Company", company)
+		if ba_name not in [r.bank_account for r in (co.eligible_bank_accounts or [])]:
+			co.append(
+				"eligible_bank_accounts",
+				{"bank_account": ba_name, "account_name": account_name},
+			)
+			co.save(ignore_permissions=True)
 
 	return {
 		"bank_account": ba_name,

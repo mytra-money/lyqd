@@ -69,15 +69,27 @@ free_cash =
 
 Overdue Planned commitments are included. Cash masters are **LYQD Company**, **LYQD Bank Account**, and **LYQD Bank Balance** — no Chart of Accounts dependency.
 
+### LYQD Company (one record per cash entity)
+
+**LYQD Company** is the SaaS cash-management entity. Desk form uses tabs:
+
+| Tab | Contents |
+|-----|----------|
+| **Details** | Name, abbr, currency, active, notes |
+| **Books** | Manual / This Site / Other Site; remote URL + API key & secret; books company name |
+| **Policy** | Liquidity buffer, restricted cash, forecast horizon, eligible bank accounts |
+| **Recommendations** | From-books account list (Data names that must match the books COA when connected) |
+| **Investment** | Ops-owned activation stamp (SPA cannot toggle) |
+
+Multi-company on one site is supported: each company has its own books connector and investment activation. Site-wide defaults (horizon / buffers when a company is new) live on **LYQD Settings**.
+
 ### ERPNext integration (optional)
 
-Same idea as Frappe CRM: LYQD installs without ERPNext. Books are opt-in on **LYQD Settings**:
+Same idea as Frappe CRM: LYQD installs without ERPNext. Books are opt-in **per LYQD Company** (Books tab / SPA Settings → Integrations):
 
 - **This site** — local ERPNext must be installed; Payment Ledger + GL recommendations.
 - **Other site** — remote ERPNext via URL + API key & secret (read-only). Banks are mirrored into **LYQD Bank Account**; balances stay on this site.
 - **Manual** — enter statement balances in LYQD with no books connector.
-
-**LYQD Company** is the cash-management entity (Policy, plan, invest). It can map to a books company name via `books_company` / `books_source`. **LYQD Policy** (one per LYQD Company) holds buffer, horizon, eligible banks, and recommendation account names (Data — must match books COA when connected).
 
 **Sync plan from books** updates Accepted rows from voucher outstanding or GL balances. Purchase Receipt suggestions exclude receipts that already have a Purchase Invoice.
 
@@ -85,11 +97,11 @@ Asset accounts (for example Input GST) can be added as **Setoff** so they reduce
 
 ### Investment account
 
-Instructions require an activated investment account. Activation is **ops-owned** (Desk / internal site) — the SPA only shows status when active; otherwise **Request activation** opens the Mytra WhatsApp chatbot (CRM Lead is created by the bot, not the SPA).
+Instructions require an activated investment account **on that LYQD Company**. Activation is **ops-owned** (Desk / internal site) — the SPA only shows status when active; otherwise **Request activation** opens the Mytra WhatsApp chatbot (CRM Lead is created by the bot, not the SPA).
 
 Schemes and holdings come from **Mytra**. A Ready instruction is submitted to Mytra (creates a transaction); `mytra_transaction_ref` is used to track status and to show the same activity under Portfolio → transaction history. Position cards sync from Mytra balances — there is no manual “Add holding” in the SPA.
 
-**Soft-launch Portfolio demo** — while Mytra HTTP is not wired, `lyqd.mytra.portfolio` can return SAMPLE positions/transactions when **Investment Account Activated** is on (or `lyqd_demo_portfolio` site config is `1`). Disable with:
+**Soft-launch Portfolio demo** — while Mytra HTTP is not wired, `lyqd.mytra.portfolio` can return SAMPLE positions/transactions when any active LYQD Company has **Investment Account Activated** (or `lyqd_demo_portfolio` site config is `1`). Disable with:
 
 ```bash
 bench --site <site> set-config lyqd_demo_portfolio 0
@@ -98,13 +110,13 @@ bench --site <site> set-config lyqd_demo_portfolio 0
 Optional instruction bridge rows (matching sample Mytra refs):
 
 ```bash
-bench --site <site> execute lyqd.setup.seed_portfolio_demo.seed_portfolio_demo --kwargs "{'company': '<Company>'}"
+bench --site <site> execute lyqd.setup.seed_portfolio_demo.seed_portfolio_demo --kwargs "{'company': '<LYQD Company>'}"
 ```
 
 ### Key features
 
 - **Explainable free cash** — Same formula on Cash position and Free cash, with horizon control.
-- **Company policy** — Eligible banks, liquidity buffer, restricted cash, and recommendation accounts.
+- **Company policy** — Eligible banks, liquidity buffer, restricted cash, and recommendation accounts on the company itself.
 - **Commitments plan** — Manual payments plus accept-from-books; Outflow vs Setoff cash effects.
 - **Investment workflow** — Draft → confirmed request → instruction (approve / ready).
 - **Session caching** — Cash position and Commitments keep recent data across navigation; Refresh forces a reload. Book sync is explicit, not on every page open.
@@ -148,7 +160,7 @@ bench --site <site> execute lyqd.setup.seed.seed_demo
 | Role | Access |
 |------|--------|
 | LYQD User | Commitments, free cash, view invest and portfolio |
-| LYQD Manager | Policy, banks, confirm invest, schemes |
+| LYQD Manager | Company (policy / books), banks, confirm invest |
 | System Manager | All |
 
 ## Tests

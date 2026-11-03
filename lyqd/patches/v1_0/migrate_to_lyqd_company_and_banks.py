@@ -197,14 +197,18 @@ def _copy_balances(erpnext_ba: str, lyqd_ba: str):
 
 
 def _remap_policy_row(company: str, old_ba: str, new_ba: str):
-	policy_name = frappe.db.get_value("LYQD Policy", {"company": company})
-	if not policy_name:
-		return
-	frappe.db.sql(
-		"""
-		update `tabLYQD Policy Bank Account`
-		set bank_account = %s
-		where parent = %s and bank_account = %s
-		""",
-		(new_ba, policy_name, old_ba),
-	)
+	# Prefer Company parent (post fold); fall back to legacy Policy parent
+	parents = [company]
+	if frappe.db.exists("DocType", "LYQD Policy"):
+		policy_name = frappe.db.get_value("LYQD Policy", {"company": company})
+		if policy_name:
+			parents.append(policy_name)
+	for parent in parents:
+		frappe.db.sql(
+			"""
+			update `tabLYQD Policy Bank Account`
+			set bank_account = %s
+			where parent = %s and bank_account = %s
+			""",
+			(new_ba, parent, old_ba),
+		)

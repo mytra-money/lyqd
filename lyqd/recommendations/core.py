@@ -23,12 +23,11 @@ from lyqd.recommendations.settings import (
 
 
 def get_recommendation_account_rows(company: str) -> list[dict[str, Any]]:
-	policy_name = frappe.db.get_value("LYQD Policy", {"company": company})
-	if not policy_name:
+	if not company or not frappe.db.exists("LYQD Company", company):
 		return []
 	return frappe.get_all(
 		"LYQD Recommendation Account",
-		filters={"parent": policy_name, "parenttype": "LYQD Policy"},
+		filters={"parent": company, "parenttype": "LYQD Company"},
 		fields=["account", "account_name", "show_references"],
 	)
 

@@ -224,13 +224,12 @@ def _seed_local_balance_from_remote_read(client, local_bank_account: str, remote
 
 
 def _remap_policy_bank_accounts(local_company: str) -> None:
-	"""Map policy rows that still store remote bank names → local LYQD Bank Account names."""
-	policy_name = frappe.db.get_value("LYQD Policy", {"company": local_company})
-	if not policy_name:
+	"""Map company Policy rows that still store remote bank names → local LYQD Bank Account names."""
+	if not frappe.db.exists("LYQD Company", local_company):
 		return
-	policy = frappe.get_doc("LYQD Policy", policy_name)
+	co = frappe.get_doc("LYQD Company", local_company)
 	changed = False
-	for row in policy.eligible_bank_accounts or []:
+	for row in co.eligible_bank_accounts or []:
 		ba = (row.bank_account or "").strip()
 		if not ba:
 			continue
@@ -246,7 +245,7 @@ def _remap_policy_bank_accounts(local_company: str) -> None:
 			row.account_name = frappe.db.get_value("LYQD Bank Account", mapped, "account_name")
 			changed = True
 	if changed:
-		policy.save(ignore_permissions=True)
+		co.save(ignore_permissions=True)
 
 
 def ensure_bank_account_custom_fields() -> None:

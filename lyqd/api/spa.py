@@ -103,28 +103,6 @@ def create_lyqd_company(
 	if remote_api_secret:
 		doc.remote_api_secret = remote_api_secret
 	doc.insert()
-
-	if not frappe.db.exists("LYQD Policy", {"company": doc.name}):
-		frappe.get_doc(
-			{
-				"doctype": "LYQD Policy",
-				"company": doc.name,
-				"is_active": 1,
-				"min_liquidity_buffer": frappe.db.get_single_value(
-					"LYQD Settings", "default_min_liquidity_buffer"
-				)
-				or 0,
-				"restricted_cash": frappe.db.get_single_value(
-					"LYQD Settings", "default_restricted_cash"
-				)
-				or 0,
-				"default_forecast_horizon_days": frappe.db.get_single_value(
-					"LYQD Settings", "default_forecast_horizon_days"
-				)
-				or 7,
-			}
-		).insert()
-
 	return doc.as_dict()
 
 
@@ -318,22 +296,18 @@ def create_surplus_bank_account(
 
 @frappe.whitelist()
 def get_or_create_policy(company: str | None = None) -> dict:
+	"""Return Policy tab fields for a LYQD Company (creates company defaults if needed)."""
 	company = company or _default_company()
-	name = frappe.db.get_value("LYQD Policy", {"company": company})
-	if name:
-		return frappe.get_doc("LYQD Policy", name).as_dict()
-	settings = frappe.get_single("LYQD Settings")
-	doc = frappe.get_doc(
-		{
-			"doctype": "LYQD Policy",
-			"company": company,
-			"min_liquidity_buffer": flt(settings.default_min_liquidity_buffer),
-			"restricted_cash": flt(settings.default_restricted_cash),
-			"default_forecast_horizon_days": int(settings.default_forecast_horizon_days or 7),
-			"is_active": 1,
-		}
-	)
-	doc.insert()
+	if not company:
+		frappe.throw(_("Company is required"))
+	if not frappe.db.exists("LYQD Company", company):
+		create_lyqd_company(company_name=company)
+	doc = frappe.get_doc("LYQD Company", company)
+	# Ensure policy scalars have settings defaults when blank
+	if doc.default_forecast_horizon_days is None or doc.min_liquidity_buffer is None:
+		doc.apply_settings_defaults()
+		doc.save(ignore_permissions=True)
+		doc.reload()
 	return doc.as_dict()
 
 
@@ -356,63 +330,42 @@ def _set_policy_child_rows(doc, fieldname: str, key: str, rows: list, extra_keys
 
 @frappe.whitelist()
 def save_policy(doc: str | dict) -> dict:
+	"""Persist Policy / Recommendations tab fields onto the LYQD Company."""
 	if isinstance(doc, str):
 		doc = frappe.parse_json(doc)
-	name = doc.get("name")
-	bank_rows = doc.get("eligible_bank_accounts") or []
-	rec_rows = doc.get("recommendation_accounts") or []
-	scalar = {
-		"min_liquidity_buffer": doc.get("min_liquidity_buffer"),
-		"restricted_cash": doc.get("restricted_cash"),
-		"default_forecast_horizon_days": doc.get("default_forecast_horizon_days"),
-		"is_active": doc.get("is_active", 1),
-		"notes": doc.get("notes"),
-		"enable_purchase_invoice_recommendations": doc.get(
-			"enable_purchase_invoice_recommendations", 1
-		),
-	}
-	if name and frappe.db.exists("LYQD Policy", name):
-		existing = frappe.get_doc("LYQD Policy", name)
-		existing.update(scalar)
-		_set_policy_child_rows(
-			existing,
-			"eligible_bank_accounts",
-			"bank_account",
-			bank_rows,
-			extra_keys=["account_name", "gl_account"],
-		)
-		_set_policy_child_rows(
-			existing,
-			"recommendation_accounts",
-			"account",
-			rec_rows,
-			extra_keys=["account_name", "show_references"],
-		)
-		existing.save()
-		return existing.as_dict()
+	company = (doc.get("company") or doc.get("name") or _default_company() or "").strip()
+	if not company:
+		frappe.throw(_("Company is required"))
+	if not frappe.db.exists("LYQD Company", company):
+		create_lyqd_company(company_name=company)
 
-	payload = {
-		k: v
-		for k, v in doc.items()
-		if k not in ("eligible_bank_accounts", "recommendation_accounts")
-	}
-	created = frappe.get_doc({"doctype": "LYQD Policy", **payload})
+	existing = frappe.get_doc("LYQD Company", company)
+	existing.min_liquidity_buffer = doc.get("min_liquidity_buffer")
+	existing.restricted_cash = doc.get("restricted_cash")
+	existing.default_forecast_horizon_days = doc.get("default_forecast_horizon_days")
+	if "notes" in doc:
+		existing.notes = doc.get("notes")
+	if "is_active" in doc and doc.get("is_active") is not None:
+		existing.is_active = doc.get("is_active")
+	existing.enable_purchase_invoice_recommendations = doc.get(
+		"enable_purchase_invoice_recommendations", 1
+	)
 	_set_policy_child_rows(
-		created,
+		existing,
 		"eligible_bank_accounts",
 		"bank_account",
-		bank_rows,
+		doc.get("eligible_bank_accounts") or [],
 		extra_keys=["account_name", "gl_account"],
 	)
 	_set_policy_child_rows(
-		created,
+		existing,
 		"recommendation_accounts",
 		"account",
-		rec_rows,
+		doc.get("recommendation_accounts") or [],
 		extra_keys=["account_name", "show_references"],
 	)
-	created.insert()
-	return created.as_dict()
+	existing.save()
+	return existing.as_dict()
 
 
 @frappe.whitelist()

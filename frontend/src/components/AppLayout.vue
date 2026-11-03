@@ -101,7 +101,7 @@ const primaryNav = [
   { to: '/', label: 'Cash position', icon: 'home' },
   { to: '/upcoming', label: 'Commitments', icon: 'calendar' },
   { to: '/surplus', label: 'Free cash', icon: 'pie-chart' },
-  { to: '/invest', label: 'Invest', icon: 'trending-up' },
+  { to: '/proposal', label: 'Proposal', icon: 'file-text' },
   { to: '/holdings', label: 'Portfolio', icon: 'briefcase' },
 ]
 
@@ -126,7 +126,7 @@ const pageHint = computed(() => {
     '/': 'Morning cash position · liquidity · invest / redeem',
     '/upcoming': 'Near-term payment commitments (incl. overdue)',
     '/surplus': 'Free cash = position − commitments − policy reserves',
-    '/invest': 'Investment requests from free cash',
+    '/proposal': 'Invest or redeem proposals from free cash',
     '/holdings': 'Liquid fund portfolio',
     '/settings': 'Banks, policy, ERPNext integration',
   }

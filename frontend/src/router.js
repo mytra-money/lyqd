@@ -4,8 +4,10 @@ const routes = [
   { path: '/', name: 'Dashboard', component: () => import('@/pages/Dashboard.vue') },
   { path: '/surplus', name: 'Surplus', component: () => import('@/pages/Surplus.vue') },
   { path: '/upcoming', name: 'Upcoming', component: () => import('@/pages/Upcoming.vue') },
-  { path: '/invest', name: 'Invest', component: () => import('@/pages/Invest.vue') },
-  { path: '/proposals', redirect: '/invest' },
+  { path: '/proposal', name: 'Proposal', component: () => import('@/pages/Proposal.vue') },
+  // Back-compat
+  { path: '/invest', redirect: '/proposal' },
+  { path: '/proposals', redirect: '/proposal' },
   {
     path: '/policy',
     redirect: { path: '/settings', query: { tab: 'liquidity' } },
@@ -19,7 +21,7 @@ const routes = [
     props: true,
   },
   // Schemes are Mytra-managed; SPA no longer exposes a catalogue editor.
-  { path: '/schemes', redirect: '/invest' },
+  { path: '/schemes', redirect: '/proposal' },
   {
     path: '/instructions',
     name: 'Instructions',

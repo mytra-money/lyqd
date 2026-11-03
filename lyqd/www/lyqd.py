@@ -40,15 +40,17 @@ def validate_lyqd_user():
 		frappe.response["status_code"] = 403
 		frappe.msgprint(_("Log in to access LYQD."))
 		frappe.redirect(f"/login?{urlencode({'redirect-to': frappe.request.path})}")
+		return
 
-	elif is_website_user():
-		frappe.throw(_("You are not permitted to access LYQD."), frappe.PermissionError)
-
+	# LYQD is SPA-only — Website Users with LYQD roles are allowed (no Desk required).
 	roles = set(frappe.get_roles())
-	if not roles.intersection({"System Manager", "LYQD Manager", "LYQD User", "Administrator"}):
-		# Administrator role string may not appear in get_roles for Administrator user
-		if frappe.session.user != "Administrator":
-			frappe.throw(_("LYQD User or LYQD Manager role required."), frappe.PermissionError)
+	if roles.intersection({"System Manager", "LYQD Manager", "LYQD User", "Administrator"}):
+		return
+	if frappe.session.user == "Administrator":
+		return
+	if is_website_user():
+		frappe.throw(_("You are not permitted to access LYQD."), frappe.PermissionError)
+	frappe.throw(_("LYQD User or LYQD Manager role required."), frappe.PermissionError)
 
 
 @frappe.whitelist(methods=["POST"], allow_guest=True)

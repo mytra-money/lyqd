@@ -4,19 +4,13 @@ from __future__ import annotations
 
 import click
 import frappe
+from frappe.utils import cint
 
 
+# SPA-only roles — no Desk. Users work in /lyqd (Website User is fine).
 LYQD_ROLES = (
-	{
-		"role_name": "LYQD User",
-		"desk_access": 1,
-		"description": "Manage upcoming payments, view surplus, update cash snapshots",
-	},
-	{
-		"role_name": "LYQD Manager",
-		"desk_access": 1,
-		"description": "Edit LYQD Company (policy, books) and draft proposals; full surplus workflow",
-	},
+	{"role_name": "LYQD User", "desk_access": 0},
+	{"role_name": "LYQD Manager", "desk_access": 0},
 )
 
 
@@ -45,13 +39,17 @@ def ensure_custom_fields() -> None:
 def create_roles() -> None:
 	for role in LYQD_ROLES:
 		if frappe.db.exists("Role", role["role_name"]):
+			doc = frappe.get_doc("Role", role["role_name"])
+			if cint(doc.desk_access) != cint(role["desk_access"]):
+				doc.desk_access = role["desk_access"]
+				doc.flags.ignore_permissions = True
+				doc.save()
 			continue
 		doc = frappe.get_doc(
 			{
 				"doctype": "Role",
 				"role_name": role["role_name"],
 				"desk_access": role["desk_access"],
-				"description": role["description"],
 			}
 		)
 		doc.insert(ignore_permissions=True)

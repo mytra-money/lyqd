@@ -215,14 +215,15 @@ def get_morning_mis(company: str | None = None, horizon_days: int | str = 7) -> 
 	cash_gap = max(0.0, required - bank_cash)
 	redemption_need = min(cash_gap, liquid_total) if liquid_total else cash_gap
 
-	# Only open investment requests — Cancelled must not compare vs free cash
+	# Only open requests — Cancelled must not compare vs free cash
 	planned_investment = 0.0
 	planned_ref = None
 	planned_status = None
+	planned_request_type = None
 	proposal = frappe.get_all(
 		"LYQD Draft Proposal",
 		filters={"company": company, "status": ("in", ["Draft", "Frozen"])},
-		fields=["name", "proposed_amount", "status", "creation"],
+		fields=["name", "proposed_amount", "status", "request_type", "creation"],
 		order_by="creation desc",
 		limit=1,
 	)
@@ -230,13 +231,36 @@ def get_morning_mis(company: str | None = None, horizon_days: int | str = 7) -> 
 		planned_investment = flt(proposal[0].proposed_amount)
 		planned_ref = proposal[0].name
 		planned_status = proposal[0].status
+		planned_request_type = proposal[0].request_type or "Invest"
 
-	current_investable = flt(surplus.investable_surplus) if not surplus.is_shortfall else 0.0
-	# Daily bank drift vs original plan: how much less can be invested today.
-	over_allocated = (
-		max(0.0, planned_investment - current_investable) if planned_investment else 0.0
-	)
-	# If already sitting in liquid funds, redemption to correct the plan is capped by holdings.
+	# Signed free cash (negative = shortfall). Do not zero — UI shows magnitude + tone.
+	signed_investable = flt(surplus.investable_surplus)
+	is_shortfall = bool(surplus.is_shortfall)
+	deployable = signed_investable if not is_shortfall else 0.0
+
+	# Drift vs open request for *this* horizon (Invest deploy vs Redeem need).
+	over_allocated = 0.0
+	redeem_no_longer_needed = False
+	redeem_over_need = 0.0
+	# Open Invest while this horizon is a shortfall → cancel invest, start redeem.
+	invest_flipped_to_shortfall = False
+	if planned_investment and planned_request_type == "Redeem":
+		if not is_shortfall:
+			# Horizon / balances flipped to free cash — redeem request is stale.
+			redeem_no_longer_needed = True
+		else:
+			# Still short: how much larger the open redeem is than today's need.
+			redeem_over_need = max(0.0, planned_investment - redemption_need)
+			if redeem_over_need < 0.01:
+				redeem_over_need = 0.0
+	elif planned_investment:
+		if is_shortfall:
+			invest_flipped_to_shortfall = True
+		else:
+			# Invest still applicable: how much less can be deployed vs the open request.
+			over_allocated = max(0.0, planned_investment - deployable)
+
+	# If already sitting in liquid funds, redemption to correct an Invest plan is capped by holdings.
 	plan_redemption = min(over_allocated, liquid_total) if liquid_total else 0.0
 
 	return {
@@ -252,16 +276,21 @@ def get_morning_mis(company: str | None = None, horizon_days: int | str = 7) -> 
 		"min_liquidity_buffer": flt(policy.get("min_liquidity_buffer")),
 		"restricted_cash": flt(policy.get("restricted_cash")),
 		"required_cash": required,
-		"investable_surplus": current_investable,
-		"is_shortfall": bool(surplus.is_shortfall),
+		"investable_surplus": signed_investable,
+		"is_shortfall": is_shortfall,
 		"cash_gap": cash_gap,
 		"redemption_need": redemption_need,
 		"planned_investment": planned_investment,
 		"planned_ref": planned_ref,
 		"planned_status": planned_status,
+		"planned_request_type": planned_request_type,
 		"over_allocated": over_allocated,
+		"invest_flipped_to_shortfall": invest_flipped_to_shortfall,
+		"redeem_no_longer_needed": redeem_no_longer_needed,
+		"redeem_over_need": redeem_over_need,
 		"plan_redemption": plan_redemption,
 		"needs_redemption": redemption_need > 0.01 or plan_redemption > 0.01,
+		"has_open_request": bool(planned_ref),
 	}
 
 

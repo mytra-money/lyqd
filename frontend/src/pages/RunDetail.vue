@@ -14,8 +14,8 @@
         <MetricCard label="Commitments" :value="run.upcoming_total" />
         <MetricCard label="Buffer" :value="run.min_liquidity_buffer" />
         <MetricCard
-          label="Free cash"
-          :value="run.investable_surplus"
+          :label="run.is_shortfall ? 'Liquidity shortfall' : 'Free cash'"
+          :value="Math.abs(run.investable_surplus || 0)"
           :tone="run.is_shortfall ? 'danger' : 'success'"
         />
       </div>

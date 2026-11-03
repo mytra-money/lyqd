@@ -10,7 +10,14 @@
           Refresh
         </Button>
         <Button
-          v-if="r && !r.is_shortfall"
+          v-if="hasOpenRequest"
+          variant="solid"
+          @click="$router.push('/proposal')"
+        >
+          Open proposal
+        </Button>
+        <Button
+          v-else-if="r && !r.is_shortfall"
           variant="solid"
           :loading="investing"
           @click="investNow"
@@ -20,7 +27,7 @@
         <Button
           v-else-if="r && r.is_shortfall"
           variant="solid"
-          @click="$router.push({ path: '/invest', query: { start: 'redeem' } })"
+          @click="$router.push({ path: '/proposal', query: { start: 'redeem' } })"
         >
           Start redeem
         </Button>
@@ -54,14 +61,26 @@
         class="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900"
       >
         Free cash is negative for this horizon.
-        <button
-          type="button"
-          class="ml-1 font-medium underline"
-          @click="$router.push({ path: '/invest', query: { start: 'redeem' } })"
-        >
-          Start redeem on Invest
-        </button>
-        if you have liquid holdings, or review commitments.
+        <template v-if="hasOpenRequest">
+          <button
+            type="button"
+            class="ml-1 font-medium underline"
+            @click="$router.push('/proposal')"
+          >
+            Open the existing proposal
+          </button>
+          instead of starting another redeem.
+        </template>
+        <template v-else>
+          <button
+            type="button"
+            class="ml-1 font-medium underline"
+            @click="$router.push({ path: '/proposal', query: { start: 'redeem' } })"
+          >
+            Start redeem on Proposal
+          </button>
+          if you have liquid holdings, or review commitments.
+        </template>
       </div>
 
       <div class="rounded-md border border-gray-200 bg-white p-4">
@@ -99,15 +118,24 @@ const { horizon } = useHorizon()
 const investing = ref(false)
 
 const r = computed(() => cache.getSurplus(company.current, horizon.value))
+const mis = computed(() => cache.getMis(company.current, horizon.value))
+const hasOpenRequest = computed(() => !!mis.value?.has_open_request || !!mis.value?.planned_ref)
 const loading = computed(() => cache.surplusLoading && !r.value)
 
 async function loadSurplus(force = false) {
   if (!company.current) return
-  await cache.ensureSurplus({
-    company: company.current,
-    horizonDays: horizon.value,
-    force,
-  })
+  await Promise.all([
+    cache.ensureSurplus({
+      company: company.current,
+      horizonDays: horizon.value,
+      force,
+    }),
+    cache.ensureMis({
+      company: company.current,
+      horizonDays: horizon.value,
+      force,
+    }),
+  ])
 }
 
 function refresh() {
@@ -136,18 +164,18 @@ async function investNow() {
       freeze: 1,
     })
     if (doc.unchanged) {
-      toast.success('Open request already matches today’s free cash')
+      toast.success('Open proposal already matches today’s free cash')
     } else {
       const n = (doc.superseded || []).length
       toast.success(
         n
-          ? `Investment request updated · superseded ${n} prior open request(s)`
-          : 'Investment request created',
+          ? `Proposal updated · superseded ${n} prior open proposal(s)`
+          : 'Proposal created',
       )
     }
-    router.push('/invest')
+    router.push('/proposal')
   } catch (e) {
-    toast.error(e.messages?.[0] || e.message || 'Could not create investment request')
+    toast.error(e.messages?.[0] || e.message || 'Could not create proposal')
   } finally {
     investing.value = false
   }

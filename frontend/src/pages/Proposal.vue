@@ -1,8 +1,8 @@
 <template>
   <div>
     <PageHeader
-      title="Invest"
-      subtitle="Invest idle free cash or redeem when the horizon is short. One open request at a time."
+      title="Proposal"
+      subtitle="Draft an invest or redeem proposal from free cash. One open proposal at a time."
     >
       <HorizonPicker v-model="horizon" />
       <Button variant="outline" @click="$router.push('/surplus')">Free cash</Button>
@@ -60,7 +60,7 @@
       <!-- Empty: ready to invest -->
       <div v-else-if="!active" class="px-5 py-10 text-center">
         <Badge theme="green">Invest</Badge>
-        <p class="mt-3 text-sm font-semibold text-gray-900">No open request</p>
+        <p class="mt-3 text-sm font-semibold text-gray-900">No open proposal</p>
         <p class="mx-auto mt-2 max-w-md text-sm text-gray-600">
           Start from today’s free cash to lock an amount and scheme, then create a Mytra instruction.
         </p>
@@ -224,14 +224,14 @@
                   :value="(runDoc.min_liquidity_buffer || 0) + (runDoc.restricted_cash || 0)"
                 />
                 <MetricCard
-                  label="Free cash"
-                  :value="runDoc.investable_surplus"
+                  :label="runDoc.is_shortfall ? 'Liquidity shortfall' : 'Free cash'"
+                  :value="Math.abs(runDoc.investable_surplus || 0)"
                   :tone="runDoc.is_shortfall ? 'danger' : 'success'"
                 />
               </div>
               <ExplanationTable :lines="runLines" />
             </template>
-            <div v-else class="py-3 text-sm text-gray-500">No surplus run on this request.</div>
+            <div v-else class="py-3 text-sm text-gray-500">No surplus run on this proposal.</div>
           </div>
         </div>
       </div>
@@ -239,7 +239,7 @@
 
     <section class="rounded-md border border-gray-200 bg-white">
       <header class="border-b border-gray-100 px-5 py-3">
-        <h2 class="text-sm font-semibold text-gray-900">Earlier requests</h2>
+        <h2 class="text-sm font-semibold text-gray-900">Earlier proposals</h2>
         <p class="mt-0.5 text-xs text-gray-500">Cancelled or replaced — audit only.</p>
       </header>
       <div v-if="!history.length" class="px-5 py-8 text-center text-sm text-gray-500">
@@ -367,10 +367,16 @@ watch(horizon, () => {
 onMounted(async () => {
   if (route.query.start === 'redeem') {
     await reloadContext()
-    if (!active.value && liveShortfall.value && canRedeem.value) {
+    // Supersede an open Invest (or create when empty) — API cancels prior open proposals.
+    const openType = active.value?.request_type || (active.value ? 'Invest' : null)
+    if (
+      liveShortfall.value &&
+      canRedeem.value &&
+      (!active.value || openType === 'Invest')
+    ) {
       await createFromShortfall()
     }
-    router.replace({ path: '/invest', query: {} })
+    router.replace({ path: '/proposal', query: {} })
   }
 })
 
@@ -492,7 +498,7 @@ async function createFromSurplus() {
       toast.success('Already matches today’s free cash')
     } else {
       const n = (doc.superseded || []).length
-      toast.success(n ? `Updated · replaced ${n} prior request(s)` : 'Invest request ready')
+      toast.success(n ? `Updated · replaced ${n} prior proposal(s)` : 'Invest proposal ready')
     }
     list.reload()
     instructions.reload()

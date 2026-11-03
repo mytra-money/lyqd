@@ -15,20 +15,34 @@ def has_app_permission() -> bool:
 
 
 def get_user_companies() -> list[str]:
-	"""Companies the current user may see (User Permission + defaults)."""
-	if "System Manager" in frappe.get_roles():
-		return [c.name for c in frappe.get_all("Company")]
+	"""LYQD Companies the current user may see."""
+	if not frappe.db.exists("DocType", "LYQD Company"):
+		return []
 
+	if "System Manager" in frappe.get_roles():
+		return frappe.get_all(
+			"LYQD Company", filters={"is_active": 1}, pluck="name", order_by="name asc"
+		)
+
+	# User Permission on LYQD Company when configured
 	companies = frappe.get_all(
 		"User Permission",
-		filters={"user": frappe.session.user, "allow": "Company"},
+		filters={"user": frappe.session.user, "allow": "LYQD Company"},
 		pluck="for_value",
 	)
 	if companies:
 		return companies
 
-	default = frappe.defaults.get_user_default("Company")
-	return [default] if default else []
+	default = frappe.defaults.get_user_default("LYQD Company")
+	if default and frappe.db.exists("LYQD Company", default):
+		return [default]
+
+	# All active companies for LYQD roles (soft-launch — tighten later with user perms)
+	if set(frappe.get_roles()).intersection({"LYQD Manager", "LYQD User"}):
+		return frappe.get_all(
+			"LYQD Company", filters={"is_active": 1}, pluck="name", order_by="name asc"
+		)
+	return []
 
 
 def _company_query_for(doctype: str, user: str | None = None) -> str:
@@ -43,6 +57,23 @@ def _company_query_for(doctype: str, user: str | None = None) -> str:
 
 	escaped = ", ".join(frappe.db.escape(c) for c in companies)
 	return f"`tab{doctype}`.company in ({escaped})"
+
+
+def get_lyqd_company_list_query(user: str | None = None) -> str:
+	"""Restrict LYQD Company list itself."""
+	if not user:
+		user = frappe.session.user
+	if user == "Administrator" or "System Manager" in frappe.get_roles(user):
+		return ""
+	companies = get_user_companies()
+	if not companies:
+		return "1=0"
+	escaped = ", ".join(frappe.db.escape(c) for c in companies)
+	return f"`tabLYQD Company`.name in ({escaped})"
+
+
+def get_lyqd_bank_account_query(user: str | None = None) -> str:
+	return _company_query_for("LYQD Bank Account", user)
 
 
 def get_lyqd_policy_query(user: str | None = None) -> str:

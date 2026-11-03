@@ -11,12 +11,13 @@
  ],
  "fields": [
   {
-   "description": "Bank Account name from the configured ERPNext source (this site or remote).",
+   "description": "LYQD Bank Account for this company.",
    "fieldname": "bank_account",
-   "fieldtype": "Data",
+   "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Bank Account",
-   "reqd": 1
+   "reqd": 1,
+   "options": "LYQD Bank Account"
   },
   {
    "fieldname": "account_name",
@@ -30,7 +31,8 @@
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "GL Account",
-   "read_only": 1
+   "read_only": 1,
+   "hidden": 1
   }
  ],
  "istable": 1,

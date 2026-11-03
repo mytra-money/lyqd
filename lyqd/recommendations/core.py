@@ -410,13 +410,20 @@ def get_liability_recommendations(
 
 	items: list[dict[str, Any]] = []
 	source = settings.get("source") or "This Site"
-	books_company = company
+	# LYQD Company name may differ from ERPNext Company name on the books site
+	books_company = (
+		frappe.db.get_value("LYQD Company", company, "books_company") if company else None
+	) or company
 
 	try:
 		if source == SOURCE_OTHER_SITE:
 			from lyqd.recommendations.remote import fetch_remote_recommendation_items
 
-			books_company = settings.get("remote_company") or company
+			books_company = (
+				frappe.db.get_value("LYQD Company", company, "books_company")
+				or settings.get("remote_company")
+				or company
+			)
 			# Account names on LYQD policy must match remote Chart of Accounts names
 			items = fetch_remote_recommendation_items(
 				[
@@ -430,15 +437,23 @@ def get_liability_recommendations(
 				as_of=as_of,
 			)
 		else:
+			if "erpnext" not in frappe.get_installed_apps():
+				raise frappe.ValidationError(
+					frappe._("This Site books require ERPNext on this site.")
+				)
 			ref_accounts = [r.account for r in rows_cfg if r.show_references]
 			bal_accounts = [r.account for r in rows_cfg if not r.show_references]
 			payable_ref, receivable_ref, other_ref = _classify_accounts(ref_accounts)
-			items.extend(_ple_voucher_rows(company, payable_ref, as_of, account_type="Payable"))
 			items.extend(
-				_ple_voucher_rows(company, receivable_ref, as_of, account_type="Receivable")
+				_ple_voucher_rows(books_company, payable_ref, as_of, account_type="Payable")
 			)
-			items.extend(_gl_voucher_rows(company, other_ref, as_of))
-			items.extend(_account_balance_rows(company, bal_accounts, as_of))
+			items.extend(
+				_ple_voucher_rows(
+					books_company, receivable_ref, as_of, account_type="Receivable"
+				)
+			)
+			items.extend(_gl_voucher_rows(books_company, other_ref, as_of))
+			items.extend(_account_balance_rows(books_company, bal_accounts, as_of))
 			items = exclude_billed_purchase_receipts(items)
 	except Exception as e:
 		frappe.log_error(title="LYQD recommendations fetch failed")

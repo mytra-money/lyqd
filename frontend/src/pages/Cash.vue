@@ -97,7 +97,7 @@ const cashSubtitle = computed(() => {
   if (cash.value.data?.books_source === 'Other Site') {
     return 'Bank accounts from the configured remote site. Edit balances here when allowed.'
   }
-  return 'Statement balances live on ERPNext Bank Account Balance — edit on Cash position or here.'
+  return 'Statement balances live on LYQD Bank Balance — edit on Cash position or here.'
 })
 
 const cashCards = computed(() =>

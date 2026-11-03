@@ -33,16 +33,16 @@
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Company",
-   "options": "Company",
+   "options": "LYQD Company",
    "reqd": 1
   },
   {
-   "description": "ERPNext Bank Account — this helper updates linked bank figures; it is not a second cash ledger.",
+   "description": "LYQD Bank Account \u2014 updates LYQD Bank Balance.",
    "fieldname": "bank_account",
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Bank Account",
-   "options": "Bank Account",
+   "options": "LYQD Bank Account",
    "reqd": 1
   },
   {
@@ -68,15 +68,15 @@
   {
    "fieldname": "link_section",
    "fieldtype": "Section Break",
-   "label": "ERPNext Link"
+   "label": "Sync"
   },
   {
-   "fetch_from": "bank_account.account",
    "fieldname": "gl_account",
-   "fieldtype": "Link",
+   "fieldtype": "Data",
    "label": "GL Account",
-   "options": "Account",
-   "read_only": 1
+   "options": "",
+   "read_only": 1,
+   "hidden": 1
   },
   {
    "default": "0",

@@ -64,71 +64,49 @@ def ensure_settings() -> None:
 
 
 def ensure_company() -> str:
-	if frappe.db.exists("Company", DEMO_COMPANY):
+	if frappe.db.exists("LYQD Company", DEMO_COMPANY):
 		return DEMO_COMPANY
 
-	# Prefer a dedicated demo company; fall back to any existing company on failure.
-	try:
-		doc = frappe.get_doc(
-			{
-				"doctype": "Company",
-				"company_name": DEMO_COMPANY,
-				"abbr": DEMO_ABBR,
-				"default_currency": "INR",
-				"country": "India",
-				"create_chart_of_accounts_based_on": "Standard Template",
-				"chart_of_accounts": "Standard",
-			}
-		)
-		doc.insert(ignore_permissions=True)
-		frappe.db.commit()
-		return doc.name
-	except Exception as exc:
-		frappe.log_error(message=frappe.get_traceback(), title="LYQD seed company create failed")
-		existing = frappe.get_all("Company", limit=1, pluck="name")
-		if not existing:
-			raise
-		print(f"Using existing company {existing[0]} (could not create {DEMO_COMPANY}: {exc})")
-		return existing[0]
+	doc = frappe.get_doc(
+		{
+			"doctype": "LYQD Company",
+			"company_name": DEMO_COMPANY,
+			"abbr": DEMO_ABBR,
+			"default_currency": "INR",
+			"is_active": 1,
+			"books_source": "Manual",
+			"books_company": DEMO_COMPANY,
+		}
+	)
+	doc.insert(ignore_permissions=True)
+	frappe.db.commit()
+	return doc.name
 
 
 def ensure_bank_account(company: str) -> str:
-	if not frappe.db.exists("Bank", DEMO_BANK):
-		frappe.get_doc({"doctype": "Bank", "bank_name": DEMO_BANK}).insert(ignore_permissions=True)
+	from lyqd.cash.bank_cash import create_company_bank_account
 
 	existing = frappe.db.get_value(
-		"Bank Account",
-		{"company": company, "account_name": DEMO_BANK_ACCOUNT_NAME, "is_company_account": 1},
+		"LYQD Bank Account",
+		{"company": company, "account_name": DEMO_BANK_ACCOUNT_NAME},
 	)
 	if existing:
 		return existing
 
-	gl_account = frappe.db.get_value(
-		"Account",
-		{"company": company, "account_type": "Bank", "is_group": 0},
-		"name",
+	created = create_company_bank_account(
+		company=company,
+		account_name=DEMO_BANK_ACCOUNT_NAME,
+		bank=DEMO_BANK,
+		opening_balance=0,
+		add_to_policy=True,
+		is_default=True,
+		allow_when_remote=True,
 	)
-	if not gl_account:
-		# last resort: company default bank account GL
-		gl_account = frappe.db.get_value("Company", company, "default_bank_account")
-
-	doc = frappe.get_doc(
-		{
-			"doctype": "Bank Account",
-			"account_name": DEMO_BANK_ACCOUNT_NAME,
-			"bank": DEMO_BANK,
-			"is_company_account": 1,
-			"is_default": 1,
-			"company": company,
-			"account": gl_account,
-		}
-	)
-	doc.insert(ignore_permissions=True)
-	return doc.name
+	return created["bank_account"]
 
 
 def ensure_cash(company: str, bank_account: str) -> str:
-	"""Seed daily statement balance into ERPNext Bank Account Balance (Banking source of truth)."""
+	"""Seed daily statement balance into LYQD Bank Balance."""
 	from lyqd.cash.bank_cash import set_statement_balance
 
 	as_on = today()

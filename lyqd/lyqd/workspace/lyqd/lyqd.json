@@ -35,11 +35,21 @@
   {
    "hidden": 0,
    "is_query_report": 0,
-   "label": "Bank Account",
+   "label": "LYQD Bank Account",
    "link_count": 0,
-   "link_to": "Bank Account",
+   "link_to": "LYQD Bank Account",
    "link_type": "DocType",
    "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "LYQD Company",
+   "link_count": 0,
+   "link_to": "LYQD Company",
+   "link_type": "DocType",
+   "onboard": 1,
    "type": "Link"
   },
   {

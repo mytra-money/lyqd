@@ -78,9 +78,9 @@ def get_boot():
 				else None
 			),
 			"default_route": "/lyqd",
-			"companies": get_user_companies()
-			or frappe.get_all("Company", pluck="name", order_by="name asc"),
-			"default_company": frappe.defaults.get_user_default("Company"),
+			"companies": get_user_companies(),
+			"default_company": frappe.defaults.get_user_default("LYQD Company")
+			or (get_user_companies()[0] if get_user_companies() else None),
 			"roles": frappe.get_roles(),
 			"developer_mode": bool(frappe.conf.developer_mode),
 			"tagline": "Make idle cash work smarter.",

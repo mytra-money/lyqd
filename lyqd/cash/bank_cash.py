@@ -1,4 +1,4 @@
-"""Eligible bank cash for LYQD surplus — prefers ERPNext bank figures, never invents cash."""
+"""Eligible bank cash for LYQD surplus — LYQD Bank Account + LYQD Bank Balance."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from frappe.utils import flt, getdate, today
 
 
 def get_policy_selected_bank_accounts(company: str) -> list[str] | None:
-	"""Return selected Bank Account names from LYQD Policy, or None if all company accounts apply."""
+	"""Return selected LYQD Bank Account names from Policy, or None if all apply."""
 	policy_name = frappe.db.get_value("LYQD Policy", {"company": company})
 	if not policy_name:
 		return None
@@ -18,7 +18,6 @@ def get_policy_selected_bank_accounts(company: str) -> list[str] | None:
 		filters={"parent": policy_name, "parenttype": "LYQD Policy"},
 		pluck="bank_account",
 	)
-	# Empty table = include all company bank accounts (backward compatible).
 	return selected or None
 
 
@@ -26,100 +25,101 @@ def get_company_bank_accounts(
 	company: str,
 	selected: list[str] | None = None,
 ) -> list[dict[str, Any]]:
-	"""Company bank accounts eligible for surplus cash (this site or mirrored Other Site)."""
-	from lyqd.recommendations.settings import is_remote_source
-
-	if is_remote_source():
-		from lyqd.cash.mirror_banks import (
-			list_mirrored_local_bank_accounts,
-			mirror_remote_bank_accounts,
-		)
-
-		# Keep local mirrors in sync with remote Chart of Bank Accounts (read-only remote)
-		mirror_remote_bank_accounts(company)
-		return list_mirrored_local_bank_accounts(company, selected=selected)
-
+	"""Active LYQD Bank Accounts for a company (optionally filtered by policy)."""
 	filters: dict[str, Any] = {
 		"company": company,
-		"is_company_account": 1,
-		"disabled": 0,
+		"is_active": 1,
 	}
 	if selected:
 		filters["name"] = ("in", selected)
 
-	# Same company-account filters and enrichment shape as ERPNext Banking's get_list.
 	rows = frappe.get_all(
-		"Bank Account",
+		"LYQD Bank Account",
 		filters=filters,
 		fields=[
 			"name",
 			"account_name",
-			"account",
 			"bank",
 			"is_default",
 			"account_type",
-			"account_subtype",
 			"bank_account_no",
-			"last_integration_date",
 			"company",
+			"currency",
+			"books_bank_account",
 		],
 		order_by="is_default desc, account_name asc",
 	)
+	books_source = frappe.db.get_value("LYQD Company", company, "books_source") or "Manual"
+	books_company = frappe.db.get_value("LYQD Company", company, "books_company") or company
 	for row in rows:
-		row["account_currency"] = None
-		row["books_source"] = "This Site"
-		row["books_company"] = company
-		if row.get("account"):
-			row["account_currency"] = frappe.db.get_value("Account", row["account"], "account_currency")
+		row["account"] = None
+		row["account_currency"] = row.get("currency")
+		row["books_source"] = books_source
+		row["books_company"] = books_company
+		row["remote_bank_account"] = row.get("books_bank_account")
 	return rows
 
 
 def get_statement_balance(bank_account: str, as_of: str | None = None) -> dict[str, Any]:
-	"""ERPNext Banking statement closing — sole cash source for LYQD surplus."""
+	"""Latest LYQD Bank Balance on or before as_of."""
 	as_of = str(getdate(as_of or today()))
-	if not frappe.db.exists("DocType", "Bank Account Balance"):
+	rows = frappe.get_all(
+		"LYQD Bank Balance",
+		filters={"bank_account": bank_account, "date": ("<=", as_of)},
+		fields=["balance", "date"],
+		order_by="date desc",
+		limit=1,
+	)
+	if not rows:
 		return {"balance": 0.0, "balance_date": None, "as_of": as_of}
-
-	from erpnext.accounts.doctype.bank_account.bank_account import get_closing_balance_as_per_statement
-
-	msg = get_closing_balance_as_per_statement(bank_account, as_of) or {}
 	return {
-		"balance": flt(msg.get("balance")),
-		"balance_date": msg.get("date"),
+		"balance": flt(rows[0].balance),
+		"balance_date": rows[0].date,
 		"as_of": as_of,
 	}
 
 
 def get_latest_bank_account_balance(bank_account: str, as_of: str | None = None) -> float | None:
-	"""Compat: numeric statement balance (0 is valid; None only if DocType missing)."""
-	if not frappe.db.exists("DocType", "Bank Account Balance"):
-		return None
 	return flt(get_statement_balance(bank_account, as_of)["balance"])
 
 
-def set_statement_balance_local_only(
+def set_statement_balance(
 	bank_account: str, balance: float, as_of: str | None = None
 ) -> dict[str, Any]:
-	"""Always write Bank Account Balance on this site (never the remote Other Site)."""
+	"""Upsert LYQD Bank Balance for a bank account."""
 	as_of_d = getdate(as_of or today())
-	from erpnext.accounts.doctype.bank_account.bank_account import (
-		_set_closing_balance_as_per_statement,
+	existing = frappe.db.exists(
+		"LYQD Bank Balance", {"bank_account": bank_account, "date": as_of_d}
 	)
-
-	_set_closing_balance_as_per_statement(bank_account, as_of_d, flt(balance))
-	name = frappe.db.exists("Bank Account Balance", {"bank_account": bank_account, "date": as_of_d})
+	company = frappe.db.get_value("LYQD Bank Account", bank_account, "company")
+	if existing:
+		doc = frappe.get_doc("LYQD Bank Balance", existing)
+		doc.balance = flt(balance)
+		doc.save(ignore_permissions=True)
+		name = doc.name
+	else:
+		doc = frappe.get_doc(
+			{
+				"doctype": "LYQD Bank Balance",
+				"bank_account": bank_account,
+				"company": company,
+				"date": as_of_d,
+				"balance": flt(balance),
+			}
+		)
+		doc.insert(ignore_permissions=True)
+		name = doc.name
 	return {
 		"bank_account": bank_account,
 		"date": str(as_of_d),
 		"balance": flt(balance),
 		"name": name,
-		"source": "local_bab",
+		"source": "lyqd_bank_balance",
 	}
 
 
-def set_statement_balance(bank_account: str, balance: float, as_of: str | None = None) -> dict[str, Any]:
-	"""Upsert statement closing on this LYQD site only — Other Site is read-only."""
-	return set_statement_balance_local_only(bank_account, balance, as_of)
+# Back-compat alias used by older call sites
+set_statement_balance_local_only = set_statement_balance
 
 
 def resolve_bank_account_cash(
@@ -127,10 +127,6 @@ def resolve_bank_account_cash(
 	company: str,
 	as_of: str | None = None,
 ) -> dict[str, Any]:
-	"""
-	Resolve cash for one Bank Account from ERPNext Bank Account Balance only
-	(same DocType Banking edits for statement closing).
-	"""
 	name = bank_account_row["name"]
 	stmt = get_statement_balance(name, as_of)
 	return {
@@ -145,9 +141,11 @@ def resolve_bank_account_cash(
 		"bank_account_no": bank_account_row.get("bank_account_no"),
 		"balance": flt(stmt["balance"]),
 		"balance_date": stmt.get("balance_date"),
-		"source": "Bank Account Balance",
-		"books_source": bank_account_row.get("books_source") or "This Site",
+		"source": "LYQD Bank Balance",
+		"books_source": bank_account_row.get("books_source") or "Manual",
 		"books_company": bank_account_row.get("books_company") or company,
+		"remote_bank_account": bank_account_row.get("remote_bank_account")
+		or bank_account_row.get("books_bank_account"),
 	}
 
 
@@ -157,76 +155,56 @@ def get_eligible_bank_cash(company: str, as_of: str | None = None) -> dict[str, 
 
 	selected = get_policy_selected_bank_accounts(company)
 	as_of_s = str(getdate(as_of or today()))
+	books_source = frappe.db.get_value("LYQD Company", company, "books_source") or "Manual"
+	books_company = frappe.db.get_value("LYQD Company", company, "books_company") or company
 
-	if is_remote_source():
-		from lyqd.cash.mirror_banks import list_mirrored_local_bank_accounts, mirror_remote_bank_accounts
-		from lyqd.recommendations.settings import get_integration_settings
-
-		settings = get_integration_settings()
+	# Keep mirrors fresh when Other Site books are linked
+	mirror_info = None
+	if is_remote_source() or books_source == "Other Site":
 		try:
-			mirror = mirror_remote_bank_accounts(company)
-			accounts = list_mirrored_local_bank_accounts(company, selected=selected)
-			books_company = mirror.get("books_company") or settings.get("remote_company")
+			from lyqd.cash.mirror_banks import mirror_remote_bank_accounts
+
+			mirror_info = mirror_remote_bank_accounts(company)
+			books_company = mirror_info.get("books_company") or books_company
 		except Exception as e:
 			frappe.log_error(title="LYQD remote bank mirror failed")
 			return {
 				"company": company,
-				"books_company": settings.get("remote_company"),
+				"books_company": books_company,
 				"books_source": "Other Site",
 				"as_of": as_of_s,
 				"total": 0.0,
 				"accounts": [],
 				"selection": "policy" if selected else "all_company_accounts",
 				"selected_bank_accounts": selected or [],
-				"balance_source": "this_site",
+				"balance_source": "lyqd",
 				"message": str(e),
 			}
-
-		rows: list[dict[str, Any]] = []
-		total = 0.0
-		for ba in accounts:
-			row = resolve_bank_account_cash(ba, company, as_of_s)
-			row["books_source"] = "Other Site"
-			row["books_company"] = books_company
-			row["remote_bank_account"] = ba.get("remote_bank_account") or ba.get(
-				"lyqd_remote_bank_account"
-			)
-			rows.append(row)
-			total += flt(row["balance"])
-
-		return {
-			"company": company,
-			"books_company": books_company,
-			"books_source": "Other Site",
-			"as_of": as_of_s,
-			"total": flt(total),
-			"accounts": rows,
-			"selection": "policy" if selected else "all_company_accounts",
-			"selected_bank_accounts": selected or [],
-			"balance_source": "this_site",
-			"message": mirror.get("message") if not accounts else None,
-			"mirrored": {"created": mirror.get("created"), "updated": mirror.get("updated")},
-		}
 
 	accounts = get_company_bank_accounts(company, selected=selected)
 	rows = []
 	total = 0.0
 	for ba in accounts:
-		row = resolve_bank_account_cash(ba, company, as_of)
+		row = resolve_bank_account_cash(ba, company, as_of_s)
 		rows.append(row)
 		total += flt(row["balance"])
 
 	return {
 		"company": company,
-		"books_company": company,
-		"books_source": "This Site",
+		"books_company": books_company,
+		"books_source": books_source,
 		"as_of": as_of_s,
 		"total": flt(total),
 		"accounts": rows,
 		"selection": "policy" if selected else "all_company_accounts",
 		"selected_bank_accounts": selected or [],
-		"balance_source": "this_site",
-		"message": None,
+		"balance_source": "lyqd",
+		"message": (mirror_info or {}).get("message") if mirror_info and not accounts else None,
+		"mirrored": (
+			{"created": mirror_info.get("created"), "updated": mirror_info.get("updated")}
+			if mirror_info
+			else None
+		),
 	}
 
 
@@ -243,15 +221,12 @@ def create_company_bank_account(
 	allow_when_remote: bool = False,
 ) -> dict[str, Any]:
 	"""
-	Create ERPNext masters the same way Banking/Plaid expect them:
+	Create a LYQD Bank Account (no Chart of Accounts).
 
-	1. Chart of Accounts leaf Account (account_type = Bank)
-	2. Bank master (if missing)
-	3. Bank Account with is_company_account = 1 linked to that GL
-
-	Intended for sites that do not already have bank masters set up.
+	``parent_account`` is ignored (legacy ERPNext CoA arg).
 	When Other Site is on, manual Add is blocked unless allow_when_remote (mirror path).
 	"""
+	_ = parent_account
 	from lyqd.recommendations.settings import get_integration_settings, is_remote_source
 
 	if is_remote_source() and not allow_when_remote:
@@ -262,86 +237,40 @@ def create_company_bank_account(
 			).format(url)
 		)
 
-	company = company or frappe.defaults.get_user_default("Company")
+	company = company or _default_lyqd_company()
 	if not company:
 		frappe.throw(frappe._("Company is required"))
+	if not frappe.db.exists("LYQD Company", company):
+		frappe.throw(frappe._("LYQD Company {0} not found").format(company))
+
 	account_name = (account_name or "").strip()
 	if not account_name:
 		frappe.throw(frappe._("Account name is required"))
 
-	if not parent_account:
-		parent_account = frappe.db.get_value(
-			"Account",
-			{"company": company, "is_group": 1, "account_type": "Bank"},
-			"name",
-		) or frappe.db.get_value(
-			"Account",
-			{"company": company, "is_group": 1, "account_name": ("like", "%Bank%")},
-			"name",
-		)
-	if not parent_account:
-		frappe.throw(
-			frappe._("No Bank group account found in Chart of Accounts for {0}").format(company)
-		)
-
-	gl_name = frappe.db.get_value(
-		"Account",
-		{"company": company, "account_name": account_name, "is_group": 0},
+	existing = frappe.db.get_value(
+		"LYQD Bank Account",
+		{"company": company, "account_name": account_name},
 		"name",
 	)
-	created_gl = False
-	if not gl_name:
-		gl = frappe.get_doc(
-			{
-				"doctype": "Account",
-				"account_name": account_name,
-				"parent_account": parent_account,
-				"company": company,
-				"account_type": "Bank",
-				"is_group": 0,
-			}
-		)
-		gl.insert()
-		gl_name = gl.name
-		created_gl = True
-
-	bank_name = (bank or "").strip() or "Operating Bank"
-	if not frappe.db.exists("Bank", bank_name):
-		frappe.get_doc({"doctype": "Bank", "bank_name": bank_name}).insert()
-
-	existing_ba = frappe.db.get_value(
-		"Bank Account",
-		{"company": company, "account": gl_name, "is_company_account": 1},
-		"name",
-	)
-	created_ba = False
-	if existing_ba:
-		ba_name = existing_ba
+	created = False
+	if existing:
+		ba_name = existing
 	else:
-		if is_default:
-			# Only one default company bank account
-			frappe.db.set_value(
-				"Bank Account",
-				{"company": company, "is_company_account": 1, "is_default": 1},
-				"is_default",
-				0,
-			)
-		ba = frappe.get_doc(
+		doc = frappe.get_doc(
 			{
-				"doctype": "Bank Account",
-				"account_name": account_name,
-				"account": gl_name,
+				"doctype": "LYQD Bank Account",
 				"company": company,
-				"is_company_account": 1,
-				"bank": bank_name,
+				"account_name": account_name,
+				"bank": (bank or "").strip() or None,
 				"account_type": account_type or None,
 				"is_default": 1 if is_default else 0,
 				"bank_account_no": bank_account_no or None,
+				"is_active": 1,
 			}
 		)
-		ba.insert()
-		ba_name = ba.name
-		created_ba = True
+		doc.insert(ignore_permissions=True)
+		ba_name = doc.name
+		created = True
 
 	if flt(opening_balance):
 		set_statement_balance(ba_name, flt(opening_balance), today())
@@ -353,16 +282,26 @@ def create_company_bank_account(
 			if ba_name not in [r.bank_account for r in policy.eligible_bank_accounts]:
 				policy.append(
 					"eligible_bank_accounts",
-					{"bank_account": ba_name, "account_name": account_name, "gl_account": gl_name},
+					{"bank_account": ba_name, "account_name": account_name},
 				)
-				policy.save()
+				policy.save(ignore_permissions=True)
 
 	return {
 		"bank_account": ba_name,
-		"gl_account": gl_name,
+		"gl_account": None,
 		"account_name": account_name,
 		"company": company,
-		"bank": bank_name,
-		"created_gl_account": created_gl,
-		"created_bank_account": created_ba,
+		"bank": bank,
+		"created_gl_account": False,
+		"created_bank_account": created,
 	}
+
+
+def _default_lyqd_company() -> str | None:
+	from lyqd.setup.permissions import get_user_companies
+
+	companies = get_user_companies()
+	if companies:
+		return companies[0]
+	row = frappe.get_all("LYQD Company", filters={"is_active": 1}, limit=1, pluck="name")
+	return row[0] if row else None

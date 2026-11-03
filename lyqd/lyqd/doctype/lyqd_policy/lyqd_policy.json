@@ -28,7 +28,7 @@
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Company",
-   "options": "Company",
+   "options": "LYQD Company",
    "reqd": 1,
    "unique": 1
   },

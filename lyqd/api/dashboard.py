@@ -11,15 +11,15 @@ from lyqd.setup.permissions import get_user_companies
 
 
 def _default_company() -> str:
-	company = frappe.defaults.get_user_default("Company")
-	if company:
+	company = frappe.defaults.get_user_default("LYQD Company")
+	if company and frappe.db.exists("LYQD Company", company):
 		return company
 	companies = get_user_companies()
 	if companies:
 		return companies[0]
-	row = frappe.get_all("Company", limit=1, pluck="name")
+	row = frappe.get_all("LYQD Company", filters={"is_active": 1}, limit=1, pluck="name")
 	if not row:
-		frappe.throw(_("No Company found. Create a Company before using LYQD."))
+		frappe.throw(_("No LYQD Company found. Create one in Settings / onboarding."))
 	return row[0]
 
 

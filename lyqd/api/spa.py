@@ -14,8 +14,11 @@ from lyqd.setup.permissions import get_user_companies
 
 @frappe.whitelist()
 def get_boot_data() -> dict:
-	companies = get_user_companies() or frappe.get_all("Company", pluck="name", order_by="name asc")
-	default_company = frappe.defaults.get_user_default("Company") or (companies[0] if companies else None)
+	companies = get_user_companies()
+	default_company = frappe.defaults.get_user_default("LYQD Company")
+	if default_company and default_company not in (companies or []):
+		default_company = None
+	default_company = default_company or (companies[0] if companies else None)
 	settings = {}
 	if frappe.db.exists("DocType", "LYQD Settings"):
 		s = frappe.get_single("LYQD Settings")
@@ -50,7 +53,62 @@ def get_boot_data() -> dict:
 
 @frappe.whitelist()
 def get_companies() -> list[str]:
-	return get_user_companies() or frappe.get_all("Company", pluck="name", order_by="name asc")
+	return get_user_companies()
+
+
+@frappe.whitelist()
+def create_lyqd_company(
+	company_name: str,
+	abbr: str | None = None,
+	books_source: str | None = None,
+	books_company: str | None = None,
+) -> dict:
+	"""Create a LYQD Company (cash-management entity) and empty Policy."""
+	frappe.only_for(("System Manager", "LYQD Manager"))
+	company_name = (company_name or "").strip()
+	if not company_name:
+		frappe.throw(_("Company name is required"))
+	if frappe.db.exists("LYQD Company", company_name):
+		return frappe.get_doc("LYQD Company", company_name).as_dict()
+
+	books_source = books_source or "Manual"
+	if books_source not in ("Manual", "This Site", "Other Site"):
+		books_source = "Manual"
+
+	doc = frappe.get_doc(
+		{
+			"doctype": "LYQD Company",
+			"company_name": company_name,
+			"abbr": abbr,
+			"is_active": 1,
+			"books_source": books_source,
+			"books_company": (books_company or company_name).strip(),
+		}
+	)
+	doc.insert()
+
+	if not frappe.db.exists("LYQD Policy", {"company": doc.name}):
+		frappe.get_doc(
+			{
+				"doctype": "LYQD Policy",
+				"company": doc.name,
+				"is_active": 1,
+				"min_liquidity_buffer": frappe.db.get_single_value(
+					"LYQD Settings", "default_min_liquidity_buffer"
+				)
+				or 0,
+				"restricted_cash": frappe.db.get_single_value(
+					"LYQD Settings", "default_restricted_cash"
+				)
+				or 0,
+				"default_forecast_horizon_days": frappe.db.get_single_value(
+					"LYQD Settings", "default_forecast_horizon_days"
+				)
+				or 7,
+			}
+		).insert()
+
+	return doc.as_dict()
 
 
 @frappe.whitelist()
@@ -65,13 +123,11 @@ def set_daily_bank_balance(
 	balance: float | str,
 	as_of: str | None = None,
 ) -> dict:
-	"""Write today's (or as_of) statement closing — Bank Account Balance only (Banking path)."""
+	"""Write today's (or as_of) statement closing on LYQD Bank Balance."""
 	from lyqd.cash.bank_cash import set_statement_balance
-	from lyqd.recommendations.settings import is_remote_source
 
-	# Balances always write on this site (Other Site is read-only).
-	if not frappe.has_permission("Bank Account", "write", doc=bank_account):
-		frappe.only_for(("System Manager", "LYQD Manager", "Accounts Manager", "Accounts User"))
+	if not frappe.has_permission("LYQD Bank Account", "write", doc=bank_account):
+		frappe.only_for(("System Manager", "LYQD Manager", "LYQD User"))
 	return set_statement_balance(bank_account, flt(balance), as_of)
 
 
@@ -225,7 +281,7 @@ def create_surplus_bank_account(
 	is_default: int | bool = 0,
 	bank_account_no: str | None = None,
 ) -> dict:
-	"""Create CoA Account + Bank Account (Banking/Plaid pattern); optionally pin on Policy."""
+	"""Create LYQD Bank Account (no CoA); optionally pin on Policy."""
 	from lyqd.cash.bank_cash import create_company_bank_account
 
 	frappe.only_for(("System Manager", "LYQD Manager", "Accounts Manager"))
@@ -572,9 +628,24 @@ def save_erpnext_settings(doc: str | dict) -> dict:
 		try:
 			from lyqd.cash.mirror_banks import mirror_remote_bank_accounts
 
-			payload["bank_mirror"] = mirror_remote_bank_accounts(
-				doc.get("company") or _default_company()
-			)
+			lyqd_company = doc.get("company") or _default_company()
+			# Ensure LYQD Company exists for the cash entity / remote books name
+			remote_co = (doc.get("remote_company") or s.remote_company or "").strip()
+			if remote_co and not frappe.db.exists("LYQD Company", lyqd_company):
+				create_lyqd_company(
+					company_name=lyqd_company or remote_co,
+					books_source="Other Site",
+					books_company=remote_co,
+				)
+				lyqd_company = lyqd_company or remote_co
+			elif lyqd_company and frappe.db.exists("LYQD Company", lyqd_company):
+				frappe.db.set_value(
+					"LYQD Company",
+					lyqd_company,
+					{"books_source": "Other Site", "books_company": remote_co or lyqd_company},
+					update_modified=False,
+				)
+			payload["bank_mirror"] = mirror_remote_bank_accounts(lyqd_company)
 		except Exception as e:
 			frappe.log_error(title="LYQD bank mirror on save settings")
 			payload["bank_mirror_error"] = str(e)

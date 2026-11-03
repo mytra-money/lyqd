@@ -328,14 +328,12 @@
             @add="showAddBank = true"
           />
           <p v-if="!banksFromRemote" class="text-xs text-gray-500">
-            Add creates a Chart of Accounts <span class="font-medium">Account</span> (type Bank)
-            and an ERPNext <span class="font-medium">Bank Account</span> linked to it — the same
-            masters Banking uses.
+            Add creates a <span class="font-medium">LYQD Bank Account</span> for this company.
+            Statement balances are stored on LYQD (not ERPNext Chart of Accounts).
           </p>
           <p v-else class="text-xs text-gray-500">
-            Create company Bank Accounts on the remote site, then Reload — LYQD mirrors them here
-            (no remote writes). Turning Other site off keeps Accepted plan items; sync from books
-            stops.
+            Create company Bank Accounts on the remote ERPNext site, then Reload — LYQD mirrors
+            them as LYQD Bank Accounts here (no remote writes).
           </p>
         </div>
 
@@ -584,7 +582,7 @@ const bankEmptyHint = computed(() => {
       'Add company Bank Accounts on the remote ERPNext site (company account = Yes), then reload.'
     )
   }
-  return 'You have not added any company bank accounts yet. LYQD creates Chart of Accounts + Bank Account masters.'
+  return 'You have not added any LYQD bank accounts yet. Add one here or connect Other Site to mirror them.'
 })
 
 const remoteBankDeskUrl = computed(() => {

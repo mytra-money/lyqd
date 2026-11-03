@@ -55,5 +55,8 @@ class LYQDSettings(Document):
 
 		if "erpnext" not in frappe.get_installed_apps():
 			frappe.throw(
-				frappe._("ERPNext must be installed on this site to use This Site recommendations.")
+				frappe._(
+					"ERPNext must be installed on this site to use This Site books. "
+					"Or switch to Other Site / leave recommendations off."
+				)
 			)

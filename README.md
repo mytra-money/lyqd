@@ -11,7 +11,7 @@
 
 ## LYQD
 
-LYQD helps finance teams forecast upcoming payments, identify potential surplus cash, and manage mutual fund investment workflows with clear approvals and transaction tracking — on top of [ERPNext](https://github.com/frappe/erpnext).
+LYQD helps finance teams forecast upcoming payments, identify potential surplus cash, and manage mutual fund investment workflows with clear approvals and transaction tracking. It runs on [Frappe](https://github.com/frappe/frappe); [ERPNext](https://github.com/frappe/erpnext) is an **optional** books source (this site or other site), same pattern as Frappe CRM.
 
 Bank statement balances, near-term commitments, and a liquidity policy feed one explainable free-cash number. From there you can open an investment request, issue an instruction, and track liquid holdings — without maintaining a second ledger outside the books.
 
@@ -61,22 +61,23 @@ Cash position  →  Commitments  →  Free cash  →  Invest  →  Portfolio
 
 ```
 free_cash =
-  sum(Bank Account Balance for eligible banks)
+  sum(LYQD Bank Balance for eligible LYQD Bank Accounts)
   − sum(Planned commitments due on or before today + horizon)
   − min_liquidity_buffer
   − restricted_cash
 ```
 
-Overdue Planned commitments are included. Statement balances use ERPNext **Bank Account Balance** (same path as Banking closing as per statement).
+Overdue Planned commitments are included. Cash masters are **LYQD Company**, **LYQD Bank Account**, and **LYQD Bank Balance** — no Chart of Accounts dependency.
 
-### ERPNext integration
+### ERPNext integration (optional)
 
-Integrations are opt-in on **LYQD Settings** (Single) — Enable Recommendations + This Site / Other Site credentials. There is no separate ERPNext Settings DocType.
+Same idea as Frappe CRM: LYQD installs without ERPNext. Books are opt-in on **LYQD Settings**:
 
-- **This site** — Liability suggestions from local Payment Ledger (Payable) and GL.
-- **Other site** — Remote ERPNext via URL + API key & secret. LYQD only **reads** the remote (liabilities and bank masters), mirrors company bank accounts locally, and stores balances and accepted plan rows on this site. Nothing is written back to the remote.
+- **This site** — local ERPNext must be installed; Payment Ledger + GL recommendations.
+- **Other site** — remote ERPNext via URL + API key & secret (read-only). Banks are mirrored into **LYQD Bank Account**; balances stay on this site.
+- **Manual** — enter statement balances in LYQD with no books connector.
 
-**LYQD Policy** (one per company on *this* LYQD site) holds liquidity knobs the SPA edits under Settings: buffer, restricted cash, forecast horizon, eligible banks, and which GL accounts feed “From books” recommendations. For Other Site, recommendation *account names* must match the remote Chart of Accounts; the policy itself is never stored on the remote — only read via API.
+**LYQD Company** is the cash-management entity (Policy, plan, invest). It can map to a books company name via `books_company` / `books_source`. **LYQD Policy** (one per LYQD Company) holds buffer, horizon, eligible banks, and recommendation account names (Data — must match books COA when connected).
 
 **Sync plan from books** updates Accepted rows from voucher outstanding or GL balances. Purchase Receipt suggestions exclude receipts that already have a Purchase Invoice.
 
@@ -111,12 +112,12 @@ bench --site <site> execute lyqd.setup.seed_portfolio_demo.seed_portfolio_demo -
 ### Under the hood
 
 - [Frappe Framework](https://github.com/frappe/frappe) — Full-stack Python web framework.
-- [ERPNext](https://github.com/frappe/erpnext) — Banks, payables, GL, and accounting.
+- [ERPNext](https://github.com/frappe/erpnext) — Optional books (This Site / Other Site).
 - [Frappe UI](https://github.com/frappe/frappe-ui) — Vue 3 component library for the SPA.
 
 ## Install
 
-On an existing bench with ERPNext:
+On a Frappe bench (ERPNext optional):
 
 ```bash
 cd frappe-bench

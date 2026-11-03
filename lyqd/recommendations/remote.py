@@ -24,16 +24,20 @@ def _client_from_cred(url: str, api_key: str, api_secret: str):
 	)
 
 
-def get_remote_client():
-	cred = get_remote_credentials()
+def get_remote_client(lyqd_company: str | None = None):
+	"""Return (FrappeClient, remote books company name) for a LYQD Company."""
+	cred = get_remote_credentials(lyqd_company)
 	client = _client_from_cred(cred["url"], cred["api_key"], cred["api_secret"])
 	company = cred.get("company") or resolve_remote_company(client)
-	# Remember resolved company so Integrations UI stays in sync
-	if company and company != cred.get("company") and frappe.db.exists("DocType", "LYQD Settings"):
-		doc = frappe.get_single("LYQD Settings")
-		if not (doc.remote_company or "").strip():
-			doc.remote_company = company
-			doc.save(ignore_permissions=True)
+	# Persist resolved books company on the LYQD Company when blank
+	lyqd_name = cred.get("lyqd_company") or lyqd_company
+	if (
+		company
+		and lyqd_name
+		and frappe.db.exists("LYQD Company", lyqd_name)
+		and not (frappe.db.get_value("LYQD Company", lyqd_name, "books_company") or "").strip()
+	):
+		frappe.db.set_value("LYQD Company", lyqd_name, "books_company", company, update_modified=False)
 	return client, company
 
 
@@ -93,8 +97,8 @@ def probe_remote_connection(
 	}
 
 
-def test_remote_connection() -> dict[str, Any]:
-	client, company = get_remote_client()
+def test_remote_connection(lyqd_company: str | None = None) -> dict[str, Any]:
+	client, company = get_remote_client(lyqd_company)
 	companies = list_remote_companies(client)
 	if company not in companies:
 		frappe.throw(
@@ -114,9 +118,10 @@ def list_remote_recommendation_accounts(
 	account_type: str | None = None,
 	search: str | None = None,
 	limit: int = 500,
+	lyqd_company: str | None = None,
 ) -> list[dict[str, Any]]:
 	"""Leaf accounts from the configured remote ERPNext (for Integrations picker)."""
-	client, company = get_remote_client()
+	client, company = get_remote_client(lyqd_company)
 	root_types = root_types or ["Liability", "Expense", "Asset"]
 	filters: dict[str, Any] = {
 		"company": company,
@@ -546,9 +551,10 @@ def _account_balance_rows(
 def fetch_remote_recommendation_items(
 	account_rows: list[dict[str, Any]],
 	as_of: str | None = None,
+	lyqd_company: str | None = None,
 ) -> list[dict[str, Any]]:
 	"""Build recommendation items from remote site for configured accounts."""
-	client, company = get_remote_client()
+	client, company = get_remote_client(lyqd_company)
 	as_of = str(getdate(as_of or today()))
 	all_accounts = [r.get("account") for r in account_rows if r.get("account")]
 	meta = _account_meta_map(client, all_accounts)
@@ -636,16 +642,18 @@ def _exclude_billed_purchase_receipts_remote(client, items: list[dict[str, Any]]
 	]
 
 
-def remote_purchase_invoice_outstanding(name: str) -> dict[str, Any]:
-	return _remote_invoice_outstanding("Purchase Invoice", name)
+def remote_purchase_invoice_outstanding(name: str, lyqd_company: str | None = None) -> dict[str, Any]:
+	return _remote_invoice_outstanding("Purchase Invoice", name, lyqd_company=lyqd_company)
 
 
-def remote_sales_invoice_outstanding(name: str) -> dict[str, Any]:
-	return _remote_invoice_outstanding("Sales Invoice", name)
+def remote_sales_invoice_outstanding(name: str, lyqd_company: str | None = None) -> dict[str, Any]:
+	return _remote_invoice_outstanding("Sales Invoice", name, lyqd_company=lyqd_company)
 
 
-def _remote_invoice_outstanding(doctype: str, name: str) -> dict[str, Any]:
-	client, _company = get_remote_client()
+def _remote_invoice_outstanding(
+	doctype: str, name: str, lyqd_company: str | None = None
+) -> dict[str, Any]:
+	client, _company = get_remote_client(lyqd_company)
 	rows = client.get_list(
 		doctype,
 		filters={"name": name},
@@ -674,8 +682,10 @@ def _remote_invoice_outstanding(doctype: str, name: str) -> dict[str, Any]:
 	}
 
 
-def remote_account_balance(account: str, as_of: str | None = None) -> dict[str, Any]:
-	client, company = get_remote_client()
+def remote_account_balance(
+	account: str, as_of: str | None = None, lyqd_company: str | None = None
+) -> dict[str, Any]:
+	client, company = get_remote_client(lyqd_company)
 	as_of = str(getdate(as_of or today()))
 	meta = _account_meta_map(client, [account])
 	root = (meta.get(account) or {}).get("root_type")
@@ -694,8 +704,9 @@ def remote_gl_voucher_outstanding(
 	source_name: str,
 	account: str | None = None,
 	as_of: str | None = None,
+	lyqd_company: str | None = None,
 ) -> dict[str, Any]:
-	client, company = get_remote_client()
+	client, company = get_remote_client(lyqd_company)
 	as_of = str(getdate(as_of or today()))
 
 	if source_doctype == "Purchase Receipt":

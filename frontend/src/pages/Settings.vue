@@ -692,22 +692,10 @@ const policy = createResource({
   },
 })
 
-onMounted(async () => {
-  const tab = route.query.tab
-  // Legacy deep-links
-  if (tab === 'recommendations') {
-    activeTab.value = 'integrations'
-  } else if (tab === 'product') {
-    activeTab.value = 'investment'
-  } else if (typeof tab === 'string' && tabs.some((t) => t.id === tab)) {
-    activeTab.value = tab
-  }
+async function loadSiteDefaults() {
   try {
     const data = await call('lyqd.api.spa.get_settings')
     Object.assign(productForm, {
-      investment_account_activated: !!data.investment_account_activated,
-      investment_account_crm_lead: data.investment_account_crm_lead || '',
-      investment_account_requested_on: data.investment_account_requested_on || '',
       default_forecast_horizon_days: data.default_forecast_horizon_days,
       default_min_liquidity_buffer: data.default_min_liquidity_buffer,
       default_restricted_cash: data.default_restricted_cash,
@@ -715,8 +703,12 @@ onMounted(async () => {
   } catch (e) {
     /* keep defaults */
   }
+}
+
+async function loadCompanyErp(name) {
+  if (!name) return
   try {
-    const erp = await call('lyqd.api.spa.get_erpnext_settings')
+    const erp = await call('lyqd.api.spa.get_erpnext_settings', { company: name })
     Object.assign(erpForm, {
       enabled: !!erp.enabled,
       source: erp.source || 'This Site',
@@ -727,10 +719,28 @@ onMounted(async () => {
       has_remote_api_secret: !!erp.has_remote_api_secret,
     })
     applySavedErp(erp)
+    productForm.investment_account_activated = !!erp.investment_account_activated
+    productForm.investment_account_requested_on = erp.investment_account_requested_on || ''
+    company.applyCompanyOverlay?.(erp)
     company.erpnextIntegrationEnabled = !!erp.enabled
   } catch (e) {
     erpForm.enabled = false
+    productForm.investment_account_activated = false
   }
+}
+
+onMounted(async () => {
+  const tab = route.query.tab
+  // Legacy deep-links
+  if (tab === 'recommendations') {
+    activeTab.value = 'integrations'
+  } else if (tab === 'product') {
+    activeTab.value = 'investment'
+  } else if (typeof tab === 'string' && tabs.some((t) => t.id === tab)) {
+    activeTab.value = tab
+  }
+  await loadSiteDefaults()
+  if (company.current) await loadCompanyErp(company.current)
 })
 
 watch(
@@ -739,6 +749,7 @@ watch(
     if (!c) return
     policy.reload()
     bankOptions.reload()
+    loadCompanyErp(c)
     if (accountsPickerReady.value) accountOptions.reload()
   },
   { immediate: true },
@@ -822,23 +833,16 @@ async function savePolicy() {
 }
 
 async function saveProduct() {
-  // Never send investment_account_activated from SPA — ops / internal site owns it.
-  const data = await call('lyqd.api.spa.save_settings', {
+  // Site defaults only — investment activation is per LYQD Company (ops-owned).
+  await call('lyqd.api.spa.save_settings', {
     doc: {
       default_forecast_horizon_days: productForm.default_forecast_horizon_days,
       default_min_liquidity_buffer: productForm.default_min_liquidity_buffer,
       default_restricted_cash: productForm.default_restricted_cash,
     },
   })
-  productForm.investment_account_activated = !!data.investment_account_activated
-  productForm.investment_account_crm_lead = data.investment_account_crm_lead || ''
-  productForm.investment_account_requested_on = data.investment_account_requested_on || ''
-  company.settings = {
-    ...(company.settings || {}),
-    investment_account_activated: productForm.investment_account_activated ? 1 : 0,
-    investment_account_crm_lead: productForm.investment_account_crm_lead,
-    investment_account_requested_on: productForm.investment_account_requested_on,
-  }
+  // Refresh company investment stamp (not written by save_settings)
+  if (company.current) await loadCompanyErp(company.current)
 }
 
 async function requestInvestmentAccount() {
@@ -849,10 +853,11 @@ async function requestInvestmentAccount() {
       company: company.current,
     })
     productForm.investment_account_requested_on = res.requested_on || ''
-    company.settings = {
-      ...(company.settings || {}),
+    company.applyCompanyOverlay?.({
+      ...(company.companySettings || {}),
       investment_account_requested_on: productForm.investment_account_requested_on,
-    }
+      investment_account_activated: productForm.investment_account_activated ? 1 : 0,
+    })
   } catch (e) {
     // WhatsApp already opened; stamp is best-effort only
     console.warn(e)
@@ -863,6 +868,7 @@ async function requestInvestmentAccount() {
 
 async function saveErp() {
   const payload = {
+    company: company.current,
     enabled: erpForm.enabled ? 1 : 0,
     source: erpForm.source || 'This Site',
     remote_site_url: erpForm.remote_site_url,
@@ -883,6 +889,7 @@ async function saveErp() {
     has_remote_api_secret: !!data.has_remote_api_secret,
   })
   applySavedErp({ ...data, remote_company: erpForm.remote_company })
+  company.applyCompanyOverlay?.(data)
   company.erpnextIntegrationEnabled = !!data.enabled
   return data
 }
@@ -897,6 +904,7 @@ async function connectRemote() {
       api_key: erpForm.remote_api_key,
       api_secret: erpForm.remote_api_secret || null,
       company: erpForm.remote_company || null,
+      lyqd_company: company.current,
     })
     remoteCompanies.value = res.companies || []
     if (res.company) erpForm.remote_company = res.company

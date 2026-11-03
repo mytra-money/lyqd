@@ -380,7 +380,7 @@ def get_liability_recommendations(
 	company: str,
 	horizon_days: int | None = None,
 ) -> dict[str, Any]:
-	settings = get_integration_settings()
+	settings = get_integration_settings(company)
 	if not settings.get("enabled"):
 		return {
 			"company": company,
@@ -435,6 +435,7 @@ def get_liability_recommendations(
 					for r in rows_cfg
 				],
 				as_of=as_of,
+				lyqd_company=company,
 			)
 		else:
 			if "erpnext" not in frappe.get_installed_apps():
@@ -511,7 +512,7 @@ def accept_recommendation(
 	cash_effect: str | None = None,
 ) -> dict[str, Any]:
 	"""Create a Planned LYQD Upcoming Payment from a recommendation row."""
-	if not is_erpnext_integration_enabled():
+	if not is_erpnext_integration_enabled(company):
 		frappe.throw(frappe._("Enable ERPNext integration before accepting recommendations"))
 
 	existing = frappe.db.exists(
@@ -660,18 +661,28 @@ def resolve_books_outstanding(
 	if not source_doctype or not source_name:
 		return {"ok": False, "reason": "manual_row"}
 
-	if is_remote_source():
+	if is_remote_source(company):
 		from lyqd.recommendations import remote as remote_src
 
 		if source_doctype == "Account":
-			return remote_src.remote_account_balance(source_name, as_of=as_of)
+			return remote_src.remote_account_balance(
+				source_name, as_of=as_of, lyqd_company=company
+			)
 		if source_doctype == "Purchase Invoice":
-			return remote_src.remote_purchase_invoice_outstanding(source_name)
+			return remote_src.remote_purchase_invoice_outstanding(
+				source_name, lyqd_company=company
+			)
 		if source_doctype == "Sales Invoice":
-			return remote_src.remote_sales_invoice_outstanding(source_name)
+			return remote_src.remote_sales_invoice_outstanding(
+				source_name, lyqd_company=company
+			)
 		# Purchase Receipt (+ other vouchers): remote GL; billed PRs cleared inside helper
 		return remote_src.remote_gl_voucher_outstanding(
-			source_doctype, source_name, account=account, as_of=as_of
+			source_doctype,
+			source_name,
+			account=account,
+			as_of=as_of,
+			lyqd_company=company,
 		)
 
 	# —— Local site ——
@@ -780,10 +791,10 @@ def resolve_books_outstanding(
 
 def sync_upcoming_payment_from_books(name: str) -> dict[str, Any]:
 	"""Refresh one Planned (or reopenable) Upcoming Payment from ERPNext books."""
-	if not is_erpnext_integration_enabled():
+	doc = frappe.get_doc("LYQD Upcoming Payment", name)
+	if not is_erpnext_integration_enabled(doc.company):
 		frappe.throw(frappe._("Enable ERPNext integration to sync from books"))
 
-	doc = frappe.get_doc("LYQD Upcoming Payment", name)
 	if doc.status not in ("Planned", "Paid"):
 		return {"name": name, "action": "skipped", "reason": "status"}
 
@@ -866,7 +877,7 @@ def sync_planned_from_books(company: str) -> dict[str, Any]:
 	- Amount drift → update amount
 	- Account-grain → refresh from current GL liability balance
 	"""
-	if not is_erpnext_integration_enabled():
+	if not is_erpnext_integration_enabled(company):
 		return {
 			"company": company,
 			"enabled": False,

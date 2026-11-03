@@ -1,7 +1,4 @@
-"""LYQD recommendation integration settings (local vs remote ERPNext).
-
-Stored on the Single DocType **LYQD Settings** (not a separate ERPNext Settings).
-"""
+"""LYQD books / recommendation settings — scoped to LYQD Company."""
 
 from __future__ import annotations
 
@@ -12,51 +9,83 @@ import frappe
 
 SOURCE_THIS_SITE = "This Site"
 SOURCE_OTHER_SITE = "Other Site"
+SOURCE_MANUAL = "Manual"
 
 
-def get_integration_settings() -> dict[str, Any]:
-	if not frappe.db.exists("DocType", "LYQD Settings"):
-		return {
-			"enabled": False,
-			"source": SOURCE_THIS_SITE,
-			"remote_site_url": None,
-			"remote_company": None,
-			"remote_api_key": None,
-			"has_remote_api_secret": False,
-		}
-	doc = frappe.get_single("LYQD Settings")
-	enabled = bool(doc.get("erpnext_integration_enabled"))
-	source = doc.get("erpnext_source") or SOURCE_THIS_SITE
+def _company_doc(company: str | None):
+	company = (company or "").strip()
+	if not company or not frappe.db.exists("DocType", "LYQD Company"):
+		return None
+	if not frappe.db.exists("LYQD Company", company):
+		return None
+	return frappe.get_doc("LYQD Company", company)
+
+
+def get_integration_settings(company: str | None = None) -> dict[str, Any]:
+	"""
+	Books connector for one LYQD Company.
+
+	``enabled`` is True when books_source is This Site or Other Site.
+	"""
+	empty = {
+		"company": company,
+		"enabled": False,
+		"source": SOURCE_THIS_SITE,
+		"books_source": SOURCE_MANUAL,
+		"remote_site_url": None,
+		"remote_company": None,
+		"remote_api_key": None,
+		"has_remote_api_secret": False,
+		"investment_account_activated": False,
+		"investment_account_requested_on": None,
+	}
+	doc = _company_doc(company)
+	if not doc:
+		return empty
+
+	books_source = doc.books_source or SOURCE_MANUAL
+	if books_source == SOURCE_MANUAL:
+		source = SOURCE_THIS_SITE
+		enabled = False
+	elif books_source == SOURCE_OTHER_SITE:
+		source = SOURCE_OTHER_SITE
+		enabled = True
+	else:
+		source = SOURCE_THIS_SITE
+		enabled = True
+
 	return {
+		"company": doc.name,
 		"enabled": enabled,
 		"source": source,
-		"remote_site_url": (doc.get("remote_site_url") or "").rstrip("/") or None,
-		"remote_company": (doc.get("remote_company") or "").strip() or None,
-		"remote_api_key": (doc.get("remote_api_key") or "").strip() or None,
+		"books_source": books_source,
+		"remote_site_url": (doc.remote_site_url or "").rstrip("/") or None,
+		"remote_company": (doc.books_company or "").strip() or None,
+		"remote_api_key": (doc.remote_api_key or "").strip() or None,
 		"has_remote_api_secret": bool(
 			doc.get_password("remote_api_secret", raise_exception=False)
-			if hasattr(doc, "get_password")
-			else False
 		),
+		"investment_account_activated": bool(doc.investment_account_activated),
+		"investment_account_requested_on": doc.investment_account_requested_on,
 	}
 
 
-def is_erpnext_integration_enabled() -> bool:
-	return bool(get_integration_settings().get("enabled"))
+def is_erpnext_integration_enabled(company: str | None = None) -> bool:
+	return bool(get_integration_settings(company).get("enabled"))
 
 
-def is_remote_source() -> bool:
-	s = get_integration_settings()
+def is_remote_source(company: str | None = None) -> bool:
+	s = get_integration_settings(company)
 	return bool(s.get("enabled") and s.get("source") == SOURCE_OTHER_SITE)
 
 
-def get_remote_credentials() -> dict[str, str]:
-	"""Return url, api_key, api_secret, company for Other Site mode."""
-	if not frappe.db.exists("DocType", "LYQD Settings"):
-		frappe.throw(frappe._("LYQD Settings not found"))
-	doc = frappe.get_single("LYQD Settings")
-	if not doc.erpnext_integration_enabled or (doc.erpnext_source or "") != SOURCE_OTHER_SITE:
-		frappe.throw(frappe._("Remote ERPNext source is not enabled"))
+def get_remote_credentials(company: str | None = None) -> dict[str, str]:
+	"""Return url, api_key, api_secret, company for Other Site mode on this LYQD Company."""
+	doc = _company_doc(company)
+	if not doc:
+		frappe.throw(frappe._("LYQD Company is required for remote books"))
+	if (doc.books_source or "") != SOURCE_OTHER_SITE:
+		frappe.throw(frappe._("Remote ERPNext source is not enabled for {0}").format(doc.name))
 	secret = doc.get_password("remote_api_secret", raise_exception=False)
 	if not doc.remote_site_url or not doc.remote_api_key or not secret:
 		frappe.throw(frappe._("Remote site URL, API Key, and API Secret are required"))
@@ -64,18 +93,23 @@ def get_remote_credentials() -> dict[str, str]:
 		"url": doc.remote_site_url.strip().rstrip("/"),
 		"api_key": doc.remote_api_key.strip(),
 		"api_secret": secret,
-		"company": (doc.remote_company or "").strip() or None,
+		"company": (doc.books_company or "").strip() or None,
+		"lyqd_company": doc.name,
 	}
 
 
-def settings_for_api() -> dict[str, Any]:
+def settings_for_api(company: str | None = None) -> dict[str, Any]:
 	"""Safe settings payload for the SPA (never includes API secret)."""
-	s = get_integration_settings()
+	s = get_integration_settings(company)
 	return {
+		"company": s.get("company") or company or "",
 		"enabled": 1 if s["enabled"] else 0,
 		"source": s["source"],
+		"books_source": s.get("books_source") or SOURCE_MANUAL,
 		"remote_site_url": s["remote_site_url"] or "",
 		"remote_company": s["remote_company"] or "",
 		"remote_api_key": s["remote_api_key"] or "",
 		"has_remote_api_secret": 1 if s["has_remote_api_secret"] else 0,
+		"investment_account_activated": 1 if s.get("investment_account_activated") else 0,
+		"investment_account_requested_on": s.get("investment_account_requested_on") or "",
 	}

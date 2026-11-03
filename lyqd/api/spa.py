@@ -14,6 +14,8 @@ from lyqd.setup.permissions import get_user_companies
 
 @frappe.whitelist()
 def get_boot_data() -> dict:
+	from lyqd.recommendations.settings import settings_for_api
+
 	companies = get_user_companies()
 	default_company = frappe.defaults.get_user_default("LYQD Company")
 	if default_company and default_company not in (companies or []):
@@ -23,15 +25,25 @@ def get_boot_data() -> dict:
 	if frappe.db.exists("DocType", "LYQD Settings"):
 		s = frappe.get_single("LYQD Settings")
 		settings = {
-			"investment_account_activated": int(s.investment_account_activated or 0),
-			"investment_account_crm_lead": s.investment_account_crm_lead,
-			"investment_account_requested_on": s.investment_account_requested_on,
 			"default_forecast_horizon_days": s.default_forecast_horizon_days,
 			"enable_draft_proposals": s.enable_draft_proposals,
 			"tagline": s.tagline,
 			"display_scheme_label": s.display_scheme_label,
 			"display_scheme_isin": s.display_scheme_isin,
 		}
+	# Per-company books + investment overlay for the active company
+	company_settings = settings_for_api(default_company) if default_company else {}
+	if company_settings:
+		settings.update(
+			{
+				"investment_account_activated": company_settings.get(
+					"investment_account_activated", 0
+				),
+				"investment_account_requested_on": company_settings.get(
+					"investment_account_requested_on"
+				),
+			}
+		)
 	user_image = None
 	if frappe.session.user and frappe.session.user != "Guest":
 		user_image = frappe.db.get_value("User", frappe.session.user, "user_image")
@@ -44,10 +56,8 @@ def get_boot_data() -> dict:
 		"roles": frappe.get_roles(),
 		"settings": settings,
 		"tagline": settings.get("tagline") or "Make idle cash work smarter.",
-		"erpnext_integration_enabled": bool(
-			frappe.db.exists("DocType", "LYQD Settings")
-			and frappe.db.get_single_value("LYQD Settings", "erpnext_integration_enabled")
-		),
+		"erpnext_integration_enabled": bool(company_settings.get("enabled")),
+		"company_settings": company_settings,
 	}
 
 
@@ -62,6 +72,9 @@ def create_lyqd_company(
 	abbr: str | None = None,
 	books_source: str | None = None,
 	books_company: str | None = None,
+	remote_site_url: str | None = None,
+	remote_api_key: str | None = None,
+	remote_api_secret: str | None = None,
 ) -> dict:
 	"""Create a LYQD Company (cash-management entity) and empty Policy."""
 	frappe.only_for(("System Manager", "LYQD Manager"))
@@ -83,8 +96,12 @@ def create_lyqd_company(
 			"is_active": 1,
 			"books_source": books_source,
 			"books_company": (books_company or company_name).strip(),
+			"remote_site_url": (remote_site_url or "").strip() or None,
+			"remote_api_key": (remote_api_key or "").strip() or None,
 		}
 	)
+	if remote_api_secret:
+		doc.remote_api_secret = remote_api_secret
 	doc.insert()
 
 	if not frappe.db.exists("LYQD Policy", {"company": doc.name}):
@@ -221,20 +238,22 @@ def get_company_bank_account_options(company: str | None = None) -> dict:
 	"""
 	Company bank accounts for Policy / Banks selection.
 
-	From This Site or Other Site based on LYQD Settings → ERPNext integration.
+	From This Site or Other Site based on the LYQD Company's books settings.
 	"""
 	from lyqd.cash.bank_cash import get_company_bank_accounts
 	from lyqd.recommendations.settings import get_integration_settings, is_remote_source
 
 	company = company or _default_company()
-	settings = get_integration_settings()
+	settings = get_integration_settings(company)
 	try:
 		rows = get_company_bank_accounts(company)
 	except Exception as e:
 		frappe.log_error(title="LYQD bank account options failed")
 		return {
 			"source": settings.get("source") or "This Site",
-			"books_company": settings.get("remote_company") if is_remote_source() else company,
+			"books_company": settings.get("remote_company")
+			if is_remote_source(company)
+			else company,
 			"accounts": [],
 			"message": str(e),
 			"balance_source": None,
@@ -244,7 +263,7 @@ def get_company_bank_account_options(company: str | None = None) -> dict:
 	books_company = company
 	source = "This Site"
 	mirrored = None
-	if is_remote_source():
+	if is_remote_source(company):
 		source = "Other Site"
 		books_company = settings.get("remote_company")
 		# rows already mirrored locally via get_company_bank_accounts
@@ -406,12 +425,12 @@ def get_recommendation_account_options(
 	"""
 	Leaf accounts for the Integrations account picker.
 
-	Reads from This Site (local) or Other Site (remote API) based on LYQD Settings.
+	Reads from This Site (local) or Other Site (remote API) based on the LYQD Company.
 	"""
 	from lyqd.recommendations.settings import SOURCE_OTHER_SITE, get_integration_settings
 
 	company = company or _default_company()
-	settings = get_integration_settings()
+	settings = get_integration_settings(company)
 	source = settings.get("source") or "This Site"
 	# Asset = setoff accounts (e.g. Input GST); Liability/Expense = outflows
 	root_types = ["Liability", "Expense", "Asset"]
@@ -426,6 +445,7 @@ def get_recommendation_account_options(
 				root_types=root_types,
 				account_type=account_type,
 				search=search,
+				lyqd_company=company,
 			)
 		except Exception as e:
 			frappe.log_error(title="LYQD remote account list failed")
@@ -444,8 +464,9 @@ def get_recommendation_account_options(
 			"message": None,
 		}
 
+	books_company = settings.get("remote_company") or company
 	filters: dict = {
-		"company": company,
+		"company": books_company,
 		"is_group": 0,
 		"root_type": ("in", root_types),
 	}
@@ -470,10 +491,10 @@ def get_recommendation_account_options(
 		]
 	for r in rows:
 		r["source"] = "This Site"
-		r["books_company"] = company
+		r["books_company"] = books_company
 	return {
 		"source": "This Site",
-		"books_company": company,
+		"books_company": books_company,
 		"enabled": bool(settings.get("enabled")),
 		"accounts": rows,
 		"message": None,
@@ -583,68 +604,74 @@ def save_upcoming_payment(doc: str | dict | None = None) -> dict:
 
 
 @frappe.whitelist()
-def get_erpnext_settings() -> dict:
+def get_erpnext_settings(company: str | None = None) -> dict:
+	"""Books + investment settings for one LYQD Company."""
 	from lyqd.recommendations.settings import settings_for_api
 
-	return settings_for_api()
+	company = company or _default_company()
+	return settings_for_api(company)
 
 
 @frappe.whitelist()
 def save_erpnext_settings(doc: str | dict) -> dict:
-	from lyqd.recommendations.settings import settings_for_api
+	"""Persist books connector fields onto the LYQD Company (not Singles)."""
+	from lyqd.recommendations.settings import SOURCE_OTHER_SITE, settings_for_api
 
 	if isinstance(doc, str):
 		doc = frappe.parse_json(doc)
 	frappe.only_for(("System Manager", "LYQD Manager"))
-	s = frappe.get_single("LYQD Settings")
-	was_remote = bool(
-		s.erpnext_integration_enabled and (s.erpnext_source or "") == "Other Site"
-	)
-	s.erpnext_integration_enabled = 1 if doc.get("enabled") else 0
-	source = doc.get("source") or "This Site"
-	if source not in ("This Site", "Other Site"):
+
+	lyqd_company = (doc.get("company") or _default_company() or "").strip()
+	if not lyqd_company:
+		frappe.throw(_("Company is required"))
+
+	enabled = bool(int(doc.get("enabled") or 0))
+	source = doc.get("source") or doc.get("books_source") or "This Site"
+	if source not in ("This Site", "Other Site", "Manual"):
 		source = "This Site"
-	s.erpnext_source = source
-	if source == "Other Site":
-		s.remote_site_url = (doc.get("remote_site_url") or "").strip()
-		s.remote_company = (doc.get("remote_company") or "").strip()
-		s.remote_api_key = (doc.get("remote_api_key") or "").strip()
-		# Keep existing secret if the SPA sends blank (user did not rotate it)
+	# SPA "enabled" off → Manual (LYQD-only balances, no recommendations)
+	if not enabled:
+		books_source = "Manual"
+	elif source == "Other Site":
+		books_source = SOURCE_OTHER_SITE
+	else:
+		books_source = "This Site"
+
+	if not frappe.db.exists("LYQD Company", lyqd_company):
+		create_lyqd_company(
+			company_name=lyqd_company,
+			books_source=books_source,
+			books_company=(doc.get("remote_company") or lyqd_company).strip(),
+			remote_site_url=doc.get("remote_site_url"),
+			remote_api_key=doc.get("remote_api_key"),
+			remote_api_secret=doc.get("remote_api_secret"),
+		)
+
+	co = frappe.get_doc("LYQD Company", lyqd_company)
+	was_remote = (co.books_source or "") == SOURCE_OTHER_SITE
+	co.books_source = books_source
+	if books_source != "Manual":
+		co.books_company = (doc.get("remote_company") or co.books_company or lyqd_company).strip()
+	if books_source == SOURCE_OTHER_SITE:
+		co.remote_site_url = (doc.get("remote_site_url") or "").strip()
+		co.remote_api_key = (doc.get("remote_api_key") or "").strip()
 		new_secret = doc.get("remote_api_secret")
 		if new_secret:
-			s.remote_api_secret = new_secret
-	s.save()
+			co.remote_api_secret = new_secret
+	co.save()
 
-	payload = settings_for_api()
-	now_remote = bool(payload.get("enabled") and payload.get("source") == "Other Site")
+	payload = settings_for_api(lyqd_company)
+	now_remote = bool(payload.get("enabled") and payload.get("source") == SOURCE_OTHER_SITE)
 	if was_remote and not now_remote:
 		payload["plan_note"] = (
 			"Accepted plan items stay on Commitments as Planned/Paid with their source refs. "
 			"Sync from books stops until Other site is enabled again. "
 			"Mirrored local bank accounts and balances remain on this site."
 		)
-	# Mirror banks when enabling Other Site (read remote → create local)
 	if now_remote:
 		try:
 			from lyqd.cash.mirror_banks import mirror_remote_bank_accounts
 
-			lyqd_company = doc.get("company") or _default_company()
-			# Ensure LYQD Company exists for the cash entity / remote books name
-			remote_co = (doc.get("remote_company") or s.remote_company or "").strip()
-			if remote_co and not frappe.db.exists("LYQD Company", lyqd_company):
-				create_lyqd_company(
-					company_name=lyqd_company or remote_co,
-					books_source="Other Site",
-					books_company=remote_co,
-				)
-				lyqd_company = lyqd_company or remote_co
-			elif lyqd_company and frappe.db.exists("LYQD Company", lyqd_company):
-				frappe.db.set_value(
-					"LYQD Company",
-					lyqd_company,
-					{"books_source": "Other Site", "books_company": remote_co or lyqd_company},
-					update_modified=False,
-				)
 			payload["bank_mirror"] = mirror_remote_bank_accounts(lyqd_company)
 		except Exception as e:
 			frappe.log_error(title="LYQD bank mirror on save settings")
@@ -653,12 +680,12 @@ def save_erpnext_settings(doc: str | dict) -> dict:
 
 
 @frappe.whitelist()
-def test_remote_erpnext_connection() -> dict:
-	"""Ping saved Other Site credentials."""
+def test_remote_erpnext_connection(company: str | None = None) -> dict:
+	"""Ping saved Other Site credentials for a LYQD Company."""
 	frappe.only_for(("System Manager", "LYQD Manager"))
 	from lyqd.recommendations.remote import test_remote_connection
 
-	return test_remote_connection()
+	return test_remote_connection(company or _default_company())
 
 
 @frappe.whitelist()
@@ -667,22 +694,24 @@ def probe_remote_erpnext_connection(
 	api_key: str | None = None,
 	api_secret: str | None = None,
 	company: str | None = None,
+	lyqd_company: str | None = None,
 ) -> dict:
 	"""
 	Validate draft remote credentials and list companies on that site.
 
-	Uses the posted secret, or the stored secret when api_secret is blank.
-	Auto-resolves company when omitted (Global Defaults / sole company).
+	Uses the posted secret, or the stored secret on the LYQD Company when blank.
+	``company`` is the remote books company name; ``lyqd_company`` is the local entity.
 	"""
 	frappe.only_for(("System Manager", "LYQD Manager"))
 	from lyqd.recommendations.remote import probe_remote_connection
 	from lyqd.recommendations.settings import get_integration_settings
 
+	local = (lyqd_company or _default_company() or "").strip()
 	secret = (api_secret or "").strip()
-	if not secret:
-		s = get_integration_settings()
-		if s.get("has_remote_api_secret") and frappe.db.exists("DocType", "LYQD Settings"):
-			doc = frappe.get_single("LYQD Settings")
+	if not secret and local:
+		s = get_integration_settings(local)
+		if s.get("has_remote_api_secret") and frappe.db.exists("LYQD Company", local):
+			doc = frappe.get_doc("LYQD Company", local)
 			secret = doc.get_password("remote_api_secret", raise_exception=False) or ""
 	result = probe_remote_connection(
 		url=url or "",
@@ -690,32 +719,29 @@ def probe_remote_erpnext_connection(
 		api_secret=secret,
 		company=company,
 	)
-	# Persist resolved company onto settings if Other Site is already enabled
-	if result.get("company") and frappe.db.exists("DocType", "LYQD Settings"):
-		doc = frappe.get_single("LYQD Settings")
-		if (
-			doc.erpnext_integration_enabled
-			and (doc.erpnext_source or "") == "Other Site"
-			and doc.remote_company != result["company"]
-		):
-			# Only auto-write when blank so an explicit pick is kept
-			if not (doc.remote_company or "").strip():
-				doc.remote_company = result["company"]
-				doc.save(ignore_permissions=True)
+	# Persist resolved books company when blank on the LYQD Company
+	if result.get("company") and local and frappe.db.exists("LYQD Company", local):
+		doc = frappe.get_doc("LYQD Company", local)
+		if (doc.books_source or "") == "Other Site" and not (doc.books_company or "").strip():
+			doc.books_company = result["company"]
+			doc.save(ignore_permissions=True)
 	# Mirror remote banks locally (never writes to remote)
-	try:
-		from lyqd.cash.mirror_banks import mirror_remote_bank_accounts
+	if local:
+		try:
+			from lyqd.cash.mirror_banks import mirror_remote_bank_accounts
 
-		result["bank_mirror"] = mirror_remote_bank_accounts(_default_company())
-	except Exception as e:
-		frappe.log_error(title="LYQD bank mirror on probe")
-		result["bank_mirror_error"] = str(e)
+			result["bank_mirror"] = mirror_remote_bank_accounts(local)
+		except Exception as e:
+			frappe.log_error(title="LYQD bank mirror on probe")
+			result["bank_mirror_error"] = str(e)
 	result["remote_writes"] = False
+	result["lyqd_company"] = local
 	return result
 
 
 @frappe.whitelist()
 def get_settings() -> dict:
+	"""Site-wide LYQD defaults (not per-company books/investment)."""
 	s = frappe.get_single("LYQD Settings")
 	return s.as_dict()
 
@@ -725,7 +751,6 @@ def save_settings(doc: str | dict) -> dict:
 	if isinstance(doc, str):
 		doc = frappe.parse_json(doc)
 	s = frappe.get_single("LYQD Settings")
-	# investment_account_activated is ops-owned (Desk / internal site) — never via SPA save.
 	for key in (
 		"default_forecast_horizon_days",
 		"default_min_liquidity_buffer",
@@ -741,32 +766,39 @@ def save_settings(doc: str | dict) -> dict:
 	return s.as_dict()
 
 
-def _investment_account_active() -> bool:
-	if not frappe.db.exists("DocType", "LYQD Settings"):
+def _investment_account_active(company: str | None = None) -> bool:
+	company = company or _default_company()
+	if not company or not frappe.db.exists("LYQD Company", company):
 		return False
-	return bool(frappe.db.get_single_value("LYQD Settings", "investment_account_activated"))
+	return bool(frappe.db.get_value("LYQD Company", company, "investment_account_activated"))
 
 
 @frappe.whitelist()
 def request_investment_account(company: str | None = None, note: str | None = None) -> dict:
 	"""Stamp that the SPA opened the WhatsApp activation flow (no CRM Lead create)."""
-	_ = company, note  # reserved for audit context; lead is created by the WhatsApp bot
-	settings = frappe.get_single("LYQD Settings")
-	if int(settings.investment_account_activated or 0):
+	_ = note
+	company = (company or _default_company() or "").strip()
+	if not company:
+		frappe.throw(_("Company is required"))
+	if not frappe.db.exists("LYQD Company", company):
+		frappe.throw(_("LYQD Company {0} not found").format(company))
+
+	doc = frappe.get_doc("LYQD Company", company)
+	if int(doc.investment_account_activated or 0):
 		return {
 			"already_activated": True,
-			"requested_on": settings.investment_account_requested_on,
+			"requested_on": doc.investment_account_requested_on,
 			"message": _("Investment account is already activated."),
 		}
 
-	already = bool(settings.investment_account_requested_on)
+	already = bool(doc.investment_account_requested_on)
 	if not already:
-		settings.investment_account_requested_on = frappe.utils.now_datetime()
-		settings.save(ignore_permissions=True)
+		doc.investment_account_requested_on = frappe.utils.now_datetime()
+		doc.save(ignore_permissions=True)
 
 	return {
 		"already_requested": already,
-		"requested_on": settings.investment_account_requested_on,
+		"requested_on": doc.investment_account_requested_on,
 		"message": _("Activation request noted."),
 	}
 
@@ -868,14 +900,14 @@ def create_proposal_from_surplus(
 
 @frappe.whitelist()
 def create_instruction_from_proposal(proposal: str) -> dict:
-	if not _investment_account_active():
+	prop = frappe.get_doc("LYQD Draft Proposal", proposal)
+	if not _investment_account_active(prop.company):
 		frappe.throw(
 			_(
 				"Investment account is not activated. Open Settings → Investment account "
 				"to activate it, or create a CRM request to open the account."
 			)
 		)
-	prop = frappe.get_doc("LYQD Draft Proposal", proposal)
 	if prop.status == "Cancelled":
 		frappe.throw(_("Cannot create an instruction from a cancelled investment request."))
 	if prop.status != "Frozen":

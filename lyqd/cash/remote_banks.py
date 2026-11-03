@@ -32,9 +32,11 @@ def remote_has_doctype(client, doctype: str) -> bool:
 			return False
 
 
-def list_remote_bank_accounts(selected: list[str] | None = None) -> list[dict[str, Any]]:
+def list_remote_bank_accounts(
+	selected: list[str] | None = None, lyqd_company: str | None = None
+) -> list[dict[str, Any]]:
 	"""Company bank accounts on the remote ERPNext site."""
-	client, company = get_remote_client()
+	client, company = get_remote_client(lyqd_company)
 	filters: dict[str, Any] = {
 		"company": company,
 		"is_company_account": 1,

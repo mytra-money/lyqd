@@ -23,9 +23,20 @@ def seed_portfolio_demo(company: str | None = None) -> dict:
 	if not company:
 		frappe.throw(frappe._("Pass company= or set a default Company."))
 
-	settings = frappe.get_single("LYQD Settings")
-	settings.investment_account_activated = 1
-	settings.save(ignore_permissions=True)
+	if frappe.db.exists("LYQD Company", company):
+		frappe.db.set_value(
+			"LYQD Company",
+			company,
+			"investment_account_activated",
+			1,
+			update_modified=False,
+		)
+	elif frappe.db.exists("DocType", "LYQD Settings"):
+		# Legacy fallback before company-scoped activation
+		settings = frappe.get_single("LYQD Settings")
+		if hasattr(settings, "investment_account_activated"):
+			settings.investment_account_activated = 1
+			settings.save(ignore_permissions=True)
 
 	created = []
 	specs = [

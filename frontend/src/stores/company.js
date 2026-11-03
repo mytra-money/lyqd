@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
-import { computed, ref } from 'vue'
-import { createResource } from 'frappe-ui'
+import { computed, ref, watch } from 'vue'
+import { createResource, call } from 'frappe-ui'
 
 export const useCompanyStore = defineStore('company', () => {
   const companies = ref(window.companies || [])
@@ -10,6 +10,7 @@ export const useCompanyStore = defineStore('company', () => {
   const userImage = ref(window.user_image || null)
   const tagline = ref(window.tagline || 'Make idle cash work smarter.')
   const settings = ref({})
+  const companySettings = ref(window.company_settings || {})
   const roles = ref(window.roles || [])
   const erpnextIntegrationEnabled = ref(!!window.erpnext_integration_enabled)
 
@@ -26,10 +27,37 @@ export const useCompanyStore = defineStore('company', () => {
       userImage.value = data.user_image || null
       tagline.value = data.tagline || tagline.value
       settings.value = data.settings || {}
+      companySettings.value = data.company_settings || {}
       roles.value = data.roles || []
       erpnextIntegrationEnabled.value = !!data.erpnext_integration_enabled
+      applyCompanyOverlay(companySettings.value)
     },
   })
+
+  function applyCompanyOverlay(cs) {
+    if (!cs) return
+    settings.value = {
+      ...(settings.value || {}),
+      investment_account_activated: cs.investment_account_activated || 0,
+      investment_account_requested_on: cs.investment_account_requested_on || '',
+    }
+    erpnextIntegrationEnabled.value = !!cs.enabled
+  }
+
+  async function loadCompanySettings(name) {
+    if (!name) {
+      companySettings.value = {}
+      applyCompanyOverlay({})
+      return
+    }
+    try {
+      const cs = await call('lyqd.api.spa.get_erpnext_settings', { company: name })
+      companySettings.value = cs || {}
+      applyCompanyOverlay(companySettings.value)
+    } catch (e) {
+      companySettings.value = {}
+    }
+  }
 
   async function bootstrap() {
     try {
@@ -42,6 +70,13 @@ export const useCompanyStore = defineStore('company', () => {
   function setCompany(name) {
     current.value = name
   }
+
+  watch(
+    () => current.value,
+    (name, prev) => {
+      if (name && name !== prev) loadCompanySettings(name)
+    },
+  )
 
   const isManager = computed(
     () =>
@@ -62,11 +97,14 @@ export const useCompanyStore = defineStore('company', () => {
     userImage,
     tagline,
     settings,
+    companySettings,
     roles,
     erpnextIntegrationEnabled,
     investmentAccountActivated,
     isManager,
     bootstrap,
     setCompany,
+    loadCompanySettings,
+    applyCompanyOverlay,
   }
 })

@@ -160,7 +160,7 @@ def get_eligible_bank_cash(company: str, as_of: str | None = None) -> dict[str, 
 
 	# Keep mirrors fresh when Other Site books are linked
 	mirror_info = None
-	if is_remote_source() or books_source == "Other Site":
+	if is_remote_source(company) or books_source == "Other Site":
 		try:
 			from lyqd.cash.mirror_banks import mirror_remote_bank_accounts
 
@@ -229,15 +229,17 @@ def create_company_bank_account(
 	_ = parent_account
 	from lyqd.recommendations.settings import get_integration_settings, is_remote_source
 
-	if is_remote_source() and not allow_when_remote:
-		url = get_integration_settings().get("remote_site_url") or frappe._("the remote site")
+	company = company or _default_lyqd_company()
+	if is_remote_source(company) and not allow_when_remote:
+		url = get_integration_settings(company).get("remote_site_url") or frappe._(
+			"the remote site"
+		)
 		frappe.throw(
 			frappe._(
 				"Bank accounts are mirrored from {0}. Add company Bank Accounts there, then reconnect / reload."
 			).format(url)
 		)
 
-	company = company or _default_lyqd_company()
 	if not company:
 		frappe.throw(frappe._("Company is required"))
 	if not frappe.db.exists("LYQD Company", company):

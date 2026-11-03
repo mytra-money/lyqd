@@ -4,19 +4,6 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "investment_account_section",
-  "investment_account_activated",
-  "investment_account_crm_lead",
-  "investment_account_requested_on",
-  "integrations_section",
-  "erpnext_integration_enabled",
-  "erpnext_source",
-  "section_remote",
-  "remote_site_url",
-  "remote_company",
-  "column_break_remote",
-  "remote_api_key",
-  "remote_api_secret",
   "defaults_section",
   "default_forecast_horizon_days",
   "default_min_liquidity_buffer",
@@ -29,94 +16,6 @@
   "enable_draft_proposals"
  ],
  "fields": [
-  {
-   "fieldname": "investment_account_section",
-   "fieldtype": "Section Break",
-   "label": "Investment Account"
-  },
-  {
-   "default": "0",
-   "description": "Ops-owned. When on, SPA can create investment instructions. Customers request via WhatsApp; they cannot toggle this in the SPA.",
-   "fieldname": "investment_account_activated",
-   "fieldtype": "Check",
-   "label": "Investment Account Activated",
-   "read_only": 1
-  },
-  {
-   "description": "Legacy CRM Lead id (optional; WhatsApp bot owns leads now).",
-   "fieldname": "investment_account_crm_lead",
-   "fieldtype": "Data",
-   "label": "CRM Lead",
-   "read_only": 1
-  },
-  {
-   "fieldname": "investment_account_requested_on",
-   "fieldtype": "Datetime",
-   "label": "Account Requested On",
-   "read_only": 1
-  },
-  {
-   "fieldname": "integrations_section",
-   "fieldtype": "Section Break",
-   "label": "ERPNext / Books Integration"
-  },
-  {
-   "default": "0",
-   "description": "Opt in to pull liability recommendations and bank masters into LYQD.",
-   "fieldname": "erpnext_integration_enabled",
-   "fieldtype": "Check",
-   "label": "Enable Recommendations"
-  },
-  {
-   "default": "This Site",
-   "depends_on": "erpnext_integration_enabled",
-   "description": "This Site reads ERPNext on this bench. Other Site uses API Key & Secret (no custom app on the remote).",
-   "fieldname": "erpnext_source",
-   "fieldtype": "Select",
-   "label": "Get recommendations from",
-   "mandatory_depends_on": "erpnext_integration_enabled",
-   "options": "This Site\nOther Site"
-  },
-  {
-   "depends_on": "eval:doc.erpnext_integration_enabled && doc.erpnext_source==\"Other Site\"",
-   "fieldname": "section_remote",
-   "fieldtype": "Section Break",
-   "label": "Remote ERPNext site"
-  },
-  {
-   "depends_on": "eval:doc.erpnext_integration_enabled && doc.erpnext_source==\"Other Site\"",
-   "description": "e.g. https://erp.example.com",
-   "fieldname": "remote_site_url",
-   "fieldtype": "Data",
-   "label": "Site URL",
-   "mandatory_depends_on": "eval:doc.erpnext_integration_enabled && doc.erpnext_source==\"Other Site\""
-  },
-  {
-   "depends_on": "eval:doc.erpnext_integration_enabled && doc.erpnext_source==\"Other Site\"",
-   "description": "Company name on the remote site (must match exactly).",
-   "fieldname": "remote_company",
-   "fieldtype": "Data",
-   "label": "Remote Company",
-   "mandatory_depends_on": "eval:doc.erpnext_integration_enabled && doc.erpnext_source==\"Other Site\""
-  },
-  {
-   "fieldname": "column_break_remote",
-   "fieldtype": "Column Break"
-  },
-  {
-   "depends_on": "eval:doc.erpnext_integration_enabled && doc.erpnext_source==\"Other Site\"",
-   "fieldname": "remote_api_key",
-   "fieldtype": "Data",
-   "label": "API Key",
-   "mandatory_depends_on": "eval:doc.erpnext_integration_enabled && doc.erpnext_source==\"Other Site\""
-  },
-  {
-   "depends_on": "eval:doc.erpnext_integration_enabled && doc.erpnext_source==\"Other Site\"",
-   "fieldname": "remote_api_secret",
-   "fieldtype": "Password",
-   "label": "API Secret",
-   "mandatory_depends_on": "eval:doc.erpnext_integration_enabled && doc.erpnext_source==\"Other Site\""
-  },
   {
    "fieldname": "defaults_section",
    "fieldtype": "Section Break",
@@ -182,7 +81,7 @@
  ],
  "issingle": 1,
  "links": [],
- "modified": "2026-11-02 19:20:00.000000",
+ "modified": "2026-11-03 15:00:00.000000",
  "modified_by": "Administrator",
  "module": "LYQD",
  "name": "LYQD Settings",

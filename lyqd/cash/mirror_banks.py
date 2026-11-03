@@ -90,7 +90,7 @@ def mirror_remote_bank_accounts(local_company: str) -> dict[str, Any]:
 	)
 	from lyqd.recommendations.remote import get_remote_client
 
-	client, books_company = get_remote_client()
+	client, books_company = get_remote_client(local_company)
 	# Keep books mapping on the LYQD Company
 	frappe.db.set_value(
 		"LYQD Company",
@@ -102,7 +102,7 @@ def mirror_remote_bank_accounts(local_company: str) -> dict[str, Any]:
 		update_modified=False,
 	)
 
-	remote_rows = list_remote_bank_accounts()
+	remote_rows = list_remote_bank_accounts(lyqd_company=local_company)
 	use_remote_bab = remote_has_doctype(client, "Bank Account Balance")
 
 	created = 0
@@ -143,7 +143,7 @@ def mirror_remote_bank_accounts(local_company: str) -> dict[str, Any]:
 	if not remote_rows:
 		from lyqd.recommendations.settings import get_integration_settings
 
-		url = get_integration_settings().get("remote_site_url") or "the remote ERPNext site"
+		url = get_integration_settings(local_company).get("remote_site_url") or "the remote ERPNext site"
 		message = frappe._(
 			"No company bank accounts on {0}. Add Bank Accounts there (company account = Yes), then reconnect."
 		).format(url)

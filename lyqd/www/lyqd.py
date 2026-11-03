@@ -62,7 +62,15 @@ def get_context_for_dev():
 
 
 def get_boot():
+	from lyqd.recommendations.settings import settings_for_api
 	from lyqd.setup.permissions import get_user_companies
+
+	companies = get_user_companies()
+	default_company = frappe.defaults.get_user_default("LYQD Company")
+	if default_company and default_company not in (companies or []):
+		default_company = None
+	default_company = default_company or (companies[0] if companies else None)
+	company_settings = settings_for_api(default_company) if default_company else {}
 
 	return frappe._dict(
 		{
@@ -78,16 +86,13 @@ def get_boot():
 				else None
 			),
 			"default_route": "/lyqd",
-			"companies": get_user_companies(),
-			"default_company": frappe.defaults.get_user_default("LYQD Company")
-			or (get_user_companies()[0] if get_user_companies() else None),
+			"companies": companies,
+			"default_company": default_company,
 			"roles": frappe.get_roles(),
 			"developer_mode": bool(frappe.conf.developer_mode),
 			"tagline": "Make idle cash work smarter.",
 			"app_name": "LYQD by Mytra",
-			"erpnext_integration_enabled": bool(
-				frappe.db.exists("DocType", "LYQD Settings")
-				and frappe.db.get_single_value("LYQD Settings", "erpnext_integration_enabled")
-			),
+			"erpnext_integration_enabled": bool(company_settings.get("enabled")),
+			"company_settings": company_settings,
 		}
 	)

@@ -29,13 +29,19 @@ def execute():
 		if frappe.db.exists("DocType", dt) and frappe.db.has_column(dt, "company"):
 			names.update(frappe.get_all(dt, pluck="company") or [])
 
-	settings = frappe.get_single("LYQD Settings") if frappe.db.exists("DocType", "LYQD Settings") else None
+	# Prefer Singles rows — fields may already be removed from LYQD Settings meta
+	def _single(field, default=None):
+		rows = frappe.db.sql(
+			"select value from tabSingles where doctype=%s and field=%s limit 1",
+			("LYQD Settings", field),
+		)
+		return rows[0][0] if rows else default
+
 	remote_on = bool(
-		settings
-		and settings.get("erpnext_integration_enabled")
-		and (settings.get("erpnext_source") or "") == "Other Site"
+		int(_single("erpnext_integration_enabled") or 0)
+		and (_single("erpnext_source") or "") == "Other Site"
 	)
-	remote_company = (settings.get("remote_company") if settings else None) or None
+	remote_company = (_single("remote_company") or "").strip() or None
 
 	for name in sorted(n for n in names if n):
 		if frappe.db.exists("LYQD Company", name):

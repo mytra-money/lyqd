@@ -106,9 +106,12 @@ def use_demo_portfolio() -> bool:
 		if isinstance(flag, str):
 			return flag.strip().lower() in ("1", "true", "yes", "on")
 		return bool(flag)
-	if not frappe.db.exists("DocType", "LYQD Settings"):
+	# Soft-launch sample when any LYQD Company has investment activated
+	if not frappe.db.exists("DocType", "LYQD Company"):
 		return False
-	return bool(frappe.db.get_single_value("LYQD Settings", "investment_account_activated"))
+	return bool(
+		frappe.db.exists("LYQD Company", {"investment_account_activated": 1, "is_active": 1})
+	)
 
 
 def fetch_mytra_positions(company: str) -> list[dict]:

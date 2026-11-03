@@ -21,6 +21,22 @@ def _company_doc(company: str | None):
 	return frappe.get_doc("LYQD Company", company)
 
 
+def effective_books_source(doc) -> str:
+	"""
+	Resolve Manual / This Site / Other Site.
+
+	Prefer CRM-style checks (erpnext_enabled + is_erpnext_in_the_current_site)
+	when present so a disabled checkbox never leaves a stale Other Site source.
+	"""
+	if doc and getattr(doc, "meta", None) and doc.meta.has_field("erpnext_enabled"):
+		if not int(doc.erpnext_enabled or 0):
+			return SOURCE_MANUAL
+		if int(doc.is_erpnext_in_the_current_site or 0):
+			return SOURCE_THIS_SITE
+		return SOURCE_OTHER_SITE
+	return (getattr(doc, "books_source", None) or SOURCE_MANUAL) if doc else SOURCE_MANUAL
+
+
 def get_integration_settings(company: str | None = None) -> dict[str, Any]:
 	"""
 	Books connector for one LYQD Company.
@@ -43,7 +59,21 @@ def get_integration_settings(company: str | None = None) -> dict[str, Any]:
 	if not doc:
 		return empty
 
-	books_source = doc.books_source or SOURCE_MANUAL
+	books_source = effective_books_source(doc)
+	# Heal stale books_source if checks disagree (e.g. after adding erpnext_enabled)
+	if (doc.books_source or SOURCE_MANUAL) != books_source:
+		frappe.db.set_value(
+			"LYQD Company",
+			doc.name,
+			{
+				"books_source": books_source,
+				"erpnext_enabled": 0 if books_source == SOURCE_MANUAL else 1,
+				"is_erpnext_in_the_current_site": 1 if books_source == SOURCE_THIS_SITE else 0,
+			},
+			update_modified=False,
+		)
+		doc.books_source = books_source
+
 	if books_source == SOURCE_MANUAL:
 		source = SOURCE_THIS_SITE
 		enabled = False

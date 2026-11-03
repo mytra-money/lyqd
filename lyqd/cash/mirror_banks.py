@@ -74,8 +74,8 @@ def mirror_remote_bank_accounts(local_company: str) -> dict[str, Any]:
 	"""
 	Create/update LYQD Bank Account for each remote company bank account.
 
-	Never writes to the remote site. Optionally seeds LYQD Bank Balance from a
-	remote Bank Account Balance read when that DocType exists remotely.
+	Never writes to the remote site. Mirrors account masters only — balances stay on
+	local LYQD Bank Balance (updated from /lyqd/cash), never fetched from remote.
 	"""
 	local_company = local_company or _default_company()
 	if not local_company:
@@ -83,14 +83,10 @@ def mirror_remote_bank_accounts(local_company: str) -> dict[str, Any]:
 	if not frappe.db.exists("LYQD Company", local_company):
 		frappe.throw(frappe._("LYQD Company {0} not found").format(local_company))
 
-	from lyqd.cash.remote_banks import (
-		get_remote_statement_balance,
-		list_remote_bank_accounts,
-		remote_has_doctype,
-	)
+	from lyqd.cash.remote_banks import list_remote_bank_accounts
 	from lyqd.recommendations.remote import get_remote_client
 
-	client, books_company = get_remote_client(local_company)
+	_client, books_company = get_remote_client(local_company)
 	# Keep books mapping on the LYQD Company
 	frappe.db.set_value(
 		"LYQD Company",
@@ -103,7 +99,6 @@ def mirror_remote_bank_accounts(local_company: str) -> dict[str, Any]:
 	)
 
 	remote_rows = list_remote_bank_accounts(lyqd_company=local_company)
-	use_remote_bab = remote_has_doctype(client, "Bank Account Balance")
 
 	created = 0
 	updated = 0
@@ -121,9 +116,6 @@ def mirror_remote_bank_accounts(local_company: str) -> dict[str, Any]:
 			created += 1
 		else:
 			updated += 1
-
-		if use_remote_bab:
-			_seed_local_balance_from_remote_read(client, local_name, remote["name"])
 
 		accounts.append(
 			{
@@ -160,7 +152,7 @@ def mirror_remote_bank_accounts(local_company: str) -> dict[str, Any]:
 		"errors": errors,
 		"message": message,
 		"balance_source": "lyqd",
-		"remote_bab_available": use_remote_bab,
+		"remote_bab_available": False,
 	}
 
 
@@ -202,25 +194,6 @@ def _ensure_mirrored_bank_account(local_company: str, remote: dict[str, Any]) ->
 	)
 	doc.insert(ignore_permissions=True)
 	return doc.name, True
-
-
-def _seed_local_balance_from_remote_read(client, local_bank_account: str, remote_bank_account: str):
-	from lyqd.cash.bank_cash import get_statement_balance, set_statement_balance
-	from lyqd.cash.remote_banks import get_remote_statement_balance
-
-	local = get_statement_balance(local_bank_account)
-	if flt(local.get("balance")) or local.get("balance_date"):
-		return
-	try:
-		remote = get_remote_statement_balance(client, remote_bank_account)
-	except Exception:
-		return
-	if remote and remote.get("balance") is not None:
-		set_statement_balance(
-			local_bank_account,
-			flt(remote["balance"]),
-			remote.get("balance_date") or today(),
-		)
 
 
 def _remap_policy_bank_accounts(local_company: str) -> None:

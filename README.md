@@ -13,7 +13,7 @@
 
 LYQD helps finance teams forecast upcoming payments, identify potential surplus cash, and manage mutual fund investment workflows with clear approvals and transaction tracking. It runs on [Frappe](https://github.com/frappe/frappe); [ERPNext](https://github.com/frappe/erpnext) is an **optional** books source (this site or other site), same pattern as Frappe CRM.
 
-Bank statement balances, near-term commitments, and a liquidity policy feed one explainable free-cash number. From there you can open an investment request, issue an instruction, and track liquid holdings — without maintaining a second ledger outside the books.
+Bank statement balances (always local), near-term commitments, and a liquidity policy feed one explainable free-cash number. From there you can open an **Invest** or **Redeem** request (linked to a Surplus Run), issue an instruction, and track liquid holdings — without maintaining a second ledger outside the books.
 
 Product overview: [mytra.money/lyqd](https://mytra.money/lyqd).
 
@@ -28,7 +28,7 @@ Typical gaps:
 3. **Scattered approvals** — Spreadsheets and ad-hoc email make decisions hard to review later.
 4. **Hard to plan redemptions** — Without visible holdings and status, redeeming ahead of a due date feels risky.
 
-LYQD closes that loop on ERPNext: cash position, commitments, free cash, invest, and portfolio share one company context and one formula.
+LYQD closes that loop: cash position, commitments, free cash, invest / redeem, and portfolio share one company context and one formula.
 
 ### Why liquid mutual funds?
 
@@ -47,14 +47,14 @@ Human approval before investment instructions — no autonomous trading. Mutual 
 
 A Vue 3 + [Frappe UI](https://github.com/frappe/frappe-ui) app served at `/lyqd`, and registered on the desk apps screen next to ERPNext.
 
-- **Cash position** — Bank statement balances, portfolio snapshot, commitments in the horizon, free cash, and alerts when redemption may be needed.
+- **Cash position** — Local bank statement balances, portfolio snapshot, commitments in the horizon, free cash, and alerts when redemption may be needed.
 - **Commitments** — Planned payments that reserve cash (including overdue). Optional “from books” suggestions can be accepted onto the plan with a due date.
 - **Free cash** — Explainable waterfall: bank cash − planned commitments − buffer − restricted cash.
-- **Invest** — One open investment request per company; confirm amount, then create an instruction once the investment account is activated.
+- **Invest** — One open request per company: **Invest** when free cash is positive, or **Redeem** when the horizon shows a shortfall (capped by liquid holdings). Each request is based on a saved **Surplus Run**, then creates a Purchase or Redeem instruction once the investment account is activated.
 - **Portfolio** — Holding balances and transaction history from Mytra (instructions link via Mytra transaction ref).
 
 ```
-Cash position  →  Commitments  →  Free cash  →  Invest  →  Portfolio
+Cash position  →  Commitments  →  Free cash  →  Invest / Redeem  →  Portfolio
 ```
 
 ### Free cash
@@ -68,6 +68,22 @@ free_cash =
 ```
 
 Overdue Planned commitments are included. Cash masters are **LYQD Company**, **LYQD Bank Account**, and **LYQD Bank Balance** — no Chart of Accounts dependency.
+
+**Balances are always local.** Free cash and redeem amounts use **LYQD Bank Balance** on this site only. Other Site books may mirror bank *account* masters; statement balances are never pulled from the remote site (update them on `/lyqd/cash`).
+
+### Invest & Redeem requests
+
+- Creating a request always persists (or reuses) a **LYQD Surplus Run** with the free-cash waterfall; the Draft Proposal must link to that run.
+- **Invest** — `proposed_amount = free_cash` when free cash is positive; instruction `side = Purchase`.
+- **Redeem** — when free cash is a shortfall: `proposed_amount = min(|shortfall|, liquid holdings)`; instruction `side = Redeem`.
+- Only one open (Draft / Frozen) request per company; starting a new Invest or Redeem supersedes the prior open request.
+- Identical free-cash math reuses the same Surplus Run and open request (no duplicate rows).
+
+### Onboarding & multi-company
+
+On first sign-in, if the user has no LYQD Company yet, the SPA opens a **Create company** dialog (company name + optional Manual / This Site / Other Site books). The same dialog is available anytime from the company dropdown (**+ Add company…**).
+
+Non–System Managers receive a **User Permission** on the new LYQD Company so only their companies appear in the nav. System Managers see all companies and do not need a User Permission.
 
 ### LYQD Company (one record per cash entity)
 
@@ -88,7 +104,7 @@ Multi-company on one site is supported: each company has its own books connector
 Same idea as Frappe CRM: LYQD installs without ERPNext. Books are opt-in **per LYQD Company** (Books tab / SPA Settings → Integrations):
 
 - **This site** — local ERPNext must be installed; Payment Ledger + GL recommendations.
-- **Other site** — remote ERPNext via URL + API key & secret (read-only). Banks are mirrored into **LYQD Bank Account**; balances stay on this site.
+- **Other site** — remote ERPNext via URL + API key & secret (read-only). Bank *accounts* can be mirrored into **LYQD Bank Account**; **balances always stay on this site** (LYQD Bank Balance).
 - **Manual** — enter statement balances in LYQD with no books connector.
 
 **Sync plan from books** updates Accepted rows from voucher outstanding or GL balances. Purchase Receipt suggestions exclude receipts that already have a Purchase Invoice.
@@ -118,7 +134,8 @@ bench --site <site> execute lyqd.setup.seed_portfolio_demo.seed_portfolio_demo -
 - **Explainable free cash** — Same formula on Cash position and Free cash, with horizon control.
 - **Company policy** — Eligible banks, liquidity buffer, restricted cash, and recommendation accounts on the company itself.
 - **Commitments plan** — Manual payments plus accept-from-books; Outflow vs Setoff cash effects.
-- **Investment workflow** — Draft → confirmed request → instruction (approve / ready).
+- **Investment workflow** — Surplus Run → Invest or Redeem request → instruction (Purchase / Redeem; approve / ready).
+- **Multi-company onboarding** — Add company from the nav (User Permission for non–System Managers).
 - **Session caching** — Cash position and Commitments keep recent data across navigation; Refresh forces a reload. Book sync is explicit, not on every page open.
 
 ### Under the hood
@@ -159,8 +176,8 @@ bench --site <site> execute lyqd.setup.seed.seed_demo
 
 | Role | Access |
 |------|--------|
-| LYQD User | Commitments, free cash, view invest and portfolio |
-| LYQD Manager | Company (policy / books), banks, confirm invest |
+| LYQD User | Commitments, free cash, view invest / redeem and portfolio |
+| LYQD Manager | Company (policy / books), banks, confirm invest / redeem |
 | System Manager | All |
 
 ## Tests

@@ -90,9 +90,19 @@
           </span>
           <span v-else>. No portfolio holdings on file to redeem.</span>
         </p>
-        <Button class="mt-2" size="sm" variant="outline" @click="$router.push('/holdings')">
-          Open portfolio
-        </Button>
+        <div class="mt-2 flex flex-wrap gap-2">
+          <Button
+            v-if="d.liquid_fund_total"
+            size="sm"
+            variant="solid"
+            @click="$router.push({ path: '/invest', query: { start: 'redeem' } })"
+          >
+            Start redeem
+          </Button>
+          <Button size="sm" variant="outline" @click="$router.push('/holdings')">
+            Open portfolio
+          </Button>
+        </div>
       </div>
 
       <!-- Commitments work surface -->

@@ -34,11 +34,14 @@ class LYQDInvestmentInstruction(Document):
 		scheme: DF.Data
 		scheme_isin: DF.Data | None
 		scheme_label: DF.Data | None
+		side: DF.Literal["Purchase", "Redeem"]
 		status: DF.Literal["Draft", "Approved", "Ready", "Cancelled"]
 		surplus_run: DF.Link | None
 	# end: auto-generated types
 
 	def validate(self):
+		if not self.side:
+			self.side = "Purchase"
 		if self.amount is not None and self.amount < 0:
 			frappe.throw(frappe._("Amount cannot be negative"))
 

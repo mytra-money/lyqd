@@ -140,7 +140,7 @@ def resolve_bank_account_cash(
 		"bank_account_no": bank_account_row.get("bank_account_no"),
 		"balance": flt(stmt["balance"]),
 		"balance_date": stmt.get("balance_date"),
-		"source": "LYQD Bank Balance",
+		"source": "Bank Balance",
 		"books_source": bank_account_row.get("books_source") or "Manual",
 		"books_company": bank_account_row.get("books_company") or company,
 		"remote_bank_account": bank_account_row.get("remote_bank_account")
@@ -149,36 +149,18 @@ def resolve_bank_account_cash(
 
 
 def get_eligible_bank_cash(company: str, as_of: str | None = None) -> dict[str, Any]:
-	"""Sum eligible company bank cash with per-account explanation rows."""
-	from lyqd.recommendations.settings import is_remote_source
+	"""Sum eligible company bank cash from local LYQD Bank Account + LYQD Bank Balance only.
+
+	Never reads balances from Other Site / remote ERPNext. Remote mirror (account list)
+	is a separate reconnect action and must not gate free-cash math.
+	"""
+	from lyqd.recommendations.settings import get_integration_settings
 
 	selected = get_policy_selected_bank_accounts(company)
 	as_of_s = str(getdate(as_of or today()))
-	books_source = frappe.db.get_value("LYQD Company", company, "books_source") or "Manual"
-	books_company = frappe.db.get_value("LYQD Company", company, "books_company") or company
-
-	# Keep mirrors fresh when Other Site books are linked
-	mirror_info = None
-	if is_remote_source(company) or books_source == "Other Site":
-		try:
-			from lyqd.cash.mirror_banks import mirror_remote_bank_accounts
-
-			mirror_info = mirror_remote_bank_accounts(company)
-			books_company = mirror_info.get("books_company") or books_company
-		except Exception as e:
-			frappe.log_error(title="LYQD remote bank mirror failed")
-			return {
-				"company": company,
-				"books_company": books_company,
-				"books_source": "Other Site",
-				"as_of": as_of_s,
-				"total": 0.0,
-				"accounts": [],
-				"selection": "policy" if selected else "all_company_accounts",
-				"selected_bank_accounts": selected or [],
-				"balance_source": "lyqd",
-				"message": str(e),
-			}
+	settings = get_integration_settings(company)
+	books_source = settings.get("books_source") or "Manual"
+	books_company = settings.get("remote_company") or company
 
 	accounts = get_company_bank_accounts(company, selected=selected)
 	rows = []
@@ -198,12 +180,10 @@ def get_eligible_bank_cash(company: str, as_of: str | None = None) -> dict[str, 
 		"selection": "policy" if selected else "all_company_accounts",
 		"selected_bank_accounts": selected or [],
 		"balance_source": "lyqd",
-		"message": (mirror_info or {}).get("message") if mirror_info and not accounts else None,
-		"mirrored": (
-			{"created": mirror_info.get("created"), "updated": mirror_info.get("updated")}
-			if mirror_info
-			else None
-		),
+		# Manual / This Site: user can add LYQD Bank Accounts. Other Site: mirrored only.
+		"can_add_banks": books_source != "Other Site",
+		"message": None,
+		"mirrored": None,
 	}
 
 

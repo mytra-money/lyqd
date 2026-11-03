@@ -55,18 +55,32 @@
           <FormControl
             type="select"
             size="sm"
-            class="w-48"
-            :model-value="company.current"
+            class="w-52"
+            :model-value="company.current || ''"
             :options="companyOptions"
-            @update:model-value="(v) => company.setCompany(v)"
+            @update:model-value="onCompanySelect"
           />
         </div>
       </header>
 
       <main class="flex-1 overflow-auto px-4 py-5 md:px-6">
-        <slot />
+        <div
+          v-if="company.needsOnboarding"
+          class="mx-auto max-w-lg rounded-lg border border-amber-200 bg-amber-50 px-4 py-6 text-center"
+        >
+          <h2 class="text-base font-semibold text-amber-950">Create your company</h2>
+          <Button class="mt-4" variant="solid" @click="company.openAddCompany()">
+            Create company
+          </Button>
+        </div>
+        <slot v-else />
       </main>
     </div>
+
+    <AddCompanyDialog
+      v-model="company.showAddCompany"
+      :required="company.needsOnboarding"
+    />
   </div>
 </template>
 
@@ -76,6 +90,7 @@ import { useRoute } from 'vue-router'
 import { useStorage } from '@vueuse/core'
 import SidebarLink from '@/components/SidebarLink.vue'
 import UserDropdown from '@/components/UserDropdown.vue'
+import AddCompanyDialog from '@/components/AddCompanyDialog.vue'
 import { useCompanyStore } from '@/stores/company'
 
 const company = useCompanyStore()
@@ -96,9 +111,15 @@ const moreNav = [
   { to: '/settings', label: 'Settings', icon: 'settings' },
 ]
 
-const companyOptions = computed(() =>
-  (company.companies || []).map((c) => ({ label: c, value: c })),
-)
+const companyOptions = computed(() => {
+  const rows = (company.companies || []).map((c) => ({ label: c, value: c }))
+  rows.push({ label: '+ Add company…', value: '__add__' })
+  return rows
+})
+
+function onCompanySelect(v) {
+  company.setCompany(v)
+}
 
 const pageHint = computed(() => {
   const map = {

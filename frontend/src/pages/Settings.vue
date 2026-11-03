@@ -31,67 +31,24 @@
           v-if="activeTab === 'integrations'"
           class="space-y-4 rounded-md border border-gray-200 bg-white p-4"
         >
-          <div>
-            <h2 class="text-base font-semibold text-gray-900">Recommendations</h2>
-            <p class="mt-1 text-p-base text-gray-600">
-              Pull open liabilities into Commitments → From books. Off by default. Does not
-              auto-reserve free cash until you add to plan.
-            </p>
-            <p class="mt-2 rounded-md border border-gray-100 bg-gray-50 px-3 py-2 text-xs text-gray-600">
-              <span class="font-medium text-gray-800">Other site is read-only.</span>
-              LYQD pulls recommendations and bank masters from that site, mirrors bank accounts
-              here, and stores balances / the payment plan only on this LYQD site — nothing is
-              created or updated on the remote ERPNext.
-            </p>
-          </div>
-          <label class="flex items-start gap-3">
-            <input v-model="erpForm.enabled" type="checkbox" class="mt-1 rounded border-gray-300" />
-            <span>
-              <span class="block text-sm font-medium text-gray-900">Enable recommendations</span>
-              <span class="mt-0.5 block text-p-base text-gray-600">
-                Choose whether book suggestions come from this site or another ERPNext site.
-              </span>
-            </span>
+          <h2 class="text-base font-semibold text-gray-900">ERPNext</h2>
+          <label class="flex items-center gap-3">
+            <input v-model="erpForm.enabled" type="checkbox" class="rounded border-gray-300" />
+            <span class="text-sm font-medium text-gray-900">Enable ERPNext</span>
           </label>
 
           <div v-if="erpForm.enabled" class="space-y-4 border-t border-gray-100 pt-4">
-            <div>
-              <div class="mb-2 text-sm font-medium text-gray-900">Get recommendations from</div>
-              <div class="flex flex-col gap-2 sm:flex-row">
-                <label
-                  class="flex flex-1 cursor-pointer items-start gap-2 rounded-md border px-3 py-2"
-                  :class="
-                    erpForm.source === 'This Site'
-                      ? 'border-gray-900 bg-gray-50'
-                      : 'border-gray-200'
-                  "
-                >
-                  <input v-model="erpForm.source" type="radio" value="This Site" class="mt-1" />
-                  <span>
-                    <span class="block text-sm font-medium text-gray-900">This site</span>
-                    <span class="text-xs text-gray-500">
-                      Local ERPNext (Payment Ledger + GL) on this bench.
-                    </span>
-                  </span>
-                </label>
-                <label
-                  class="flex flex-1 cursor-pointer items-start gap-2 rounded-md border px-3 py-2"
-                  :class="
-                    erpForm.source === 'Other Site'
-                      ? 'border-gray-900 bg-gray-50'
-                      : 'border-gray-200'
-                  "
-                >
-                  <input v-model="erpForm.source" type="radio" value="Other Site" class="mt-1" />
-                  <span>
-                    <span class="block text-sm font-medium text-gray-900">Other site</span>
-                    <span class="text-xs text-gray-500">
-                      Remote ERPNext via API Key &amp; Secret — no custom app on that site.
-                    </span>
-                  </span>
-                </label>
-              </div>
-            </div>
+            <label
+              v-if="company.erpnextInstalled"
+              class="flex items-center gap-3"
+            >
+              <input
+                v-model="erpForm.is_erpnext_in_the_current_site"
+                type="checkbox"
+                class="rounded border-gray-300"
+              />
+              <span class="text-sm font-medium text-gray-900">ERPNext is on this site</span>
+            </label>
 
             <div
               v-if="erpForm.source === 'Other Site'"
@@ -109,22 +66,14 @@
                 "
               />
               <div v-if="remoteCompanies.length > 1">
-                <label class="mb-1 block text-xs font-medium text-gray-600">Company on that site</label>
+                <label class="mb-1 block text-xs font-medium text-gray-600">Company</label>
                 <select
                   v-model="erpForm.remote_company"
                   class="w-full rounded-md border border-gray-200 bg-white px-2 py-1.5 text-sm"
                 >
                   <option v-for="c in remoteCompanies" :key="c" :value="c">{{ c }}</option>
                 </select>
-                <p class="mt-1 text-xs text-gray-500">
-                  Only needed when the remote site has more than one company.
-                </p>
               </div>
-              <p v-else-if="erpForm.remote_company" class="text-xs text-gray-500">
-                Using company
-                <span class="font-medium text-gray-700">{{ erpForm.remote_company }}</span>
-                on the remote site.
-              </p>
               <div class="flex flex-wrap items-center gap-2">
                 <Button
                   size="sm"
@@ -132,20 +81,17 @@
                   :loading="testingRemote"
                   @click="connectRemote"
                 >
-                  Connect &amp; load accounts
+                  Connect
                 </Button>
                 <span v-if="remoteConnected" class="text-xs text-green-700">Connected</span>
               </div>
             </div>
 
-            <!-- Waiting for Other Site connect -->
             <div
               v-if="erpForm.source === 'Other Site' && !accountsPickerReady"
               class="rounded-md border border-dashed border-gray-300 bg-white px-3 py-6 text-center text-sm text-gray-500"
             >
-              Enter the remote Site URL, API Key, and Secret, then
-              <span class="font-medium text-gray-700">Connect &amp; load accounts</span>.
-              Liability accounts will appear from that site — not from this bench.
+              Enter site URL, API Key, and Secret, then Connect.
             </div>
 
             <!-- Accounts from the active configured source only -->
@@ -153,12 +99,6 @@
               <div class="flex flex-wrap items-start justify-between gap-2">
                 <div>
                   <h3 class="text-sm font-medium text-gray-900">Recommendation accounts</h3>
-                  <p class="mt-0.5 text-xs text-gray-500">
-                    From
-                    <span class="font-medium text-gray-700">{{ accountSourceLabel }}</span>
-                    · Liability/Expense = outflow · Asset (e.g. Input GST) = setoff · Refs =
-                    voucher lines
-                  </p>
                 </div>
                 <Button
                   size="sm"
@@ -259,10 +199,6 @@
 
         <!-- Liquidity -->
         <div v-else-if="activeTab === 'liquidity'" class="space-y-4 rounded-md border border-gray-200 bg-white p-4">
-          <p class="text-p-base text-gray-600">
-            Per-company buffers and forecast horizon for
-            <span class="font-medium text-gray-900">{{ company.current }}</span>.
-          </p>
           <FormControl
             v-model.number="policyForm.min_liquidity_buffer"
             type="number"
@@ -284,17 +220,7 @@
         <!-- Banks — same card language as ERPNext Banking -->
         <div v-else-if="activeTab === 'banks'" class="space-y-4 rounded-md border border-gray-200 bg-white p-4">
           <div class="flex items-start justify-between gap-3">
-            <div>
-              <h2 class="text-base font-semibold text-gray-900">Surplus bank accounts</h2>
-              <p class="mt-0.5 text-p-base text-gray-600">
-                From
-                <span class="font-medium text-gray-800">{{ bankSourceLabel }}</span>.
-                Click a card to include/exclude from surplus. None selected = all accounts.
-              </p>
-              <p class="mt-1 text-xs text-gray-500">
-                Remote banks are mirrored locally. Statement balances are saved on this site only.
-              </p>
-            </div>
+            <h2 class="text-base font-semibold text-gray-900">Bank accounts</h2>
             <div class="flex shrink-0 gap-2">
               <Button
                 variant="outline"
@@ -319,7 +245,7 @@
             :selected="policyForm.selectedBanks"
             selectable
             :show-add="!banksFromRemote"
-            :empty-title="banksFromRemote ? 'No bank accounts on the remote site' : 'No bank accounts found'"
+            :empty-title="banksFromRemote ? 'No bank accounts found' : 'No bank accounts found'"
             :empty-hint="bankEmptyHint"
             :desk-url="remoteBankDeskUrl"
             :desk-label="banksFromRemote ? 'Open remote site' : 'Open in Desk'"
@@ -327,42 +253,20 @@
             @toggle="toggleBank"
             @add="showAddBank = true"
           />
-          <p v-if="!banksFromRemote" class="text-xs text-gray-500">
-            Add creates a <span class="font-medium">LYQD Bank Account</span> for this company.
-            Statement balances are stored on LYQD (not ERPNext Chart of Accounts).
-          </p>
-          <p v-else class="text-xs text-gray-500">
-            Create company Bank Accounts on the remote ERPNext site, then Reload — LYQD mirrors
-            them as LYQD Bank Accounts here (no remote writes).
-          </p>
         </div>
 
-        <!-- Investment account (activation is ops-owned — SPA never toggles it) -->
         <div v-else class="space-y-4 rounded-md border border-gray-200 bg-white p-4">
-          <div>
-            <h3 class="text-sm font-semibold text-gray-900">Investment account</h3>
-            <p class="mt-1 text-sm text-gray-600">
-              Activation is controlled by Mytra. Until the account is live you can request opening;
-              instructions unlock after activation.
-            </p>
-          </div>
+          <h3 class="text-sm font-semibold text-gray-900">Investment account</h3>
 
           <div
             v-if="productForm.investment_account_activated"
             class="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-3 text-sm text-emerald-950"
           >
-            <div class="font-medium text-emerald-950">Investment account activated</div>
-            <p class="mt-1 text-emerald-900">
-              Confirmed investment requests can create instructions.
-            </p>
+            <div class="font-medium text-emerald-950">Activated</div>
           </div>
 
           <div v-else class="space-y-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-3">
-            <p class="text-sm font-medium text-amber-950">Investment account not activated</p>
-            <p class="text-sm text-amber-900">
-              Continue on WhatsApp to open an investment account with Mytra. Instructions unlock
-              after Mytra activates the account.
-            </p>
+            <p class="text-sm font-medium text-amber-950">Not activated</p>
             <p
               v-if="productForm.investment_account_requested_on"
               class="text-xs text-amber-800"
@@ -375,10 +279,7 @@
           </div>
 
           <div class="border-t border-gray-100 pt-4 space-y-3">
-            <h4 class="text-sm font-medium text-gray-900">Site defaults</h4>
-            <p class="text-xs text-gray-500">
-              Used when a company has no Liquidity Policy yet.
-            </p>
+            <h4 class="text-sm font-medium text-gray-900">Defaults</h4>
             <FormControl
               v-model.number="productForm.default_forecast_horizon_days"
               type="number"
@@ -399,14 +300,9 @@
       </div>
     </div>
 
-    <Dialog v-model="showAddBank" :options="{ title: 'Add company bank account' }">
+    <Dialog v-model="showAddBank" :options="{ title: 'Add bank account' }">
       <template #body-content>
         <div class="space-y-3">
-          <p class="text-p-base text-gray-600">
-            Creates <span class="font-medium">Account</span> in Chart of Accounts and
-            <span class="font-medium">Bank Account</span> with company account = Yes (Banking
-            pattern).
-          </p>
           <FormControl v-model="addBank.account_name" label="Account name" />
           <FormControl v-model="addBank.bank" label="Bank" />
           <FormControl
@@ -465,6 +361,9 @@ const accountTypeFilter = ref('All')
 
 const erpForm = reactive({
   enabled: false,
+  /** CRM-style: only meaningful when ERPNext is installed on this site. */
+  is_erpnext_in_the_current_site: false,
+  /** Derived: Manual when !enabled; This Site / Other Site from the check above. */
   source: 'This Site',
   remote_site_url: '',
   remote_company: '',
@@ -480,6 +379,37 @@ const savedErp = reactive({
   remote_company: '',
   has_remote_api_secret: false,
 })
+
+function syncErpSourceFromChecks() {
+  if (!erpForm.enabled) {
+    erpForm.source = 'This Site' // unused while disabled; save maps enabled=0 → Manual
+    return
+  }
+  if (company.erpnextInstalled && erpForm.is_erpnext_in_the_current_site) {
+    erpForm.source = 'This Site'
+  } else {
+    erpForm.source = 'Other Site'
+  }
+}
+
+watch(
+  () => [erpForm.enabled, erpForm.is_erpnext_in_the_current_site, company.erpnextInstalled],
+  () => syncErpSourceFromChecks(),
+)
+
+watch(
+  () => erpForm.enabled,
+  (on) => {
+    if (!on) {
+      erpForm.is_erpnext_in_the_current_site = false
+      return
+    }
+    // Default to this site when ERPNext is available (CRM behaviour)
+    if (company.erpnextInstalled && !erpForm.is_erpnext_in_the_current_site && erpForm.source !== 'Other Site') {
+      erpForm.is_erpnext_in_the_current_site = true
+    }
+  },
+)
 const testingRemote = ref(false)
 const remoteConnected = ref(false)
 const remoteCompanies = ref([])
@@ -575,15 +505,7 @@ const bankSourceLabel = computed(() => {
   return `This site${books ? ` (${books})` : ''}`
 })
 
-const bankEmptyHint = computed(() => {
-  if (banksFromRemote.value) {
-    return (
-      bankOptions.data?.message ||
-      'Add company Bank Accounts on the remote ERPNext site (company account = Yes), then reload.'
-    )
-  }
-  return 'You have not added any LYQD bank accounts yet. Add one here or connect Other Site to mirror them.'
-})
+const bankEmptyHint = computed(() => bankOptions.data?.message || '')
 
 const remoteBankDeskUrl = computed(() => {
   if (!banksFromRemote.value) return null
@@ -709,15 +631,18 @@ async function loadCompanyErp(name) {
   if (!name) return
   try {
     const erp = await call('lyqd.api.spa.get_erpnext_settings', { company: name })
+    const source = erp.source || (erp.enabled ? 'This Site' : 'This Site')
     Object.assign(erpForm, {
       enabled: !!erp.enabled,
-      source: erp.source || 'This Site',
+      is_erpnext_in_the_current_site: !!erp.enabled && source === 'This Site',
+      source,
       remote_site_url: erp.remote_site_url || '',
       remote_company: erp.remote_company || '',
       remote_api_key: erp.remote_api_key || '',
       remote_api_secret: '',
       has_remote_api_secret: !!erp.has_remote_api_secret,
     })
+    syncErpSourceFromChecks()
     applySavedErp(erp)
     productForm.investment_account_activated = !!erp.investment_account_activated
     productForm.investment_account_requested_on = erp.investment_account_requested_on || ''
@@ -879,15 +804,18 @@ async function saveErp() {
     payload.remote_api_secret = erpForm.remote_api_secret
   }
   const data = await call('lyqd.api.spa.save_erpnext_settings', { doc: payload })
+  const source = data.source || 'This Site'
   Object.assign(erpForm, {
     enabled: !!data.enabled,
-    source: data.source || 'This Site',
+    is_erpnext_in_the_current_site: !!data.enabled && source === 'This Site',
+    source,
     remote_site_url: data.remote_site_url || '',
     remote_company: data.remote_company || erpForm.remote_company || '',
     remote_api_key: data.remote_api_key || '',
     remote_api_secret: '',
     has_remote_api_secret: !!data.has_remote_api_secret,
   })
+  syncErpSourceFromChecks()
   applySavedErp({ ...data, remote_company: erpForm.remote_company })
   company.applyCompanyOverlay?.(data)
   company.erpnextIntegrationEnabled = !!data.enabled

@@ -17,6 +17,13 @@
         >
           Invest this free cash
         </Button>
+        <Button
+          v-else-if="r && r.is_shortfall"
+          variant="solid"
+          @click="$router.push({ path: '/invest', query: { start: 'redeem' } })"
+        >
+          Start redeem
+        </Button>
       </div>
     </PageHeader>
 
@@ -46,8 +53,15 @@
         v-if="r.is_shortfall"
         class="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900"
       >
-        Free cash is negative for this horizon. Review Commitments and Cash position redemption
-        guidance before investing.
+        Free cash is negative for this horizon.
+        <button
+          type="button"
+          class="ml-1 font-medium underline"
+          @click="$router.push({ path: '/invest', query: { start: 'redeem' } })"
+        >
+          Start redeem on Invest
+        </button>
+        if you have liquid holdings, or review commitments.
       </div>
 
       <div class="rounded-md border border-gray-200 bg-white p-4">
@@ -59,73 +73,13 @@
         </div>
         <ExplanationTable :lines="r.explanation || []" />
       </div>
-
-      <div class="mt-6 rounded-md border border-gray-200 bg-white p-4">
-        <button
-          type="button"
-          class="flex w-full items-center justify-between text-left"
-          @click="showHistory = !showHistory"
-        >
-          <div>
-            <h2 class="text-sm font-semibold text-gray-900">Calculation history</h2>
-            <p class="mt-0.5 text-p-base text-gray-600">
-              Optional audit snapshots of free-cash calculations — not required for investing.
-            </p>
-          </div>
-          <FeatherIcon
-            name="chevron-right"
-            class="h-4 w-4 text-gray-500 transition-transform"
-            :class="{ 'rotate-90': showHistory }"
-          />
-        </button>
-
-        <div v-if="showHistory" class="mt-4">
-          <div class="mb-3 flex justify-end">
-            <Button size="sm" variant="outline" :loading="saving" @click="saveSnapshot">
-              Save snapshot now
-            </Button>
-          </div>
-          <table class="min-w-full text-sm">
-            <thead class="text-left text-xs uppercase text-gray-500">
-              <tr>
-                <th class="py-2">Snapshot</th>
-                <th class="py-2">As of</th>
-                <th class="py-2">Horizon</th>
-                <th class="py-2 text-right">Free cash</th>
-                <th class="py-2"></th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="row in history.data || []" :key="row.name" class="border-t border-gray-100">
-                <td class="py-2 font-mono text-xs">{{ row.name }}</td>
-                <td class="py-2">{{ formatDate(row.as_of) }}</td>
-                <td class="py-2">{{ row.horizon_days }}d</td>
-                <td
-                  class="py-2 text-right tabular-nums"
-                  :class="row.is_shortfall ? 'text-red-600' : ''"
-                >
-                  {{ formatINR(row.investable_surplus) }}
-                </td>
-                <td class="py-2 text-right">
-                  <Button size="sm" variant="ghost" @click="$router.push(`/runs/${row.name}`)">
-                    Open
-                  </Button>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-          <div v-if="!(history.data || []).length" class="py-4 text-center text-sm text-gray-500">
-            No snapshots yet.
-          </div>
-        </div>
-      </div>
     </template>
   </div>
 </template>
 
 <script setup>
 import { computed, onActivated, ref, watch } from 'vue'
-import { call, createListResource, toast } from 'frappe-ui'
+import { call, toast } from 'frappe-ui'
 import { useRouter } from 'vue-router'
 import PageHeader from '@/components/PageHeader.vue'
 import MetricCard from '@/components/MetricCard.vue'
@@ -134,7 +88,7 @@ import HorizonPicker from '@/components/HorizonPicker.vue'
 import { useCompanyStore } from '@/stores/company'
 import { useTreasuryCacheStore } from '@/stores/treasuryCache'
 import { useHorizon } from '@/composables/useHorizon'
-import { formatDate, formatINR } from '@/utils/format'
+import { formatDate } from '@/utils/format'
 
 defineOptions({ name: 'Surplus' })
 
@@ -142,17 +96,7 @@ const company = useCompanyStore()
 const cache = useTreasuryCacheStore()
 const router = useRouter()
 const { horizon } = useHorizon()
-const saving = ref(false)
 const investing = ref(false)
-const showHistory = ref(false)
-
-const history = createListResource({
-  doctype: 'LYQD Surplus Run',
-  fields: ['name', 'as_of', 'horizon_days', 'investable_surplus', 'is_shortfall', 'company'],
-  orderBy: 'modified desc',
-  pageLength: 10,
-  auto: false,
-})
 
 const r = computed(() => cache.getSurplus(company.current, horizon.value))
 const loading = computed(() => cache.surplusLoading && !r.value)
@@ -175,8 +119,6 @@ watch(
   () => {
     if (!company.current) return
     loadSurplus(false)
-    history.update({ filters: { company: company.current } })
-    history.reload()
   },
   { immediate: true },
 )
@@ -193,34 +135,21 @@ async function investNow() {
       horizon_days: horizon.value,
       freeze: 1,
     })
-    const n = (doc.superseded || []).length
-    toast.success(
-      n
-        ? `Investment request created · superseded ${n} prior open request(s)`
-        : 'Investment request created',
-    )
+    if (doc.unchanged) {
+      toast.success('Open request already matches today’s free cash')
+    } else {
+      const n = (doc.superseded || []).length
+      toast.success(
+        n
+          ? `Investment request updated · superseded ${n} prior open request(s)`
+          : 'Investment request created',
+      )
+    }
     router.push('/invest')
   } catch (e) {
     toast.error(e.messages?.[0] || e.message || 'Could not create investment request')
   } finally {
     investing.value = false
-  }
-}
-
-async function saveSnapshot() {
-  saving.value = true
-  try {
-    const name = await call('lyqd.api.dashboard.save_surplus_run', {
-      company: company.current,
-      horizon_days: horizon.value,
-    })
-    toast.success(`Snapshot ${name} saved`)
-    history.reload()
-    router.push(`/runs/${name}`)
-  } catch (e) {
-    toast.error(e.messages?.[0] || e.message || 'Could not save snapshot')
-  } finally {
-    saving.value = false
   }
 }
 </script>

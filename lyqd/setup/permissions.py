@@ -15,34 +15,67 @@ def has_app_permission() -> bool:
 
 
 def get_user_companies() -> list[str]:
-	"""LYQD Companies the current user may see."""
+	"""LYQD Companies the current user may see.
+
+	System Manager / Administrator: all active companies.
+	Everyone else: only companies granted via User Permission on LYQD Company.
+	"""
 	if not frappe.db.exists("DocType", "LYQD Company"):
 		return []
 
-	if "System Manager" in frappe.get_roles():
+	roles = set(frappe.get_roles())
+	if frappe.session.user == "Administrator" or "System Manager" in roles:
 		return frappe.get_all(
 			"LYQD Company", filters={"is_active": 1}, pluck="name", order_by="name asc"
 		)
 
-	# User Permission on LYQD Company when configured
 	companies = frappe.get_all(
 		"User Permission",
 		filters={"user": frappe.session.user, "allow": "LYQD Company"},
 		pluck="for_value",
+		order_by="for_value asc",
 	)
-	if companies:
-		return companies
+	# Keep only companies that still exist and are active
+	out = []
+	for name in companies or []:
+		if name and frappe.db.exists("LYQD Company", name):
+			if frappe.db.get_value("LYQD Company", name, "is_active"):
+				out.append(name)
+	return out
 
-	default = frappe.defaults.get_user_default("LYQD Company")
-	if default and frappe.db.exists("LYQD Company", default):
-		return [default]
 
-	# All active companies for LYQD roles (soft-launch — tighten later with user perms)
-	if set(frappe.get_roles()).intersection({"LYQD Manager", "LYQD User"}):
-		return frappe.get_all(
-			"LYQD Company", filters={"is_active": 1}, pluck="name", order_by="name asc"
-		)
-	return []
+def ensure_lyqd_company_user_permission(company: str, user: str | None = None) -> bool:
+	"""
+	Grant User Permission for LYQD Company when the user is not a System Manager.
+
+	Returns True if a permission was created (or already existed).
+	"""
+	user = user or frappe.session.user
+	if not user or user in ("Guest", "Administrator"):
+		return False
+	if "System Manager" in frappe.get_roles(user):
+		return False
+	company = (company or "").strip()
+	if not company or not frappe.db.exists("LYQD Company", company):
+		return False
+
+	existing = frappe.db.exists(
+		"User Permission",
+		{"user": user, "allow": "LYQD Company", "for_value": company},
+	)
+	if existing:
+		return True
+
+	frappe.get_doc(
+		{
+			"doctype": "User Permission",
+			"user": user,
+			"allow": "LYQD Company",
+			"for_value": company,
+			"apply_to_all_doctypes": 1,
+		}
+	).insert(ignore_permissions=True)
+	return True
 
 
 def _company_query_for(doctype: str, user: str | None = None) -> str:
@@ -112,5 +145,10 @@ def has_company_permission(doc, user: str | None = None, permission_type: str | 
 	companies = get_user_companies()
 	if not companies:
 		return False
+	# LYQD Company itself is keyed by name; child docs use company Link
+	doctype = getattr(doc, "doctype", None) or (doc.get("doctype") if hasattr(doc, "get") else None)
+	if doctype == "LYQD Company":
+		name = getattr(doc, "name", None) or (doc.get("name") if hasattr(doc, "get") else None)
+		return name in companies if name else False
 	company = getattr(doc, "company", None) or (doc.get("company") if hasattr(doc, "get") else None)
 	return company in companies if company else True

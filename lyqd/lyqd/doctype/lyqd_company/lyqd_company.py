@@ -7,6 +7,13 @@ from frappe.utils import flt
 
 
 class LYQDCompany(Document):
+	def onload(self):
+		self._sync_checks_from_books_source()
+
+	def before_validate(self):
+		# CRM-style checks are the UI source of truth; books_source is derived.
+		self._sync_books_source_from_checks()
+
 	def validate(self):
 		self.company_name = (self.company_name or "").strip()
 		if not self.company_name:
@@ -18,8 +25,31 @@ class LYQDCompany(Document):
 		self._validate_books()
 		self._validate_policy()
 
+	def _sync_checks_from_books_source(self):
+		"""Populate CRM-style checks from stored books_source (onload / API helpers)."""
+		source = self.books_source or "Manual"
+		self.erpnext_enabled = 1 if source in ("This Site", "Other Site") else 0
+		self.is_erpnext_in_the_current_site = 1 if source == "This Site" else 0
+
+	def _sync_books_source_from_checks(self):
+		"""Derive books_source from Enable ERPNext + this-site checks."""
+		if not int(self.erpnext_enabled or 0):
+			self.books_source = "Manual"
+			self.is_erpnext_in_the_current_site = 0
+			return
+		if int(self.is_erpnext_in_the_current_site or 0):
+			self.books_source = "This Site"
+		else:
+			self.books_source = "Other Site"
+
+	def apply_books_source(self, books_source: str):
+		"""Set books_source and matching CRM-style checks (SPA / API)."""
+		self.books_source = books_source or "Manual"
+		self._sync_checks_from_books_source()
+
 	def _validate_books(self):
 		self.books_source = self.books_source or "Manual"
+
 		if self.books_source == "Manual":
 			return
 

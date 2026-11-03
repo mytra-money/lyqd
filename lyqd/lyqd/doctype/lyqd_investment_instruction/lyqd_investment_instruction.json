@@ -5,10 +5,11 @@
  "creation": "2026-10-29 13:00:00.000000",
  "doctype": "DocType",
  "engine": "InnoDB",
- "field_order": [
+  "field_order": [
   "naming_series",
   "company",
   "status",
+  "side",
   "column_break_top",
   "scheme",
   "scheme_isin",
@@ -56,6 +57,16 @@
    "in_standard_filter": 1,
    "label": "Status",
    "options": "Draft\nApproved\nReady\nCancelled",
+   "reqd": 1
+  },
+  {
+   "default": "Purchase",
+   "fieldname": "side",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Side",
+   "options": "Purchase\nRedeem",
    "reqd": 1
   },
   {

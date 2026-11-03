@@ -227,7 +227,7 @@ def compute_surplus(
 					label=f"Bank cash — {row.get('account_name') or row.get('bank_account')}",
 					amount=flt(row.get("balance")),
 					sign="+",
-					ref_doctype="Bank Account",
+					ref_doctype="LYQD Bank Account",
 					ref_name=row.get("bank_account"),
 					notes=f"source={row.get('source')}",
 				)

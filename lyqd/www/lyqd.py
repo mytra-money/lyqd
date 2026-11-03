@@ -93,6 +93,7 @@ def get_boot():
 			"tagline": "Make idle cash work smarter.",
 			"app_name": "LYQD by Mytra",
 			"erpnext_integration_enabled": bool(company_settings.get("enabled")),
+			"erpnext_installed": "erpnext" in frappe.get_installed_apps(),
 			"company_settings": company_settings,
 		}
 	)

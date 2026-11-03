@@ -14,8 +14,11 @@
   "default_currency",
   "notes",
   "books_tab",
-  "books_source",
+  "erpnext_enabled",
+  "is_erpnext_in_the_current_site",
+  "column_break_books",
   "books_company",
+  "books_source",
   "section_remote",
   "remote_site_url",
   "column_break_remote",
@@ -84,52 +87,72 @@
    "label": "Books"
   },
   {
-   "default": "Manual",
-   "description": "Manual = balances in LYQD only. This Site / Other Site = recommendations from ERPNext.",
-   "fieldname": "books_source",
-   "fieldtype": "Select",
-   "in_list_view": 1,
-   "label": "Books Source",
-   "options": "Manual\nThis Site\nOther Site"
+   "default": "0",
+   "description": "Pull recommendations and bank masters from ERPNext. Off = Manual (LYQD balances only).",
+   "fieldname": "erpnext_enabled",
+   "fieldtype": "Check",
+   "label": "Enable ERPNext"
   },
   {
-   "depends_on": "eval:doc.books_source!=\"Manual\"",
+   "default": "0",
+   "depends_on": "erpnext_enabled",
+   "description": "Use ERPNext Company / Chart of Accounts on this site. Uncheck to connect another site.",
+   "fieldname": "is_erpnext_in_the_current_site",
+   "fieldtype": "Check",
+   "label": "Is ERPNext in the current site?"
+  },
+  {
+   "fieldname": "column_break_books",
+   "fieldtype": "Column Break"
+  },
+  {
+   "depends_on": "erpnext_enabled",
    "description": "Company name on the ERPNext books site.",
    "fieldname": "books_company",
    "fieldtype": "Data",
-   "label": "Books Company"
+   "label": "Company in ERPNext Site",
+   "mandatory_depends_on": "erpnext_enabled"
   },
   {
-   "depends_on": "eval:doc.books_source==\"Other Site\"",
+   "default": "Manual",
+   "fieldname": "books_source",
+   "fieldtype": "Select",
+   "hidden": 1,
+   "label": "Books Source",
+   "options": "Manual\nThis Site\nOther Site",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.erpnext_enabled && !doc.is_erpnext_in_the_current_site",
    "fieldname": "section_remote",
    "fieldtype": "Section Break",
    "label": "Remote ERPNext site"
   },
   {
-   "depends_on": "eval:doc.books_source==\"Other Site\"",
+   "depends_on": "eval:doc.erpnext_enabled && !doc.is_erpnext_in_the_current_site",
    "description": "e.g. https://erp.example.com",
    "fieldname": "remote_site_url",
    "fieldtype": "Data",
-   "label": "Site URL",
-   "mandatory_depends_on": "eval:doc.books_source==\"Other Site\""
+   "label": "ERPNext Site URL",
+   "mandatory_depends_on": "eval:doc.erpnext_enabled && !doc.is_erpnext_in_the_current_site"
   },
   {
    "fieldname": "column_break_remote",
    "fieldtype": "Column Break"
   },
   {
-   "depends_on": "eval:doc.books_source==\"Other Site\"",
+   "depends_on": "eval:doc.erpnext_enabled && !doc.is_erpnext_in_the_current_site",
    "fieldname": "remote_api_key",
    "fieldtype": "Data",
    "label": "API Key",
-   "mandatory_depends_on": "eval:doc.books_source==\"Other Site\""
+   "mandatory_depends_on": "eval:doc.erpnext_enabled && !doc.is_erpnext_in_the_current_site"
   },
   {
-   "depends_on": "eval:doc.books_source==\"Other Site\"",
+   "depends_on": "eval:doc.erpnext_enabled && !doc.is_erpnext_in_the_current_site",
    "fieldname": "remote_api_secret",
    "fieldtype": "Password",
    "label": "API Secret",
-   "mandatory_depends_on": "eval:doc.books_source==\"Other Site\""
+   "mandatory_depends_on": "eval:doc.erpnext_enabled && !doc.is_erpnext_in_the_current_site"
   },
   {
    "fieldname": "policy_tab",

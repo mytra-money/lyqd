@@ -2,9 +2,38 @@ import { defineStore } from 'pinia'
 import { computed, ref, watch } from 'vue'
 import { createResource, call } from 'frappe-ui'
 
+const STORAGE_KEY = 'lyqd_current_company'
+
+function readStoredCompany() {
+  try {
+    return localStorage.getItem(STORAGE_KEY) || ''
+  } catch (e) {
+    return ''
+  }
+}
+
+function writeStoredCompany(name) {
+  try {
+    if (name) localStorage.setItem(STORAGE_KEY, name)
+    else localStorage.removeItem(STORAGE_KEY)
+  } catch (e) {
+    /* ignore */
+  }
+}
+
+function pickInitialCompany(companies, serverDefault) {
+  const list = companies || []
+  const stored = readStoredCompany()
+  if (stored && list.includes(stored)) return stored
+  if (serverDefault && list.includes(serverDefault)) return serverDefault
+  return list[0] || ''
+}
+
 export const useCompanyStore = defineStore('company', () => {
   const companies = ref(window.companies || [])
-  const current = ref(window.default_company || companies.value[0] || '')
+  const current = ref(
+    pickInitialCompany(window.companies || [], window.default_company || ''),
+  )
   const user = ref(window.user || '')
   const userFullname = ref(window.user_fullname || '')
   const userImage = ref(window.user_image || null)
@@ -13,15 +42,24 @@ export const useCompanyStore = defineStore('company', () => {
   const companySettings = ref(window.company_settings || {})
   const roles = ref(window.roles || [])
   const erpnextIntegrationEnabled = ref(!!window.erpnext_integration_enabled)
+  const erpnextInstalled = ref(!!window.erpnext_installed)
+  const showAddCompany = ref(false)
+
+  const needsOnboarding = computed(() => !(companies.value || []).length)
 
   const boot = createResource({
     url: 'lyqd.api.spa.get_boot_data',
     auto: false,
     onSuccess(data) {
       companies.value = data.companies || []
-      if (!current.value || !companies.value.includes(current.value)) {
-        current.value = data.default_company || companies.value[0] || ''
+      const next = pickInitialCompany(companies.value, data.default_company || '')
+      // Prefer stored / current selection over alphabetical first company
+      if (current.value && companies.value.includes(current.value)) {
+        // keep current
+      } else {
+        current.value = next
       }
+      if (current.value) writeStoredCompany(current.value)
       user.value = data.user
       userFullname.value = data.user_fullname
       userImage.value = data.user_image || null
@@ -30,7 +68,11 @@ export const useCompanyStore = defineStore('company', () => {
       companySettings.value = data.company_settings || {}
       roles.value = data.roles || []
       erpnextIntegrationEnabled.value = !!data.erpnext_integration_enabled
+      erpnextInstalled.value = !!data.erpnext_installed
       applyCompanyOverlay(companySettings.value)
+      if (needsOnboarding.value) {
+        showAddCompany.value = true
+      }
     },
   })
 
@@ -42,6 +84,28 @@ export const useCompanyStore = defineStore('company', () => {
       investment_account_requested_on: cs.investment_account_requested_on || '',
     }
     erpnextIntegrationEnabled.value = !!cs.enabled
+  }
+
+  function applyCreatedCompany(res) {
+    const list = res.companies || []
+    if (list.length) {
+      companies.value = list
+    } else if (res.name && !companies.value.includes(res.name)) {
+      companies.value = [...companies.value, res.name]
+    }
+    const name = res.name || res.company_name
+    if (name) {
+      current.value = name
+      writeStoredCompany(name)
+    }
+    if (res.books_source || res.enabled != null) {
+      applyCompanyOverlay({
+        enabled: res.books_source && res.books_source !== 'Manual' ? 1 : 0,
+        investment_account_activated: res.investment_account_activated || 0,
+        investment_account_requested_on: res.investment_account_requested_on || '',
+      })
+    }
+    showAddCompany.value = false
   }
 
   async function loadCompanySettings(name) {
@@ -63,18 +127,30 @@ export const useCompanyStore = defineStore('company', () => {
     try {
       await boot.fetch()
     } catch (e) {
-      // boot from window is enough for first paint
+      if (needsOnboarding.value) showAddCompany.value = true
     }
   }
 
   function setCompany(name) {
+    if (name === '__add__') {
+      showAddCompany.value = true
+      return
+    }
+    if (!name || name === current.value) return
     current.value = name
+    writeStoredCompany(name)
+    // Persist as user default so Desk + next full page load keep the same company
+    call('lyqd.api.spa.set_current_company', { company: name }).catch(() => {})
+  }
+
+  function openAddCompany() {
+    showAddCompany.value = true
   }
 
   watch(
     () => current.value,
     (name, prev) => {
-      if (name && name !== prev) loadCompanySettings(name)
+      if (name && name !== prev && name !== '__add__') loadCompanySettings(name)
     },
   )
 
@@ -100,11 +176,16 @@ export const useCompanyStore = defineStore('company', () => {
     companySettings,
     roles,
     erpnextIntegrationEnabled,
+    erpnextInstalled,
     investmentAccountActivated,
     isManager,
+    needsOnboarding,
+    showAddCompany,
     bootstrap,
     setCompany,
+    openAddCompany,
     loadCompanySettings,
     applyCompanyOverlay,
+    applyCreatedCompany,
   }
 })

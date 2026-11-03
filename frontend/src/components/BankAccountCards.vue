@@ -57,12 +57,10 @@
           </Badge>
         </div>
 
-        <div class="mt-1 line-clamp-1 text-sm text-gray-600" :title="ba.account || ''">
-          {{ ba.account || 'No GL linked' }}
-        </div>
-        <div class="mt-0.5 line-clamp-1 text-xs text-gray-500">
-          {{ ba.bank || 'Bank' }}
-          <span v-if="ba.bank_account_no">· {{ ba.bank_account_no }}</span>
+        <div class="mt-1 line-clamp-1 text-xs text-gray-500">
+          <template v-if="ba.bank">{{ ba.bank }}</template>
+          <template v-if="ba.bank && ba.bank_account_no"> · </template>
+          <template v-if="ba.bank_account_no">{{ ba.bank_account_no }}</template>
         </div>
 
         <div

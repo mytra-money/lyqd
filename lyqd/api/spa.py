@@ -242,6 +242,7 @@ def get_morning_mis(company: str | None = None, horizon_days: int | str = 7) -> 
 	over_allocated = 0.0
 	redeem_no_longer_needed = False
 	redeem_over_need = 0.0
+	redeem_under_need = 0.0
 	# Open Invest while this horizon is a shortfall → cancel invest, start redeem.
 	invest_flipped_to_shortfall = False
 	if planned_investment and planned_request_type == "Redeem":
@@ -249,10 +250,12 @@ def get_morning_mis(company: str | None = None, horizon_days: int | str = 7) -> 
 			# Horizon / balances flipped to free cash — redeem request is stale.
 			redeem_no_longer_needed = True
 		else:
-			# Still short: how much larger the open redeem is than today's need.
-			redeem_over_need = max(0.0, planned_investment - redemption_need)
-			if redeem_over_need < 0.01:
-				redeem_over_need = 0.0
+			# Still short: open redeem vs today's need (either direction).
+			delta = flt(planned_investment) - flt(redemption_need)
+			if delta > 0.01:
+				redeem_over_need = delta
+			elif delta < -0.01:
+				redeem_under_need = abs(delta)
 	elif planned_investment:
 		if is_shortfall:
 			invest_flipped_to_shortfall = True
@@ -288,6 +291,7 @@ def get_morning_mis(company: str | None = None, horizon_days: int | str = 7) -> 
 		"invest_flipped_to_shortfall": invest_flipped_to_shortfall,
 		"redeem_no_longer_needed": redeem_no_longer_needed,
 		"redeem_over_need": redeem_over_need,
+		"redeem_under_need": redeem_under_need,
 		"plan_redemption": plan_redemption,
 		"needs_redemption": redemption_need > 0.01 or plan_redemption > 0.01,
 		"has_open_request": bool(planned_ref),

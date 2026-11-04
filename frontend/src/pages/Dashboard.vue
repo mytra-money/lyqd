@@ -98,6 +98,13 @@
           {{ formatINR(d.redeem_over_need) }} higher. Confirm the amount on Proposal before creating
           an instruction.
         </p>
+        <!-- Redeem: still short but request smaller than today’s need -->
+        <p v-else-if="d.redeem_under_need > 0" class="mt-1 text-p-base text-amber-800">
+          Today’s shortfall need is
+          {{ formatINR(d.redemption_need) }} — the open redeem is
+          {{ formatINR(d.redeem_under_need) }} short. Refresh the amount on Proposal before creating
+          an instruction.
+        </p>
         <!-- Invest: free cash still positive but below the open request -->
         <p v-else-if="d.over_allocated > 0" class="mt-1 text-p-base text-amber-800">
           Cash moved since the proposal. Free cash is

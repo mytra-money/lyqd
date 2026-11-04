@@ -511,6 +511,13 @@ const horizonDrift = computed(() => {
       action: 'refresh',
     }
   }
+  if (isRedeem.value && Number(m.redeem_under_need || 0) > 0) {
+    return {
+      title: 'Redeem amount is below today’s need',
+      body: `Today’s shortfall need is ${formatINR(m.redemption_need)} — this proposal is ${formatINR(m.redeem_under_need)} short. Refresh the amount before creating an instruction.`,
+      action: 'refresh',
+    }
+  }
   if (!isRedeem.value && m.invest_flipped_to_shortfall) {
     return {
       title: 'Horizon flipped to a shortfall',

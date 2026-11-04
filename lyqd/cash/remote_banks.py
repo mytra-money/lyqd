@@ -66,8 +66,27 @@ def list_remote_bank_accounts(
 		)
 		or []
 	)
+	# Resolve GL Account.account_currency for FX (Bank Account Balance is in that currency).
+	gl_accounts = sorted({r.get("account") for r in rows if r.get("account")})
+	ccy_by_account: dict[str, str] = {}
+	if gl_accounts:
+		try:
+			acc_rows = (
+				client.get_list(
+					"Account",
+					filters={"name": ["in", gl_accounts]},
+					fields=["name", "account_currency"],
+					limit_page_length=len(gl_accounts) + 5,
+				)
+				or []
+			)
+			for a in acc_rows:
+				if a.get("account_currency"):
+					ccy_by_account[a["name"]] = str(a["account_currency"]).upper()
+		except Exception:
+			pass
 	for row in rows:
-		row["account_currency"] = None
+		row["account_currency"] = ccy_by_account.get(row.get("account") or "") or None
 		row["books_source"] = "Other Site"
 		row["books_company"] = company
 	return rows

@@ -128,6 +128,7 @@ def resolve_bank_account_cash(
 ) -> dict[str, Any]:
 	name = bank_account_row["name"]
 	stmt = get_statement_balance(name, as_of)
+	# Balances are entered in LYQD (company free-cash terms) — no FX conversion.
 	return {
 		"bank_account": name,
 		"name": name,
@@ -138,6 +139,9 @@ def resolve_bank_account_cash(
 		"is_default": bank_account_row.get("is_default"),
 		"account_type": bank_account_row.get("account_type"),
 		"bank_account_no": bank_account_row.get("bank_account_no"),
+		"currency": bank_account_row.get("currency") or bank_account_row.get("account_currency"),
+		"account_currency": bank_account_row.get("account_currency")
+		or bank_account_row.get("currency"),
 		"balance": flt(stmt["balance"]),
 		"balance_date": stmt.get("balance_date"),
 		"source": "Bank Balance",

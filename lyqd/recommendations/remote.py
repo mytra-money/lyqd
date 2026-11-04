@@ -288,15 +288,22 @@ def _pi_voucher_rows(
 				"due_date",
 				"credit_to",
 				"bill_no",
+				"currency",
+				"party_account_currency",
+				"conversion_rate",
+				"posting_date",
 			],
 			order_by="due_date asc",
 			limit_page_length=100,
 		)
 		or []
 	)
+	from lyqd.fx import invoice_outstanding_in_company_currency
+
+	company_ccy = _remote_company_currency(client, company)
 	out = []
 	for row in rows:
-		amount = flt(row.get("outstanding_amount"))
+		amount = invoice_outstanding_in_company_currency(row, company_ccy, as_of=as_of)
 		if amount <= 0.01:
 			continue
 		party_label = row.get("supplier_name") or row.get("supplier")
@@ -350,15 +357,22 @@ def _si_voucher_rows(
 				"outstanding_amount",
 				"due_date",
 				"debit_to",
+				"currency",
+				"party_account_currency",
+				"conversion_rate",
+				"posting_date",
 			],
 			order_by="due_date asc",
 			limit_page_length=100,
 		)
 		or []
 	)
+	from lyqd.fx import invoice_outstanding_in_company_currency
+
+	company_ccy = _remote_company_currency(client, company)
 	out = []
 	for row in rows:
-		amount = flt(row.get("outstanding_amount"))
+		amount = invoice_outstanding_in_company_currency(row, company_ccy, as_of=as_of)
 		if amount <= 0.01:
 			continue
 		party_label = row.get("customer_name") or row.get("customer")
@@ -676,14 +690,47 @@ def remote_sales_invoice_outstanding(name: str, lyqd_company: str | None = None)
 	return _remote_invoice_outstanding("Sales Invoice", name, lyqd_company=lyqd_company)
 
 
+def _remote_company_currency(client, books_company: str, lyqd_company: str | None = None) -> str:
+	from lyqd.fx import get_lyqd_company_currency
+
+	company_ccy = get_lyqd_company_currency(lyqd_company)
+	try:
+		co_rows = (
+			client.get_list(
+				"Company",
+				filters={"name": books_company},
+				fields=["default_currency"],
+				limit_page_length=1,
+			)
+			or []
+		)
+		if co_rows and co_rows[0].get("default_currency"):
+			return str(co_rows[0]["default_currency"]).upper()
+	except Exception:
+		pass
+	return company_ccy
+
+
 def _remote_invoice_outstanding(
 	doctype: str, name: str, lyqd_company: str | None = None
 ) -> dict[str, Any]:
-	client, _company = get_remote_client(lyqd_company)
+	from lyqd.fx import invoice_outstanding_in_company_currency
+
+	client, books_company = get_remote_client(lyqd_company)
 	rows = client.get_list(
 		doctype,
 		filters={"name": name},
-		fields=["name", "outstanding_amount", "docstatus", "due_date", "status"],
+		fields=[
+			"name",
+			"outstanding_amount",
+			"docstatus",
+			"due_date",
+			"status",
+			"currency",
+			"party_account_currency",
+			"conversion_rate",
+			"posting_date",
+		],
 		limit_page_length=1,
 	)
 	if not rows:
@@ -698,7 +745,8 @@ def _remote_invoice_outstanding(
 			"cancelled": True,
 			"due_date": inv.get("due_date"),
 		}
-	amt = flt(inv.get("outstanding_amount"))
+	company_ccy = _remote_company_currency(client, books_company, lyqd_company)
+	amt = invoice_outstanding_in_company_currency(inv, company_ccy)
 	return {
 		"ok": True,
 		"grain": "voucher",

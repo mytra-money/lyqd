@@ -162,12 +162,18 @@ def _ensure_mirrored_bank_account(local_company: str, remote: dict[str, Any]) ->
 	if not account_name:
 		frappe.throw(frappe._("Remote bank account is missing an account name"))
 
+	currency = (remote.get("account_currency") or remote.get("currency") or "").upper() or None
+
 	existing = frappe.db.get_value(
 		"LYQD Bank Account",
 		{"company": local_company, "books_bank_account": remote_name},
 		"name",
 	)
 	if existing:
+		if currency:
+			frappe.db.set_value(
+				"LYQD Bank Account", existing, "currency", currency, update_modified=False
+			)
 		return existing, False
 
 	by_name = frappe.db.get_value(
@@ -176,7 +182,10 @@ def _ensure_mirrored_bank_account(local_company: str, remote: dict[str, Any]) ->
 		"name",
 	)
 	if by_name:
-		frappe.db.set_value("LYQD Bank Account", by_name, "books_bank_account", remote_name)
+		updates = {"books_bank_account": remote_name}
+		if currency:
+			updates["currency"] = currency
+		frappe.db.set_value("LYQD Bank Account", by_name, updates, update_modified=False)
 		return by_name, False
 
 	doc = frappe.get_doc(
@@ -187,6 +196,7 @@ def _ensure_mirrored_bank_account(local_company: str, remote: dict[str, Any]) ->
 			"bank": remote.get("bank"),
 			"account_type": remote.get("account_type"),
 			"bank_account_no": remote.get("bank_account_no"),
+			"currency": currency or "INR",
 			"is_default": 1 if remote.get("is_default") else 0,
 			"is_active": 1,
 			"books_bank_account": remote_name,

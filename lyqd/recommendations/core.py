@@ -392,7 +392,8 @@ def _ple_voucher_rows(
 	)
 	out = []
 	for row in rows or []:
-		amount = flt(row.get("outstanding_in_account_currency") or row.get("outstanding") or 0)
+		# Prefer company-currency outstanding (not account-currency USD/EUR/…).
+		amount = flt(row.get("outstanding") or 0)
 		if amount <= 0:
 			continue
 		voucher_type = row.get("voucher_type")
@@ -962,7 +963,8 @@ def _ple_voucher_outstanding(
 	)
 	total = 0.0
 	for row in rows or []:
-		total += flt(row.get("outstanding_in_account_currency") or row.get("outstanding") or 0)
+		# Company currency — never outstanding_in_account_currency (USD/EUR/…).
+		total += flt(row.get("outstanding") or 0)
 	return total
 
 
@@ -1062,6 +1064,8 @@ def resolve_books_outstanding(
 		}
 
 	if source_doctype in ("Purchase Invoice", "Sales Invoice"):
+		from lyqd.fx import get_lyqd_company_currency, invoice_outstanding_in_company_currency
+
 		if not frappe.db.exists(source_doctype, source_name):
 			return {
 				"ok": True,
@@ -1073,7 +1077,16 @@ def resolve_books_outstanding(
 		inv = frappe.db.get_value(
 			source_doctype,
 			source_name,
-			["outstanding_amount", "docstatus", "due_date", "status"],
+			[
+				"outstanding_amount",
+				"docstatus",
+				"due_date",
+				"status",
+				"currency",
+				"party_account_currency",
+				"conversion_rate",
+				"posting_date",
+			],
 			as_dict=True,
 		)
 		if inv.docstatus == 2:
@@ -1085,7 +1098,16 @@ def resolve_books_outstanding(
 				"cancelled": True,
 				"due_date": inv.due_date,
 			}
-		amt = flt(inv.outstanding_amount)
+		books_company = (
+			frappe.db.get_value("LYQD Company", company, "books_company") or company
+		)
+		company_ccy = get_lyqd_company_currency(company)
+		if frappe.db.exists("Company", books_company):
+			company_ccy = (
+				frappe.db.get_value("Company", books_company, "default_currency")
+				or company_ccy
+			).upper()
+		amt = invoice_outstanding_in_company_currency(inv, company_ccy, as_of=as_of)
 		return {
 			"ok": True,
 			"grain": "voucher",

@@ -24,6 +24,54 @@ class LYQDCompany(Document):
 
 		self._validate_books()
 		self._validate_policy()
+		self._validate_recommendation_accounts()
+
+	def _validate_recommendation_accounts(self):
+		"""Top Bar–style: refs-off parents only; one-level children; no cycles."""
+		rows = self.get("recommendation_accounts") or []
+		by_account = {}
+		for row in rows:
+			acc = (row.account or "").strip()
+			if not acc:
+				continue
+			if acc in by_account:
+				frappe.throw(frappe._("Duplicate recommendation account: {0}").format(acc))
+			by_account[acc] = row
+
+		for row in rows:
+			acc = (row.account or "").strip()
+			parent = (getattr(row, "parent_account", None) or "").strip()
+			if not parent:
+				row.parent_account = None
+				continue
+			row.parent_account = parent
+			if int(row.show_references or 0):
+				frappe.throw(
+					frappe._(
+						"Account {0} has voucher references and cannot nest under a parent."
+					).format(acc)
+				)
+			parent_row = by_account.get(parent)
+			if not parent_row:
+				frappe.throw(
+					frappe._("Parent account {0} is not in the recommendation list.").format(parent)
+				)
+			if int(parent_row.show_references or 0):
+				frappe.throw(
+					frappe._(
+						"Parent {0} must have voucher references turned off to group other accounts."
+					).format(parent)
+				)
+			if parent == acc:
+				frappe.throw(frappe._("Account {0} cannot be its own parent.").format(acc))
+			# One level only: parent must not itself be a child
+			grand = (getattr(parent_row, "parent_account", None) or "").strip()
+			if grand:
+				frappe.throw(
+					frappe._(
+						"Parent {0} is already nested under {1}. Only one level of grouping is allowed."
+					).format(parent, grand)
+				)
 
 	def _sync_checks_from_books_source(self):
 		"""Populate CRM-style checks from stored books_source (onload / API helpers)."""

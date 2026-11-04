@@ -122,7 +122,7 @@ def list_remote_recommendation_accounts(
 ) -> list[dict[str, Any]]:
 	"""Leaf accounts from the configured remote ERPNext (for Integrations picker)."""
 	client, company = get_remote_client(lyqd_company)
-	root_types = root_types or ["Liability", "Expense", "Asset"]
+	root_types = root_types or ["Liability", "Asset"]
 	filters: dict[str, Any] = {
 		"company": company,
 		"is_group": 0,

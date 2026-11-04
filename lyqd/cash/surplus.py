@@ -41,6 +41,11 @@ class ExplanationLine:
 	due_date: str | None = None
 	category: str | None = None
 	notes: str | None = None
+	# Grouped commitments: amount/sign are net; gl_* is this row's own books amount
+	gl_amount: float | None = None
+	gl_sign: str | None = None
+	child_count: int = 0
+	children: list[ExplanationLine] = field(default_factory=list)
 
 
 @dataclass
@@ -152,6 +157,7 @@ def get_planned_upcoming_payments(
 			"source_doctype",
 			"source_name",
 			"source_account",
+			"parent_payment",
 		],
 		order_by="due_date asc, amount desc",
 	)
@@ -242,30 +248,67 @@ def compute_surplus(
 			)
 		)
 
-	for p in upcoming_payments:
+	def _upcoming_line(p: dict[str, Any], *, signed_net: float | None = None) -> ExplanationLine:
 		due = p.get("due_date")
 		due_s = str(getdate(due)) if due else None
 		title = p.get("title") or p.get("name") or "Upcoming payment"
 		overdue = bool(due and getdate(due) < getdate(as_of))
 		is_setoff = (p.get("cash_effect") or "Outflow") == "Setoff"
-		explanation.append(
-			ExplanationLine(
-				kind="upcoming",
-				label=(
-					f"{'Setoff' if is_setoff else 'Reserve'} — {title}"
-					+ (" (overdue)" if overdue else "")
-				),
-				amount=flt(p.get("amount")),
-				sign="+" if is_setoff else "-",
-				ref_doctype="LYQD Upcoming Payment",
-				ref_name=p.get("name"),
-				due_date=due_s,
-				category=p.get("category"),
-				notes=(p.get("notes") or "")
-				+ ("; setoff" if is_setoff else "")
-				+ ("; overdue" if overdue else ""),
-			)
+		own_amt = flt(p.get("amount"))
+		own_sign = "+" if is_setoff else "-"
+		if signed_net is None:
+			disp_amt, disp_sign = own_amt, own_sign
+			gl_amount = gl_sign = None
+		else:
+			# reserved cash > 0 → outflow (−); net setoff credit → (+)
+			disp_amt = abs(flt(signed_net))
+			disp_sign = "-" if flt(signed_net) >= 0 else "+"
+			gl_amount, gl_sign = own_amt, own_sign
+		return ExplanationLine(
+			kind="upcoming",
+			label=(
+				f"{'Setoff' if is_setoff else 'Reserve'} — {title}"
+				+ (" (overdue)" if overdue else "")
+			),
+			amount=disp_amt,
+			sign=disp_sign,
+			ref_doctype="LYQD Upcoming Payment",
+			ref_name=p.get("name"),
+			due_date=due_s,
+			category=p.get("category"),
+			notes=(p.get("notes") or "")
+			+ ("; setoff" if is_setoff else "")
+			+ ("; overdue" if overdue else ""),
+			gl_amount=gl_amount,
+			gl_sign=gl_sign,
 		)
+
+	by_name = {p.get("name"): p for p in upcoming_payments if p.get("name")}
+	children_of: dict[str, list[dict[str, Any]]] = {}
+	roots: list[dict[str, Any]] = []
+	for p in upcoming_payments:
+		parent = p.get("parent_payment")
+		name = p.get("name")
+		if parent and parent in by_name and parent != name:
+			children_of.setdefault(parent, []).append(p)
+		else:
+			roots.append(p)
+
+	for root in roots:
+		kids = children_of.get(root.get("name") or "", [])
+		if kids:
+			signed_net = _signed_commitment(root) + sum(_signed_commitment(c) for c in kids)
+			line = _upcoming_line(root, signed_net=signed_net)
+			line.child_count = len(kids)
+			line.children = [_upcoming_line(c) for c in kids]
+			# Group label: keep parent title, note it's a net reserve
+			title = root.get("title") or root.get("name") or "Upcoming payment"
+			due = root.get("due_date")
+			overdue = bool(due and getdate(due) < getdate(as_of))
+			line.label = f"Reserve — {title}" + (" (overdue)" if overdue else "")
+			explanation.append(line)
+		else:
+			explanation.append(_upcoming_line(root))
 
 	if min_liquidity_buffer:
 		explanation.append(

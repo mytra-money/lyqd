@@ -25,6 +25,7 @@
   "column_break_source",
   "source_name",
   "source_account",
+  "parent_payment",
   "last_synced_on"
  ],
  "fields": [
@@ -155,6 +156,14 @@
    "read_only": 1
   },
   {
+   "description": "When set, this plan row nests under a parent Account-grain payment (refs-off recommendation group). Due date follows the parent.",
+   "fieldname": "parent_payment",
+   "fieldtype": "Link",
+   "label": "Parent Payment",
+   "options": "LYQD Upcoming Payment",
+   "read_only": 1
+  },
+  {
    "fieldname": "last_synced_on",
    "fieldtype": "Datetime",
    "label": "Last Synced From Books",
@@ -162,7 +171,7 @@
   }
  ],
  "links": [],
- "modified": "2026-10-29 12:00:00.000000",
+ "modified": "2026-11-04 10:50:00.000000",
  "modified_by": "Administrator",
  "module": "LYQD",
  "name": "LYQD Upcoming Payment",

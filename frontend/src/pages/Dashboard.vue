@@ -203,36 +203,98 @@
         </div>
 
         <ul v-else class="divide-y divide-gray-100">
-          <li
-            v-for="u in filteredCommitments"
-            :key="u.name"
-            class="flex flex-wrap items-center justify-between gap-3 py-3"
-          >
-            <div class="min-w-0">
-              <div class="flex flex-wrap items-center gap-2">
-                <span class="text-sm font-medium text-gray-900">{{ u.title }}</span>
-                <Badge v-if="isOverdue(u)" theme="red" variant="subtle">Overdue</Badge>
-                <Badge v-else-if="isDueSoon(u)" theme="orange" variant="subtle">Due soon</Badge>
-                <span class="text-xs text-gray-500">{{ u.category }}</span>
+          <li v-for="u in nestedCommitments" :key="u.name">
+            <div class="flex flex-wrap items-center justify-between gap-3 py-3">
+              <div class="flex min-w-0 items-start gap-2">
+                <div class="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center">
+                  <button
+                    v-if="u._childCount"
+                    type="button"
+                    class="flex h-6 w-6 items-center justify-center rounded text-gray-500 hover:bg-gray-100 hover:text-gray-800"
+                    :aria-expanded="isGroupExpanded(u.name)"
+                    :aria-label="isGroupExpanded(u.name) ? 'Collapse group' : 'Expand group'"
+                    @click="toggleGroup(u.name)"
+                  >
+                    <FeatherIcon
+                      :name="isGroupExpanded(u.name) ? 'chevron-down' : 'chevron-right'"
+                      class="h-3.5 w-3.5"
+                    />
+                  </button>
+                </div>
+                <div class="min-w-0">
+                  <div class="flex flex-wrap items-center gap-2">
+                    <span class="text-sm font-medium text-gray-900">{{ u.title }}</span>
+                    <span
+                      v-if="u._childCount"
+                      class="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-gray-600"
+                    >
+                      Group · {{ u._childCount + 1 }}
+                    </span>
+                    <Badge v-if="isOverdue(u)" theme="red" variant="subtle">Overdue</Badge>
+                    <Badge v-else-if="isDueSoon(u)" theme="orange" variant="subtle">Due soon</Badge>
+                    <span class="text-xs text-gray-500">{{ u.category }}</span>
+                  </div>
+                  <div class="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-gray-500">
+                    <span>Due {{ formatDate(u.due_date) }}</span>
+                    <span
+                      v-if="u._childCount"
+                      class="tabular-nums text-[11px] text-gray-400"
+                    >
+                      · GL {{ formatINR(u.amount) }}
+                    </span>
+                  </div>
+                </div>
               </div>
-              <div class="mt-0.5 text-xs text-gray-500">
-                Due {{ formatDate(u.due_date) }}
+              <div class="flex items-center gap-2">
+                <div class="text-right">
+                  <template v-if="u._childCount && u._groupNet != null">
+                    <div class="tabular-nums text-base font-semibold text-gray-900">
+                      {{ formatINR(u._groupNet) }}
+                    </div>
+                    <div class="text-[10px] font-medium uppercase tracking-wide text-gray-400">
+                      Net
+                    </div>
+                  </template>
+                  <span v-else class="tabular-nums text-sm font-semibold text-gray-900">
+                    {{ formatINR(u.amount) }}
+                  </span>
+                </div>
+                <Button size="sm" variant="ghost" @click="openEdit(u)">Edit</Button>
+                <Button
+                  v-if="groupCanMarkPaid(u)"
+                  size="sm"
+                  variant="outline"
+                  :loading="marking === u.name"
+                  @click="markPaid(u)"
+                >
+                  Mark paid
+                </Button>
               </div>
             </div>
-            <div class="flex items-center gap-2">
-              <span class="tabular-nums text-sm font-semibold text-gray-900">
-                {{ formatINR(u.amount) }}
-              </span>
-              <Button size="sm" variant="ghost" @click="openEdit(u)">Edit</Button>
-              <Button
-                size="sm"
-                variant="outline"
-                :loading="marking === u.name"
-                @click="markPaid(u)"
+            <ul
+              v-if="u._childCount && isGroupExpanded(u.name)"
+              class="mb-2 border-l-2 border-gray-200 bg-gray-50/40"
+            >
+              <li
+                v-for="child in u._children"
+                :key="child.name"
+                class="flex flex-wrap items-center justify-between gap-3 py-2 pl-8 pr-1"
               >
-                Mark paid
-              </Button>
-            </div>
+                <div class="min-w-0">
+                  <div class="text-sm text-gray-800">
+                    <span class="mr-1 text-gray-400">↳</span>
+                    {{ child.title }}
+                  </div>
+                  <div class="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-gray-500">
+                    <span>Due {{ formatDate(child.due_date) }}</span>
+                    <span class="tabular-nums text-[11px] text-gray-400">
+                      · GL {{ formatINR(child.amount) }}
+                    </span>
+                    <span>· {{ child.category }}</span>
+                  </div>
+                </div>
+              </li>
+            </ul>
           </li>
         </ul>
       </section>
@@ -251,7 +313,18 @@
             label="Category"
             :options="categoryOptions"
           />
-          <FormControl v-model="form.due_date" type="date" label="Due date" />
+          <FormControl
+            v-model="form.due_date"
+            type="date"
+            label="Due date"
+            :disabled="!!form.parent_payment"
+          />
+          <p
+            v-if="form.parent_payment"
+            class="rounded-md border border-amber-100 bg-amber-50 px-3 py-2 text-xs text-amber-950"
+          >
+            Due date follows the parent plan row.
+          </p>
           <FormControl v-model="form.amount" type="number" label="Amount" />
           <FormControl
             v-if="form.name"
@@ -283,6 +356,7 @@ import { useCompanyStore } from '@/stores/company'
 import { useTreasuryCacheStore } from '@/stores/treasuryCache'
 import { useHorizon } from '@/composables/useHorizon'
 import { formatDate, formatINR } from '@/utils/format'
+import { groupMembers, nestPlanRows } from '@/utils/planNest'
 
 defineOptions({ name: 'Dashboard' })
 
@@ -290,6 +364,8 @@ const company = useCompanyStore()
 const cache = useTreasuryCacheStore()
 const { horizon } = useHorizon()
 const commitmentFilter = ref('all')
+/** Group parents expanded by name; default collapsed. */
+const expandedGroups = ref({})
 const showNew = ref(false)
 const saving = ref(false)
 const marking = ref(null)
@@ -312,6 +388,7 @@ const emptyForm = () => ({
   amount: 0,
   status: 'Planned',
   notes: '',
+  parent_payment: '',
 })
 const form = reactive(emptyForm())
 
@@ -320,6 +397,11 @@ const loading = computed(() => cache.misLoading && !d.value)
 
 async function loadMis(force = false) {
   if (!company.current) return
+  try {
+    await call('lyqd.api.spa.relink_commitment_parents', { company: company.current })
+  } catch {
+    /* ignore */
+  }
   await cache.ensureMis({
     company: company.current,
     horizonDays: horizon.value,
@@ -384,6 +466,23 @@ const filteredCommitments = computed(() => {
   return rows
 })
 
+const nestedCommitments = computed(() => nestPlanRows(filteredCommitments.value))
+
+function isGroupExpanded(name) {
+  return !!expandedGroups.value[name]
+}
+
+function toggleGroup(name) {
+  expandedGroups.value = {
+    ...expandedGroups.value,
+    [name]: !expandedGroups.value[name],
+  }
+}
+
+function groupCanMarkPaid(row) {
+  return groupMembers(row).some((m) => m.status === 'Planned')
+}
+
 function openNew() {
   Object.assign(form, emptyForm(), { due_date: asOfDate.value })
   showNew.value = true
@@ -394,6 +493,7 @@ function openEdit(u) {
     name: u.name,
     title: u.title,
     category: u.category || 'Other',
+    parent_payment: u.parent_payment || '',
     due_date: u.due_date,
     amount: u.amount,
     status: u.status || 'Planned',
@@ -405,19 +505,26 @@ function openEdit(u) {
 async function markPaid(u) {
   marking.value = u.name
   try {
-    await call('lyqd.api.spa.save_upcoming_payment', {
-      doc: {
-        name: u.name,
-        company: company.current,
-        title: u.title,
-        category: u.category,
-        due_date: u.due_date,
-        amount: u.amount,
-        status: 'Paid',
-        notes: u.notes,
-      },
-    })
-    toast.success(`Marked ${u.title} as paid`)
+    const targets = groupMembers(u).filter((m) => m.status === 'Planned')
+    for (const m of targets) {
+      await call('lyqd.api.spa.save_upcoming_payment', {
+        doc: {
+          name: m.name,
+          company: company.current,
+          title: m.title,
+          category: m.category,
+          due_date: m.due_date,
+          amount: m.amount,
+          status: 'Paid',
+          notes: m.notes,
+        },
+      })
+    }
+    toast.success(
+      targets.length > 1
+        ? `Marked ${targets.length} paid`
+        : `Marked ${u.title} as paid`,
+    )
     cache.invalidatePlanRelated(company.current)
     await loadMis(true)
   } catch (e) {

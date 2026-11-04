@@ -185,6 +185,7 @@ export const useTreasuryCacheStore = defineStore('treasuryCache', () => {
             'source_doctype',
             'source_name',
             'source_account',
+            'parent_payment',
             'last_synced_on',
           ],
           filters: { company },

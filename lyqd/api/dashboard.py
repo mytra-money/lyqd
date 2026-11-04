@@ -143,6 +143,7 @@ def create_surplus_run_doc(
 					"notes": line.notes,
 				}
 				for line in result.explanation
+				# Child table stays flat; nested groups live in explanation_json for the SPA
 			],
 		}
 	)

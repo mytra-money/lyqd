@@ -28,8 +28,80 @@ def get_recommendation_account_rows(company: str) -> list[dict[str, Any]]:
 	return frappe.get_all(
 		"LYQD Recommendation Account",
 		filters={"parent": company, "parenttype": "LYQD Company"},
-		fields=["account", "account_name", "show_references"],
+		fields=["account", "account_name", "show_references", "parent_account"],
 	)
+
+
+def _parent_account_map(company: str) -> dict[str, str]:
+	"""account → parent_account for refs-off nested recommendation rows."""
+	out: dict[str, str] = {}
+	for row in get_recommendation_account_rows(company):
+		parent = (row.get("parent_account") or "").strip()
+		acc = (row.get("account") or "").strip()
+		if acc and parent and not int(row.get("show_references") or 0):
+			out[acc] = parent
+	return out
+
+
+def _find_account_grain_plan(company: str, account: str) -> str | None:
+	"""Planned/Paid Account-grain Upcoming Payment for this COA account."""
+	if not company or not account:
+		return None
+	return frappe.db.get_value(
+		"LYQD Upcoming Payment",
+		{
+			"company": company,
+			"source_doctype": "Account",
+			"source_name": account,
+			"status": ("in", ["Planned", "Paid"]),
+		},
+		"name",
+	)
+
+
+def relink_plan_parents(company: str) -> int:
+	"""Set parent_payment / inherit due_date for Account-grain plans from recommendation config."""
+	parent_map = _parent_account_map(company)
+	if not parent_map:
+		return 0
+	updated = 0
+	rows = frappe.get_all(
+		"LYQD Upcoming Payment",
+		filters={
+			"company": company,
+			"status": ("in", ["Planned", "Paid"]),
+			"source_doctype": "Account",
+			"source_name": ("is", "set"),
+		},
+		fields=["name", "source_name", "parent_payment", "due_date"],
+	)
+	for row in rows:
+		want_parent_acc = parent_map.get(row.source_name)
+		if not want_parent_acc:
+			if row.parent_payment:
+				frappe.db.set_value(
+					"LYQD Upcoming Payment",
+					row.name,
+					"parent_payment",
+					None,
+					update_modified=False,
+				)
+				updated += 1
+			continue
+		parent_name = _find_account_grain_plan(company, want_parent_acc)
+		if not parent_name or parent_name == row.name:
+			continue
+		parent_due = frappe.db.get_value("LYQD Upcoming Payment", parent_name, "due_date")
+		vals = {}
+		if row.parent_payment != parent_name:
+			vals["parent_payment"] = parent_name
+		if parent_due and str(row.due_date) != str(parent_due):
+			vals["due_date"] = parent_due
+		if vals:
+			frappe.db.set_value("LYQD Upcoming Payment", row.name, vals, update_modified=True)
+			updated += 1
+	return updated
+
 
 
 def _already_accepted(company: str) -> set[tuple[str, str]]:
@@ -430,6 +502,7 @@ def get_liability_recommendations(
 						"account": r.account,
 						"show_references": r.show_references,
 						"account_name": r.account_name,
+						"parent_account": getattr(r, "parent_account", None),
 					}
 					for r in rows_cfg
 				],
@@ -553,6 +626,22 @@ def accept_recommendation(
 			root = frappe.db.get_value("Account", account, "root_type")
 		cash_effect = "Setoff" if root == "Asset" else "Outflow"
 
+	parent_payment = None
+	# Account-grain rows may nest under another refs-off recommendation account
+	grain_account = account if source_doctype == "Account" else None
+	if source_doctype == "Account" and source_name:
+		grain_account = source_name
+	if grain_account:
+		want_parent = _parent_account_map(company).get(grain_account)
+		if want_parent:
+			parent_payment = _find_account_grain_plan(company, want_parent)
+			if parent_payment:
+				parent_due = frappe.db.get_value(
+					"LYQD Upcoming Payment", parent_payment, "due_date"
+				)
+				if parent_due:
+					due_date = parent_due
+
 	doc = frappe.get_doc(
 		{
 			"doctype": "LYQD Upcoming Payment",
@@ -568,11 +657,13 @@ def accept_recommendation(
 			"source_doctype": source_doctype,
 			"source_name": source_name,
 			"source_account": account,
+			"parent_payment": parent_payment,
 			"last_synced_on": frappe.utils.now_datetime(),
 		}
 	)
 	doc.insert()
 	return doc.as_dict()
+
 
 
 def _ple_voucher_outstanding(
@@ -898,6 +989,8 @@ def sync_planned_from_books(company: str) -> dict[str, Any]:
 	for name in rows:
 		results.append(sync_upcoming_payment_from_books(name))
 
+	relinked = relink_plan_parents(company)
+
 	summary = {
 		"marked_paid": sum(1 for r in results if r.get("action") == "marked_paid"),
 		"amount_updated": sum(1 for r in results if r.get("action") == "amount_updated"),
@@ -905,6 +998,7 @@ def sync_planned_from_books(company: str) -> dict[str, Any]:
 		"reopened": sum(1 for r in results if r.get("action") == "reopened"),
 		"unchanged": sum(1 for r in results if r.get("action") == "unchanged"),
 		"skipped": sum(1 for r in results if r.get("action") == "skipped"),
+		"parents_relinked": relinked,
 	}
 	return {
 		"company": company,

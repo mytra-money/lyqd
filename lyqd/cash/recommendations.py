@@ -6,6 +6,7 @@ from lyqd.recommendations import (  # noqa: F401
 	get_purchase_invoice_recommendations,
 	get_recommendation_account_rows,
 	is_erpnext_integration_enabled,
+	relink_plan_parents,
 	resolve_books_outstanding,
 	sync_planned_from_books,
 	sync_upcoming_payment_from_books,

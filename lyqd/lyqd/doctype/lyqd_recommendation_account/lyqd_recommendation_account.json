@@ -4,7 +4,7 @@
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
- "field_order": ["account", "account_name", "show_references"],
+ "field_order": ["account", "account_name", "show_references", "parent_account"],
  "fields": [
   {
    "description": "Account name from the configured ERPNext source (this site or remote). Stored as Data so Other Site accounts need not exist locally.",
@@ -23,16 +23,24 @@
   },
   {
    "default": "1",
-   "description": "On: recommend open vouchers / references (PI, JE, tax provisions). Off: recommend the account's net GL liability as one line.",
+   "description": "On: recommend open vouchers / references (PI, JE, tax provisions). Off: recommend the account's net GL liability as one line. Refs-off rows can parent other refs-off rows.",
    "fieldname": "show_references",
    "fieldtype": "Check",
    "in_list_view": 1,
    "label": "Voucher references"
+  },
+  {
+   "depends_on": "eval:!doc.show_references",
+   "description": "Nest under another refs-off account (Top Bar style). Shared due date on the plan. Only refs-off accounts can be parents or children.",
+   "fieldname": "parent_account",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Parent Account"
   }
  ],
  "istable": 1,
  "links": [],
- "modified": "2026-11-02 15:15:00.000000",
+ "modified": "2026-11-04 10:45:00.000000",
  "modified_by": "Administrator",
  "module": "LYQD",
  "name": "LYQD Recommendation Account",

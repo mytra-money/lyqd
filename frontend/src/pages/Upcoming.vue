@@ -87,72 +87,162 @@
       </div>
 
       <ul v-else class="max-h-[70vh] divide-y divide-gray-100 overflow-y-auto">
-        <li
-          v-for="row in filteredList"
-          :key="row.name"
-          class="flex items-center gap-3 px-4 py-3 hover:bg-gray-50/80"
-        >
-          <div class="min-w-0 flex-1">
-            <div class="truncate text-sm font-medium text-gray-900">{{ row.title }}</div>
-            <div class="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-gray-500">
-              <span
-                :class="
-                  row.status === 'Planned' && isOverdue(row.due_date)
-                    ? 'font-medium text-red-600'
-                    : ''
-                "
+        <li v-for="row in nestedFilteredList" :key="row.name" class="px-0">
+          <div class="flex items-center gap-3 px-4 py-3 hover:bg-gray-50/80">
+            <div class="flex h-6 w-6 shrink-0 items-center justify-center">
+              <button
+                v-if="row._childCount"
+                type="button"
+                class="flex h-6 w-6 items-center justify-center rounded text-gray-500 hover:bg-gray-100 hover:text-gray-800"
+                :aria-expanded="isGroupExpanded(row.name)"
+                :aria-label="isGroupExpanded(row.name) ? 'Collapse group' : 'Expand group'"
+                @click="toggleGroup(row.name)"
               >
-                {{ dueLabel(row.due_date) }}
-              </span>
-              <span>· {{ row.category }}</span>
-              <span
-                v-if="row.cash_effect === 'Setoff'"
-                class="rounded bg-emerald-50 px-1 font-medium text-emerald-800"
-              >
-                Setoff
-              </span>
-              <span v-if="row.status !== 'Planned'" class="text-gray-400">· {{ row.status }}</span>
+                <FeatherIcon
+                  :name="isGroupExpanded(row.name) ? 'chevron-down' : 'chevron-right'"
+                  class="h-3.5 w-3.5"
+                />
+              </button>
             </div>
-            <div v-if="row.source_doctype" class="mt-0.5 truncate text-xs text-gray-400">
-              Ref {{ row.source_doctype }} {{ row.source_name }}
-              <span v-if="row.source_account"> · {{ shortAccount(row.source_account) }}</span>
+            <div class="min-w-0 flex-1">
+              <div class="flex flex-wrap items-center gap-2 truncate text-sm font-medium text-gray-900">
+                {{ row.title }}
+                <span
+                  v-if="row._childCount"
+                  class="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-gray-600"
+                >
+                  Group · {{ row._childCount + 1 }}
+                </span>
+              </div>
+              <div class="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-gray-500">
+                <span
+                  :class="
+                    row.status === 'Planned' && isOverdue(row.due_date)
+                      ? 'font-medium text-red-600'
+                      : ''
+                  "
+                >
+                  {{ dueLabel(row.due_date) }}
+                </span>
+                <span
+                  v-if="row._childCount"
+                  class="tabular-nums text-[11px] text-gray-400"
+                  :class="row.cash_effect === 'Setoff' ? 'text-emerald-700/80' : ''"
+                >
+                  · GL {{ row.cash_effect === 'Setoff' ? '−' : '' }}{{ formatINR(row.amount) }}
+                </span>
+                <span>· {{ row.category }}</span>
+                <span
+                  v-if="row.cash_effect === 'Setoff'"
+                  class="rounded bg-emerald-50 px-1 font-medium text-emerald-800"
+                >
+                  Setoff
+                </span>
+                <span v-if="row.status !== 'Planned'" class="text-gray-400">· {{ row.status }}</span>
+              </div>
+              <div v-if="row.source_doctype" class="mt-0.5 truncate text-xs text-gray-400">
+                Ref {{ row.source_doctype }} {{ row.source_name }}
+                <span v-if="row.source_account"> · {{ shortAccount(row.source_account) }}</span>
+              </div>
+            </div>
+            <div class="shrink-0 text-right">
+              <div
+                v-if="row._childCount && row._groupNet != null"
+                class="tabular-nums text-base font-semibold text-gray-900"
+              >
+                {{ formatINR(row._groupNet) }}
+                <div class="text-[10px] font-medium uppercase tracking-wide text-gray-400">Net</div>
+              </div>
+              <div
+                v-else
+                class="tabular-nums text-sm font-semibold"
+                :class="row.cash_effect === 'Setoff' ? 'text-emerald-800' : 'text-gray-900'"
+              >
+                {{ row.cash_effect === 'Setoff' ? '−' : '' }}{{ formatINR(row.amount) }}
+              </div>
+              <div class="mt-1 flex justify-end gap-1.5">
+                <button
+                  v-if="groupCanRefresh(row)"
+                  type="button"
+                  class="text-xs text-gray-500 hover:text-gray-900"
+                  :disabled="refreshing === row.name"
+                  @click="refreshRow(row)"
+                >
+                  Refresh
+                </button>
+                <button
+                  v-if="groupCanMarkPaid(row)"
+                  type="button"
+                  class="text-xs font-medium text-gray-600 hover:text-gray-900"
+                  :disabled="marking === row.name"
+                  @click="markPaid(row)"
+                >
+                  Mark paid
+                </button>
+                <button
+                  type="button"
+                  class="text-xs text-gray-400 hover:text-gray-700"
+                  @click="edit(row)"
+                >
+                  Edit
+                </button>
+              </div>
             </div>
           </div>
-          <div class="shrink-0 text-right">
-            <div
-              class="tabular-nums text-sm font-semibold"
-              :class="row.cash_effect === 'Setoff' ? 'text-emerald-800' : 'text-gray-900'"
+
+          <ul
+            v-if="row._childCount && isGroupExpanded(row.name)"
+            class="border-t border-gray-50 bg-gray-50/40"
+          >
+            <li
+              v-for="child in row._children"
+              :key="child.name"
+              class="flex items-center gap-3 border-l-2 border-gray-200 py-2.5 pl-10 pr-4 hover:bg-gray-50/80"
             >
-              {{ row.cash_effect === 'Setoff' ? '−' : '' }}{{ formatINR(row.amount) }}
-            </div>
-            <div class="mt-1 flex justify-end gap-1.5">
-              <button
-                v-if="row.source_doctype && row.source_name"
-                type="button"
-                class="text-xs text-gray-500 hover:text-gray-900"
-                :disabled="refreshing === row.name"
-                @click="refreshRow(row)"
-              >
-                Refresh
-              </button>
-              <button
-                v-if="row.status === 'Planned'"
-                type="button"
-                class="text-xs font-medium text-gray-600 hover:text-gray-900"
-                :disabled="marking === row.name"
-                @click="markPaid(row)"
-              >
-                Mark paid
-              </button>
-              <button
-                type="button"
-                class="text-xs text-gray-400 hover:text-gray-700"
-                @click="edit(row)"
-              >
-                Edit
-              </button>
-            </div>
-          </div>
+              <div class="min-w-0 flex-1">
+                <div class="truncate text-sm text-gray-800">
+                  <span class="mr-1 text-gray-400">↳</span>
+                  {{ child.title }}
+                </div>
+                <div class="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-gray-500">
+                  <span
+                    :class="
+                      child.status === 'Planned' && isOverdue(child.due_date)
+                        ? 'font-medium text-red-600'
+                        : ''
+                    "
+                  >
+                    {{ dueLabel(child.due_date) }}
+                  </span>
+                  <span
+                    class="tabular-nums text-[11px]"
+                    :class="
+                      child.cash_effect === 'Setoff' ? 'text-emerald-700/80' : 'text-gray-400'
+                    "
+                  >
+                    · GL {{ child.cash_effect === 'Setoff' ? '−' : ''
+                    }}{{ formatINR(child.amount) }}
+                  </span>
+                  <span>· {{ child.category }}</span>
+                  <span
+                    v-if="child.cash_effect === 'Setoff'"
+                    class="rounded bg-emerald-50 px-1 font-medium text-emerald-800"
+                  >
+                    Setoff
+                  </span>
+                  <span v-if="child.status !== 'Planned'" class="text-gray-400"
+                    >· {{ child.status }}</span
+                  >
+                </div>
+                <div v-if="child.source_doctype" class="mt-0.5 truncate text-xs text-gray-400">
+                  Ref {{ child.source_doctype }} {{ child.source_name }}
+                  <span v-if="child.source_account">
+                    · {{ shortAccount(child.source_account) }}</span
+                  >
+                </div>
+              </div>
+            </li>
+          </ul>
         </li>
       </ul>
     </section>
@@ -318,7 +408,18 @@
             label="Category"
             :options="categoryOptions"
           />
-          <FormControl v-model="form.due_date" type="date" label="Due date" />
+          <FormControl
+            v-model="form.due_date"
+            type="date"
+            label="Due date"
+            :disabled="!!form.parent_payment"
+          />
+          <p
+            v-if="form.parent_payment"
+            class="rounded-md border border-amber-100 bg-amber-50 px-3 py-2 text-xs text-amber-950"
+          >
+            Due date follows the parent plan row. Change the parent’s due date to update this group.
+          </p>
           <FormControl v-model="form.amount" type="number" label="Amount" />
           <p
             v-if="form.cash_effect === 'Setoff'"
@@ -380,6 +481,7 @@ import PageHeader from '@/components/PageHeader.vue'
 import { useCompanyStore } from '@/stores/company'
 import { useTreasuryCacheStore } from '@/stores/treasuryCache'
 import { formatDate, formatINR } from '@/utils/format'
+import { groupMembers, nestPlanRows } from '@/utils/planNest'
 
 defineOptions({ name: 'Upcoming' })
 
@@ -397,6 +499,8 @@ let recsDeferTimer = null
 const plannedView = ref('active')
 const categoryFilter = ref('all')
 const plannedQuery = ref('')
+/** Group parents expanded by name; default collapsed. */
+const expandedGroups = ref({})
 
 const suggestionView = ref('all')
 const recAccount = ref('all')
@@ -422,6 +526,7 @@ const empty = () => ({
   cash_effect: 'Outflow',
   status: 'Planned',
   notes: '',
+  parent_payment: '',
 })
 const form = reactive(empty())
 
@@ -448,7 +553,12 @@ const todayStr = () => new Date().toISOString().slice(0, 10)
 
 async function loadPlan(force = false) {
   if (!company.current) return
-  await cache.ensurePlan({ company: company.current, force })
+  try {
+    await call('lyqd.api.spa.relink_commitment_parents', { company: company.current })
+  } catch {
+    /* grouping still works once links exist */
+  }
+  await cache.ensurePlan({ company: company.current, force: true })
 }
 
 function scheduleRecs(force = false) {
@@ -577,6 +687,8 @@ const filteredList = computed(() => {
   })
 })
 
+const nestedFilteredList = computed(() => nestPlanRows(filteredList.value))
+
 const filteredRecs = computed(() => {
   const q = recQuery.value.trim().toLowerCase()
   return allRecs.value.filter((item) => {
@@ -639,6 +751,7 @@ function edit(row) {
     cash_effect: row.cash_effect || 'Outflow',
     status: row.status,
     notes: row.notes || '',
+    parent_payment: row.parent_payment || '',
   })
   show.value = true
 }
@@ -672,10 +785,29 @@ async function syncFromBooks() {
   }
 }
 
+function isGroupExpanded(name) {
+  return !!expandedGroups.value[name]
+}
+
+function toggleGroup(name) {
+  expandedGroups.value = {
+    ...expandedGroups.value,
+    [name]: !expandedGroups.value[name],
+  }
+}
+
+function groupCanRefresh(row) {
+  return groupMembers(row).some((m) => m.source_doctype && m.source_name)
+}
+
+function groupCanMarkPaid(row) {
+  return groupMembers(row).some((m) => m.status === 'Planned')
+}
+
 async function refreshRow(row) {
   refreshing.value = row.name
   try {
-    const res = await call('lyqd.api.spa.refresh_upcoming_from_books', { name: row.name })
+    const targets = groupMembers(row).filter((m) => m.source_doctype && m.source_name)
     const labels = {
       marked_paid: 'Marked paid from books (voucher cleared)',
       amount_updated: 'Amount updated from books',
@@ -684,7 +816,17 @@ async function refreshRow(row) {
       unchanged: 'Already up to date',
       skipped: 'Skipped',
     }
-    toast.success(labels[res.action] || `Synced (${res.action})`)
+    let lastAction = 'unchanged'
+    for (const m of targets) {
+      const res = await call('lyqd.api.spa.refresh_upcoming_from_books', { name: m.name })
+      lastAction = res.action || lastAction
+    }
+    const n = targets.length
+    toast.success(
+      n > 1
+        ? `Refreshed ${n} linked rows from books`
+        : labels[lastAction] || `Synced (${lastAction})`,
+    )
     cache.invalidatePlanRelated(company.current)
     await reloadAll()
   } catch (e) {
@@ -697,19 +839,22 @@ async function refreshRow(row) {
 async function markPaid(row) {
   marking.value = row.name
   try {
-    await call('lyqd.api.spa.save_upcoming_payment', {
-      doc: {
-        name: row.name,
-        company: company.current,
-        title: row.title,
-        category: row.category,
-        due_date: row.due_date,
-        amount: row.amount,
-        status: 'Paid',
-        notes: row.notes,
-      },
-    })
-    toast.success('Marked paid')
+    const targets = groupMembers(row).filter((m) => m.status === 'Planned')
+    for (const m of targets) {
+      await call('lyqd.api.spa.save_upcoming_payment', {
+        doc: {
+          name: m.name,
+          company: company.current,
+          title: m.title,
+          category: m.category,
+          due_date: m.due_date,
+          amount: m.amount,
+          status: 'Paid',
+          notes: m.notes,
+        },
+      })
+    }
+    toast.success(targets.length > 1 ? `Marked ${targets.length} paid` : 'Marked paid')
     cache.invalidatePlanRelated(company.current)
     await loadPlan(true)
   } catch (e) {

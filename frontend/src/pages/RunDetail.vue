@@ -34,10 +34,13 @@ import { createResource } from 'frappe-ui'
 import PageHeader from '@/components/PageHeader.vue'
 import MetricCard from '@/components/MetricCard.vue'
 import ExplanationTable from '@/components/ExplanationTable.vue'
+import { useTreasuryCacheStore } from '@/stores/treasuryCache'
 import { formatDate } from '@/utils/format'
+import { surplusRunExplanationLines } from '@/utils/explanationNest'
 
 const props = defineProps({ name: String })
 const route = useRoute()
+const cache = useTreasuryCacheStore()
 
 const routeName = computed(() => props.name || route.params.name)
 
@@ -62,33 +65,31 @@ watch(
 
 const run = computed(() => doc.data)
 
+watch(
+  () => run.value?.company,
+  (c) => {
+    if (c) cache.ensurePlan({ company: c })
+  },
+  { immediate: true },
+)
+
 const subtitle = computed(() => {
   const d = run.value
   if (!d) return ''
   return `${formatDate(d.as_of)} · ${d.horizon_days}d horizon · ${d.company}`
 })
 
-const lines = computed(() => {
-  const d = run.value
-  if (!d) return []
-  if (Array.isArray(d.lines) && d.lines.length) {
-    return d.lines.map((l) => ({
-      kind: l.kind,
-      label: l.label,
-      amount: l.amount,
-      sign: l.sign,
-      category: l.category,
-      due_date: l.due_date,
-      ref_name: l.ref_name,
-    }))
+const planParentByName = computed(() => {
+  const map = {}
+  const company = run.value?.company
+  if (!company) return map
+  for (const row of cache.getPlan(company) || []) {
+    if (row?.name && row.parent_payment) map[row.name] = row.parent_payment
   }
-  try {
-    const raw = d.explanation_json
-    if (!raw) return []
-    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
-    return parsed.explanation || []
-  } catch {
-    return []
-  }
+  return map
 })
+
+const lines = computed(() =>
+  surplusRunExplanationLines(run.value, planParentByName.value),
+)
 </script>

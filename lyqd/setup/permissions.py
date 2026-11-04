@@ -121,10 +121,6 @@ def get_lyqd_surplus_run_query(user: str | None = None) -> str:
 	return _company_query_for("LYQD Surplus Run", user)
 
 
-def get_lyqd_cash_snapshot_query(user: str | None = None) -> str:
-	return _company_query_for("LYQD Cash Snapshot", user)
-
-
 def get_lyqd_draft_proposal_query(user: str | None = None) -> str:
 	return _company_query_for("LYQD Draft Proposal", user)
 

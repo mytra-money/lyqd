@@ -130,7 +130,6 @@
                   <option value="All">All roots</option>
                   <option value="Liability">Liability</option>
                   <option value="Asset">Asset (setoff)</option>
-                  <option value="Expense">Expense</option>
                 </select>
                 <select
                   v-model="accountTypeFilter"
@@ -147,40 +146,69 @@
 
               <div class="max-h-80 space-y-1 overflow-y-auto rounded-md border border-gray-200 bg-white p-2">
                 <div
-                  v-for="acc in filteredAccounts"
+                  v-for="acc in orderedAccounts"
                   :key="acc.name"
-                  class="flex items-center gap-3 rounded px-2 py-1.5 hover:bg-gray-50"
+                  class="flex flex-col gap-1 rounded px-2 py-1.5 hover:bg-gray-50"
+                  :class="acc._child ? 'ml-4 border-l border-gray-200 pl-3' : ''"
                 >
-                  <input
-                    type="checkbox"
-                    class="rounded border-gray-300"
-                    :checked="isAccountSelected(acc.name)"
-                    @change="toggleAccount(acc.name)"
-                  />
-                  <div class="min-w-0 flex-1">
-                    <div class="truncate text-sm text-gray-900">
-                      {{ acc.account_name || acc.name }}
-                    </div>
-                    <div class="truncate text-xs text-gray-500">
-                      {{ acc.root_type }} · {{ acc.account_type || '—' }} · {{ acc.name }}
-                    </div>
-                  </div>
-                  <label
-                    v-if="isAccountSelected(acc.name)"
-                    class="flex shrink-0 items-center gap-1.5 text-xs text-gray-600"
-                    title="Show voucher / reference lines instead of account balance only"
-                  >
+                  <div class="flex items-center gap-3">
                     <input
                       type="checkbox"
                       class="rounded border-gray-300"
-                      :checked="accountRefs[acc.name] !== false"
-                      @change="setAccountRefs(acc.name, $event.target.checked)"
+                      :checked="isAccountSelected(acc.name)"
+                      @change="toggleAccount(acc.name)"
                     />
-                    Refs
-                  </label>
+                    <div class="min-w-0 flex-1">
+                      <div class="truncate text-sm text-gray-900">
+                        {{ acc.account_name || acc.name }}
+                        <span
+                          v-if="acc._selected && !acc._child && refsOffParentOptions(acc.name).length"
+                          class="ml-1 text-[10px] font-medium uppercase tracking-wide text-gray-400"
+                        >
+                          can group
+                        </span>
+                      </div>
+                      <div class="truncate text-xs text-gray-500">
+                        {{ acc.root_type || '—' }} · {{ acc.account_type || '—' }} · {{ acc.name }}
+                      </div>
+                    </div>
+                    <label
+                      v-if="isAccountSelected(acc.name)"
+                      class="flex shrink-0 items-center gap-1.5 text-xs text-gray-600"
+                      title="Show voucher / reference lines instead of account balance only"
+                    >
+                      <input
+                        type="checkbox"
+                        class="rounded border-gray-300"
+                        :checked="accountRefs[acc.name] !== false"
+                        @change="setAccountRefs(acc.name, $event.target.checked)"
+                      />
+                      Refs
+                    </label>
+                  </div>
+                  <div
+                    v-if="isAccountSelected(acc.name) && accountRefs[acc.name] === false"
+                    class="ml-7 flex flex-wrap items-center gap-2"
+                  >
+                    <label class="text-xs text-gray-500">Parent</label>
+                    <select
+                      class="max-w-full rounded border border-gray-200 bg-white px-1.5 py-0.5 text-xs text-gray-700"
+                      :value="accountParents[acc.name] || ''"
+                      @change="setAccountParent(acc.name, $event.target.value)"
+                    >
+                      <option value="">None (top-level)</option>
+                      <option
+                        v-for="p in refsOffParentOptions(acc.name)"
+                        :key="p"
+                        :value="p"
+                      >
+                        {{ accountLabel(p) }}
+                      </option>
+                    </select>
+                  </div>
                 </div>
                 <div
-                  v-if="!filteredAccounts.length"
+                  v-if="!orderedAccounts.length"
                   class="py-6 text-center text-sm text-gray-500"
                 >
                   {{
@@ -425,9 +453,25 @@ const policyForm = reactive({
   selectedAccounts: [],
 })
 const accountRefs = reactive({})
+const accountParents = reactive({})
 
 function isAccountSelected(name) {
   return policyForm.selectedAccounts.includes(name)
+}
+
+function accountLabel(name) {
+  const meta = accountList.value.find((a) => a.name === name)
+  return meta?.account_name || name
+}
+
+function refsOffParentOptions(exclude) {
+  return policyForm.selectedAccounts.filter((name) => {
+    if (name === exclude) return false
+    if (accountRefs[name] !== false) return false
+    // One level: parent cannot itself be a child
+    if (accountParents[name]) return false
+    return true
+  })
 }
 
 function toggleAccount(name) {
@@ -435,6 +479,11 @@ function toggleAccount(name) {
   if (idx >= 0) {
     policyForm.selectedAccounts.splice(idx, 1)
     delete accountRefs[name]
+    delete accountParents[name]
+    // Clear children pointing at this account
+    for (const k of Object.keys(accountParents)) {
+      if (accountParents[k] === name) delete accountParents[k]
+    }
   } else {
     policyForm.selectedAccounts.push(name)
     accountRefs[name] = true
@@ -443,6 +492,22 @@ function toggleAccount(name) {
 
 function setAccountRefs(name, on) {
   accountRefs[name] = !!on
+  if (on) {
+    // Refs on → cannot be parent or child
+    delete accountParents[name]
+    for (const k of Object.keys(accountParents)) {
+      if (accountParents[k] === name) delete accountParents[k]
+    }
+  }
+}
+
+function setAccountParent(name, parent) {
+  const p = (parent || '').trim()
+  if (!p) {
+    delete accountParents[name]
+    return
+  }
+  accountParents[name] = p
 }
 
 const productForm = reactive({
@@ -535,25 +600,80 @@ const accountTypeChoices = computed(() => {
   return [...set].sort()
 })
 
-const filteredAccounts = computed(() => {
-  // Server already filters by root/type/search; keep client pass for snappy typing
-  let rows = accountList.value
+function matchesAccountFilters(a) {
   const q = accountSearch.value.trim().toLowerCase()
   if (q) {
-    rows = rows.filter(
-      (a) =>
-        (a.name || '').toLowerCase().includes(q) ||
-        (a.account_name || '').toLowerCase().includes(q) ||
-        (a.account_type || '').toLowerCase().includes(q),
-    )
+    const hay = `${a.name || ''} ${a.account_name || ''} ${a.account_type || ''}`.toLowerCase()
+    if (!hay.includes(q)) return false
   }
-  if (accountRootFilter.value !== 'All') {
-    rows = rows.filter((a) => a.root_type === accountRootFilter.value)
+  if (accountRootFilter.value !== 'All' && a.root_type !== accountRootFilter.value) return false
+  if (accountTypeFilter.value !== 'All' && a.account_type !== accountTypeFilter.value) return false
+  return true
+}
+
+/** Selected first (parents → children → flats), then unselected matches. */
+const orderedAccounts = computed(() => {
+  const byName = new Map(accountList.value.map((a) => [a.name, a]))
+  // Ensure selected accounts appear even if not in current COA page
+  for (const name of policyForm.selectedAccounts) {
+    if (!byName.has(name)) {
+      byName.set(name, {
+        name,
+        account_name: name,
+        root_type: '',
+        account_type: '',
+      })
+    }
   }
-  if (accountTypeFilter.value !== 'All') {
-    rows = rows.filter((a) => a.account_type === accountTypeFilter.value)
+
+  const selectedSet = new Set(policyForm.selectedAccounts)
+  const selectedParents = []
+  const selectedChildrenByParent = new Map()
+  const selectedFlats = []
+
+  for (const name of policyForm.selectedAccounts) {
+    const parent = accountParents[name]
+    const refsOff = accountRefs[name] === false
+    if (refsOff && parent && selectedSet.has(parent)) {
+      if (!selectedChildrenByParent.has(parent)) selectedChildrenByParent.set(parent, [])
+      selectedChildrenByParent.get(parent).push(name)
+    } else if (refsOff && !parent) {
+      selectedParents.push(name)
+    } else {
+      selectedFlats.push(name)
+    }
   }
-  return rows
+
+  // Parents that only appear as parent targets
+  for (const parent of selectedChildrenByParent.keys()) {
+    if (!selectedParents.includes(parent) && !selectedFlats.includes(parent)) {
+      selectedParents.push(parent)
+    }
+  }
+
+  const out = []
+  const pushSelected = (name, child = false) => {
+    const base = byName.get(name) || { name, account_name: name }
+    out.push({ ...base, _selected: true, _child: child })
+  }
+
+  for (const parent of selectedParents) {
+    pushSelected(parent, false)
+    for (const child of selectedChildrenByParent.get(parent) || []) {
+      pushSelected(child, true)
+    }
+  }
+  for (const name of selectedFlats) {
+    if (selectedChildrenByParent.has(name)) continue
+    pushSelected(name, false)
+  }
+
+  const selectedNames = new Set(out.map((r) => r.name))
+  const unselected = accountList.value
+    .filter((a) => !selectedNames.has(a.name) && matchesAccountFilters(a))
+    .map((a) => ({ ...a, _selected: false, _child: false }))
+
+  return [...out, ...unselected]
 })
 
 const accountSourceLabel = computed(() => {
@@ -608,8 +728,11 @@ const policy = createResource({
       selectedAccounts: (data.recommendation_accounts || []).map((r) => r.account).filter(Boolean),
     })
     Object.keys(accountRefs).forEach((k) => delete accountRefs[k])
+    Object.keys(accountParents).forEach((k) => delete accountParents[k])
     for (const r of data.recommendation_accounts || []) {
-      if (r.account) accountRefs[r.account] = r.show_references !== 0
+      if (!r.account) continue
+      accountRefs[r.account] = r.show_references !== 0
+      if (r.parent_account) accountParents[r.account] = r.parent_account
     }
   },
 })
@@ -746,10 +869,12 @@ async function savePolicy() {
       }),
       recommendation_accounts: policyForm.selectedAccounts.map((account) => {
         const meta = accountList.value.find((a) => a.name === account)
+        const refs = accountRefs[account] === false ? 0 : 1
         return {
           account,
           account_name: meta?.account_name || account,
-          show_references: accountRefs[account] === false ? 0 : 1,
+          show_references: refs,
+          parent_account: refs === 0 ? accountParents[account] || '' : '',
         }
       }),
     },

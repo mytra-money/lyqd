@@ -130,6 +130,47 @@
           </div>
         </div>
 
+        <!-- Horizon drift vs open proposal (same signals as Cash position) -->
+        <div
+          v-if="horizonDrift"
+          class="border-b border-amber-100 bg-amber-50 px-5 py-3 text-sm text-amber-950"
+        >
+          <p class="font-medium">{{ horizonDrift.title }}</p>
+          <p class="mt-1 text-p-base text-amber-900">{{ horizonDrift.body }}</p>
+          <div class="mt-2 flex flex-wrap gap-2">
+            <Button
+              v-if="horizonDrift.action === 'replace_invest'"
+              size="sm"
+              variant="solid"
+              :loading="creating"
+              @click="createFromSurplus"
+            >
+              Replace with invest
+            </Button>
+            <Button
+              v-else-if="horizonDrift.action === 'replace_redeem'"
+              size="sm"
+              variant="solid"
+              :loading="creating"
+              @click="createFromShortfall"
+            >
+              Replace with redeem
+            </Button>
+            <Button
+              v-else-if="horizonDrift.action === 'refresh'"
+              size="sm"
+              variant="solid"
+              :loading="creating"
+              @click="primaryAction"
+            >
+              Refresh proposal
+            </Button>
+            <Button size="sm" variant="outline" :loading="cancelling" @click="cancelActive">
+              Cancel proposal
+            </Button>
+          </div>
+        </div>
+
         <!-- Invest: yield card / Redeem: liquidity note -->
         <div v-if="!isRedeem" class="border-b border-gray-100 px-5 py-4">
           <div
@@ -146,6 +187,15 @@
               <p class="mt-1 text-sm text-emerald-900/80">
                 On {{ formatINR(active.proposed_amount) }} parked in
                 {{ active.display_scheme_label || 'a liquid fund' }}
+                <a
+                  v-if="schemeUrl"
+                  :href="schemeUrl"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="ml-1 font-medium text-emerald-900 underline"
+                >
+                  Scheme info
+                </a>
               </p>
             </div>
             <div class="grid shrink-0 grid-cols-2 gap-3 text-sm sm:min-w-[220px]">
@@ -161,6 +211,7 @@
               </div>
             </div>
           </div>
+          <p class="mt-3 text-xs leading-relaxed text-gray-500">{{ MF_DISCLAIMER }}</p>
         </div>
         <div v-else class="border-b border-gray-100 px-5 py-4">
           <div class="rounded-md border border-red-200 bg-red-50/70 px-4 py-4">
@@ -170,9 +221,21 @@
             <p class="mt-1 text-sm text-red-950">
               Redeem up to
               <span class="font-semibold tabular-nums">{{ formatINR(active.proposed_amount) }}</span>
-              from holdings to cover the liquidity gap (capped by portfolio).
+              from
+              {{ active.display_scheme_label || 'liquid holdings' }}
+              <a
+                v-if="schemeUrl"
+                :href="schemeUrl"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="font-medium underline"
+              >
+                (scheme info)
+              </a>
+              to cover the liquidity gap (capped by portfolio).
             </p>
           </div>
+          <p class="mt-3 text-xs leading-relaxed text-gray-500">{{ MF_DISCLAIMER }}</p>
         </div>
 
         <div
@@ -288,9 +351,13 @@ import { useCompanyStore } from '@/stores/company'
 import { useTreasuryCacheStore } from '@/stores/treasuryCache'
 import { useHorizon } from '@/composables/useHorizon'
 import { formatDate, formatINR } from '@/utils/format'
+import { surplusRunExplanationLines } from '@/utils/explanationNest'
 import { LYQD_INVESTMENT_ACCOUNT_WHATSAPP_URL } from '@/utils/investmentAccount'
-
-const ILLUSTRATIVE_LIQUID_YIELD_PCT = 6.5
+import {
+  ILLUSTRATIVE_LIQUID_YIELD_PCT,
+  MF_DISCLAIMER,
+  schemeInfoUrl,
+} from '@/utils/scheme'
 
 const company = useCompanyStore()
 const cache = useTreasuryCacheStore()
@@ -349,6 +416,7 @@ async function reloadContext() {
     instructions.reload(),
     cache.ensureSurplus({ company: company.current, horizonDays: horizon.value }),
     cache.ensureMis({ company: company.current, horizonDays: horizon.value }),
+    cache.ensurePlan({ company: company.current }),
   ])
 }
 
@@ -420,6 +488,46 @@ const liquidTotal = computed(() => Number(liveMis.value?.liquid_fund_total || 0)
 const redemptionNeed = computed(() => Number(liveMis.value?.redemption_need || 0))
 const canRedeem = computed(() => liquidTotal.value > 0.01 && redemptionNeed.value > 0.01)
 
+const schemeUrl = computed(() =>
+  schemeInfoUrl(active.value?.display_scheme_isin, active.value?.display_scheme_label),
+)
+
+/** Align open proposal with the picker horizon (same MIS flags as Cash position). */
+const horizonDrift = computed(() => {
+  if (!active.value || !liveMis.value) return null
+  const m = liveMis.value
+  const free = Math.max(0, Number(m.investable_surplus || 0))
+  if (isRedeem.value && m.redeem_no_longer_needed) {
+    return {
+      title: 'Redeem may no longer be needed',
+      body: `This horizon now shows free cash ${formatINR(free)} — review or cancel this redeem before acting, or replace it with an invest proposal.`,
+      action: 'replace_invest',
+    }
+  }
+  if (isRedeem.value && Number(m.redeem_over_need || 0) > 0) {
+    return {
+      title: 'Redeem amount is higher than today’s need',
+      body: `Today’s shortfall need is ${formatINR(m.redemption_need)} — this proposal is ${formatINR(m.redeem_over_need)} higher. Refresh the amount before creating an instruction.`,
+      action: 'refresh',
+    }
+  }
+  if (!isRedeem.value && m.invest_flipped_to_shortfall) {
+    return {
+      title: 'Horizon flipped to a shortfall',
+      body: `Do not invest ${formatINR(active.value.proposed_amount)}. This horizon needs ${formatINR(m.redemption_need || Math.abs(m.investable_surplus || 0))} more cash — cancel this invest and create a redeem instead.`,
+      action: 'replace_redeem',
+    }
+  }
+  if (!isRedeem.value && Number(m.over_allocated || 0) > 0) {
+    return {
+      title: 'Free cash is below this proposal',
+      body: `Cash moved since the proposal. Free cash is ${formatINR(m.over_allocated)} lower — do not deploy the full amount; refresh before creating an instruction.`,
+      action: 'refresh',
+    }
+  }
+  return null
+})
+
 const primaryCtaLabel = computed(() => {
   if (active.value) {
     return isRedeem.value ? 'Refresh redeem' : 'Refresh amount'
@@ -433,29 +541,17 @@ const runDoc = computed(() => runResource.data)
 const runLoading = computed(() => runResource.loading)
 const runError = computed(() => runResource.error)
 
-const runLines = computed(() => {
-  const d = runDoc.value
-  if (!d) return []
-  if (Array.isArray(d.lines) && d.lines.length) {
-    return d.lines.map((l) => ({
-      kind: l.kind,
-      label: l.label,
-      amount: l.amount,
-      sign: l.sign,
-      category: l.category,
-      due_date: l.due_date,
-      ref_name: l.ref_name,
-    }))
+const planParentByName = computed(() => {
+  const map = {}
+  for (const row of cache.getPlan(company.current) || []) {
+    if (row?.name && row.parent_payment) map[row.name] = row.parent_payment
   }
-  try {
-    const raw = d.explanation_json
-    if (!raw) return []
-    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
-    return parsed.explanation || []
-  } catch {
-    return []
-  }
+  return map
 })
+
+const runLines = computed(() =>
+  surplusRunExplanationLines(runDoc.value, planParentByName.value),
+)
 
 const annualBenefit = computed(() => {
   const amt = Number(active.value?.proposed_amount || 0)

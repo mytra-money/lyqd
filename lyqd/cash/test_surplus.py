@@ -165,6 +165,59 @@ class TestLYQDSurplusFormula(UnitTestCase):
 		self.assertEqual(upcoming_lines[0].category, "Vendor")
 		self.assertEqual(flt(upcoming_lines[0].amount), 250)
 
+	def test_explanation_nests_parent_payment_groups(self):
+		as_of = today()
+		result = compute_surplus(
+			company="TEST",
+			horizon_days=7,
+			as_of=as_of,
+			bank_cash=100_000,
+			upcoming_payments=[
+				{
+					"name": "P-IGST",
+					"title": "Output Tax IGST",
+					"amount": 10_000,
+					"due_date": as_of,
+					"category": "Tax",
+					"cash_effect": "Outflow",
+				},
+				{
+					"name": "C-CGST",
+					"title": "Output Tax CGST",
+					"amount": 5_000,
+					"due_date": as_of,
+					"category": "Tax",
+					"cash_effect": "Outflow",
+					"parent_payment": "P-IGST",
+				},
+				{
+					"name": "C-ITC",
+					"title": "Input Tax IGST",
+					"amount": 2_000,
+					"due_date": as_of,
+					"category": "Tax",
+					"cash_effect": "Setoff",
+					"parent_payment": "P-IGST",
+				},
+			],
+			min_liquidity_buffer=0,
+			restricted_cash=0,
+		)
+		# Net reserved = 10000 + 5000 - 2000 = 13000
+		self.assertEqual(result.upcoming_total, 13_000)
+		upcoming_lines = [e for e in result.explanation if e.kind == "upcoming"]
+		self.assertEqual(len(upcoming_lines), 1)
+		parent = upcoming_lines[0]
+		self.assertEqual(parent.ref_name, "P-IGST")
+		self.assertEqual(parent.child_count, 2)
+		self.assertEqual(flt(parent.amount), 13_000)
+		self.assertEqual(parent.sign, "-")
+		self.assertEqual(flt(parent.gl_amount), 10_000)
+		self.assertEqual(len(parent.children), 2)
+		self.assertEqual(parent.children[0].ref_name, "C-CGST")
+		self.assertEqual(parent.children[1].ref_name, "C-ITC")
+		self.assertEqual(parent.children[1].sign, "+")
+
 
 	def test_overdue_planned_still_reserves(self):
 		"""Overdue Planned rows must reduce surplus (passed through as upcoming_payments)."""

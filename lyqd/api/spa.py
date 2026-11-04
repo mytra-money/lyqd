@@ -445,9 +445,16 @@ def save_policy(doc: str | dict) -> dict:
 		"recommendation_accounts",
 		"account",
 		doc.get("recommendation_accounts") or [],
-		extra_keys=["account_name", "show_references"],
+		extra_keys=["account_name", "show_references", "parent_account"],
 	)
 	existing.save()
+	# Nest existing Account-grain plan rows under parents from the new config
+	try:
+		from lyqd.recommendations.core import relink_plan_parents
+
+		relink_plan_parents(existing.name)
+	except Exception:
+		frappe.log_error(title="LYQD relink plan parents after policy save")
 	return existing.as_dict()
 
 
@@ -468,9 +475,17 @@ def get_recommendation_account_options(
 	company = company or _default_company()
 	settings = get_integration_settings(company)
 	source = settings.get("source") or "This Site"
-	# Asset = setoff accounts (e.g. Input GST); Liability/Expense = outflows
-	root_types = ["Liability", "Expense", "Asset"]
+	# Liability = outflows; Asset = setoff (e.g. Input GST). Expense is not used for treasury.
+	root_types = ["Liability", "Asset"]
 	if root_type and root_type not in ("All", "all", ""):
+		if root_type == "Expense":
+			return {
+				"source": source,
+				"books_company": settings.get("remote_company"),
+				"enabled": bool(settings.get("enabled")),
+				"accounts": [],
+				"message": _("Expense accounts are not used for treasury recommendations."),
+			}
 		root_types = [root_type]
 
 	if settings.get("enabled") and source == SOURCE_OTHER_SITE:
@@ -583,6 +598,17 @@ def sync_upcoming_from_books(company: str | None = None) -> dict:
 
 
 @frappe.whitelist()
+def relink_commitment_parents(company: str | None = None) -> dict:
+	"""Apply recommendation parent_account nesting onto existing Account-grain plan rows."""
+	from lyqd.recommendations.core import relink_plan_parents
+
+	company = company or _default_company()
+	frappe.only_for(("System Manager", "LYQD Manager", "LYQD User"))
+	n = relink_plan_parents(company)
+	return {"company": company, "relinked": n}
+
+
+@frappe.whitelist()
 def refresh_upcoming_from_books(name: str) -> dict:
 	"""Refresh a single Upcoming Payment from its ERPNext source."""
 	from lyqd.cash.recommendations import sync_upcoming_payment_from_books
@@ -608,7 +634,9 @@ def save_upcoming_payment(doc: str | dict | None = None) -> dict:
 			pass
 		payment.title = (doc.get("title") or payment.title or "").strip()
 		payment.category = doc.get("category") or payment.category or "Other"
-		payment.due_date = doc.get("due_date") or payment.due_date
+		# Child due dates follow parent — ignore SPA edits on nested rows
+		if not payment.parent_payment:
+			payment.due_date = doc.get("due_date") or payment.due_date
 		payment.amount = flt(doc.get("amount"))
 		# cash_effect is account-derived — SPA cannot flip Outflow ↔ Setoff on edit
 		if doc.get("status") in ("Planned", "Paid", "Cancelled"):

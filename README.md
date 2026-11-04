@@ -64,6 +64,8 @@ Ops notes for the soft launch:
 
 Vue 3 + [Frappe UI](https://github.com/frappe/frappe-ui) SPA at `/lyqd`. Desk registration is for System Managers; day-to-day users work only in the SPA.
 
+**PWA / mobile** — Installable on phone (Add to Home Screen). Manifest: `/api/method/lyqd.api.spa.get_pwa_manifest`. Service worker is emitted by `yarn build` in `frontend/`. Narrow screens use a bottom tab bar + slide-out menu (Cash · Plan · Free · Proposal · More).
+
 - **Cash position** — Local bank statement balances, portfolio snapshot, commitments in the horizon, free cash / shortfall, and proposal drift alerts (e.g. open Invest while the horizon is short → replace with Redeem).
 - **Commitments** — Planned payments that reserve cash (including overdue). Optional “from books” suggestions can be accepted onto the plan with a due date.
 - **Free cash** — Explainable waterfall: bank cash − planned commitments − buffer − restricted cash.

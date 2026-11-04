@@ -42,7 +42,7 @@
             :options="bankSelectOptions"
           />
           <FormControl v-model="form.as_on" type="date" label="Date" />
-          <FormControl v-model="form.balance" type="number" label="Balance" />
+          <CurrencyControl v-model="form.balance" label="Balance" />
         </div>
       </template>
       <template #actions>
@@ -85,6 +85,7 @@
 <script setup>
 import { computed, onActivated, reactive, ref, watch } from 'vue'
 import { call, toast } from 'frappe-ui'
+import CurrencyControl from '@/components/CurrencyControl.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import BankAccountCards from '@/components/BankAccountCards.vue'
 import { useCompanyStore } from '@/stores/company'

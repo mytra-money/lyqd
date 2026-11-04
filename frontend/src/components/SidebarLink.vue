@@ -19,6 +19,7 @@
 <script setup>
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { mobileNavOpen } from '@/composables/useMobile'
 
 const props = defineProps({
   icon: { type: [Object, String], default: 'circle' },
@@ -37,6 +38,7 @@ const isActive = computed(() => {
 
 function handleClick() {
   if (!props.to) return
+  mobileNavOpen.value = false
   router.push(props.to)
 }
 </script>

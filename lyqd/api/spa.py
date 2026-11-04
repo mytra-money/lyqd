@@ -136,7 +136,9 @@ def create_lyqd_company(
 		doc.remote_api_key = (remote_api_key or "").strip() or None
 		if remote_api_secret:
 			doc.remote_api_secret = remote_api_secret
-		doc.insert()
+		# only_for() already gates roles; ignore DocType/controller create chicken-and-egg
+		# (User Permission is granted immediately after insert).
+		doc.insert(ignore_permissions=True)
 		created = True
 
 	# Grant access for non–System Managers (onboarding / add from nav)
@@ -452,14 +454,18 @@ def save_policy(doc: str | dict) -> dict:
 		extra_keys=["account_name", "show_references", "parent_account"],
 	)
 	existing.save()
-	# Nest existing Account-grain plan rows under parents from the new config
+	# Create missing child Account-grain plans + nest under parents from the new config
+	nested = None
 	try:
-		from lyqd.recommendations.core import relink_plan_parents
+		from lyqd.recommendations.core import sync_nested_account_plans
 
-		relink_plan_parents(existing.name)
+		nested = sync_nested_account_plans(existing.name)
 	except Exception:
-		frappe.log_error(title="LYQD relink plan parents after policy save")
-	return existing.as_dict()
+		frappe.log_error(title="LYQD sync nested account plans after policy save")
+	out = existing.as_dict()
+	if nested:
+		out["_nested_plans"] = nested
+	return out
 
 
 @frappe.whitelist()
@@ -603,13 +609,13 @@ def sync_upcoming_from_books(company: str | None = None) -> dict:
 
 @frappe.whitelist()
 def relink_commitment_parents(company: str | None = None) -> dict:
-	"""Apply recommendation parent_account nesting onto existing Account-grain plan rows."""
-	from lyqd.recommendations.core import relink_plan_parents
+	"""Create missing child Account-grain plans and nest them under parent plans from Settings."""
+	from lyqd.recommendations.core import sync_nested_account_plans
 
 	company = company or _default_company()
 	frappe.only_for(("System Manager", "LYQD Manager", "LYQD User"))
-	n = relink_plan_parents(company)
-	return {"company": company, "relinked": n}
+	result = sync_nested_account_plans(company)
+	return result
 
 
 @frappe.whitelist()
@@ -618,6 +624,40 @@ def refresh_upcoming_from_books(name: str) -> dict:
 	from lyqd.cash.recommendations import sync_upcoming_payment_from_books
 
 	return sync_upcoming_payment_from_books(name)
+
+
+@frappe.whitelist()
+def default_balance_as_of(due_date: str | None = None) -> dict:
+	"""Suggested freeze date: last day of the month before the due date (GST/TDS)."""
+	from lyqd.recommendations.core import default_balance_as_of_for_due
+
+	return {"balance_as_of": default_balance_as_of_for_due(due_date)}
+
+
+@frappe.whitelist()
+def freeze_upcoming_balance(
+	name: str,
+	as_of: str | None = None,
+	clear: int | bool | str | None = 0,
+) -> dict:
+	"""
+	Freeze Account-grain plan amount to GL as of ``as_of`` (cascades to children).
+
+	Pass clear=1 to resume live (today) balances on refresh.
+	"""
+	from lyqd.recommendations.core import (
+		default_balance_as_of_for_due,
+		set_upcoming_balance_as_of,
+	)
+
+	frappe.only_for(("System Manager", "LYQD Manager", "LYQD User"))
+	doc = frappe.get_doc("LYQD Upcoming Payment", name)
+	clear_flag = str(clear).lower() in ("1", "true", "yes")
+	if clear_flag:
+		return set_upcoming_balance_as_of(name, None, cascade_children=True, sync=True)
+
+	as_of_s = as_of or default_balance_as_of_for_due(doc.due_date)
+	return set_upcoming_balance_as_of(name, as_of_s, cascade_children=True, sync=True)
 
 
 @frappe.whitelist()
@@ -1167,3 +1207,51 @@ def get_portfolio(company: str | None = None) -> dict:
 	from lyqd.mytra.portfolio import get_portfolio as _portfolio
 
 	return _portfolio(company or _default_company())
+
+
+@frappe.whitelist(allow_guest=True)
+def get_pwa_manifest():
+	"""Web app manifest for installing LYQD as a PWA (LMS-style)."""
+	import json
+
+	from werkzeug.wrappers import Response
+
+	title = frappe.db.get_single_value("Website Settings", "app_name") or "LYQD by Mytra"
+	# Prefer product name when Website Settings still says the site/desk title.
+	if title in ("Frappe", "ERPNext") or not title:
+		title = "LYQD by Mytra"
+	short = "LYQD" if len(title) > 12 else title
+	route = "/lyqd"
+	manifest = {
+		"id": route,
+		"name": title if "LYQD" in title else "LYQD by Mytra",
+		"short_name": short if "LYQD" in short else "LYQD",
+		"description": "Know what cash you can invest — and when you’ll need it.",
+		"start_url": route,
+		"scope": route,
+		"display": "standalone",
+		"orientation": "portrait",
+		"theme_color": "#FFFFFF",
+		"background_color": "#FFFFFF",
+		"icons": [
+			{
+				"src": "/assets/lyqd/manifest/manifest-icon-192.maskable.png",
+				"sizes": "192x192",
+				"type": "image/png",
+				"purpose": "any",
+			},
+			{
+				"src": "/assets/lyqd/manifest/manifest-icon-512.maskable.png",
+				"sizes": "512x512",
+				"type": "image/png",
+				"purpose": "any",
+			},
+			{
+				"src": "/assets/lyqd/manifest/manifest-icon-512.maskable.png",
+				"sizes": "512x512",
+				"type": "image/png",
+				"purpose": "maskable",
+			},
+		],
+	}
+	return Response(json.dumps(manifest), status=200, content_type="application/manifest+json")

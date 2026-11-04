@@ -15,6 +15,7 @@ class LYQDUpcomingPayment(Document):
 		from frappe.types import DF
 
 		amount: DF.Currency
+		balance_as_of: DF.Date | None
 		cash_effect: DF.Literal["Outflow", "Setoff"]
 		category: DF.Literal["Salary", "Import-LC", "Vendor", "Customer", "Tax", "Loan", "Other"]
 		company: DF.Link
@@ -39,7 +40,7 @@ class LYQDUpcomingPayment(Document):
 			parent = frappe.db.get_value(
 				"LYQD Upcoming Payment",
 				self.parent_payment,
-				["company", "parent_payment"],
+				["company", "parent_payment", "due_date", "balance_as_of"],
 				as_dict=True,
 			)
 			if not parent:
@@ -49,26 +50,41 @@ class LYQDUpcomingPayment(Document):
 			if parent.parent_payment:
 				frappe.throw(frappe._("Only one level of plan nesting is allowed."))
 			# Child due date locked to parent
-			parent_due = frappe.db.get_value("LYQD Upcoming Payment", self.parent_payment, "due_date")
-			if parent_due:
-				self.due_date = parent_due
+			if parent.due_date:
+				self.due_date = parent.due_date
+			# Child balance freeze follows parent when parent has one
+			if parent.balance_as_of:
+				self.balance_as_of = parent.balance_as_of
 
 	def on_update(self):
-		# Cascade due date to Planned children when this row is a parent
-		if self.has_value_changed("due_date") and self.due_date and not self.parent_payment:
-			children = frappe.get_all(
-				"LYQD Upcoming Payment",
-				filters={
-					"parent_payment": self.name,
-					"status": "Planned",
-				},
-				pluck="name",
-			)
+		# Cascade due date / balance_as_of to Planned children when this row is a parent
+		if self.parent_payment:
+			return
+		children = frappe.get_all(
+			"LYQD Upcoming Payment",
+			filters={
+				"parent_payment": self.name,
+				"status": "Planned",
+			},
+			pluck="name",
+		)
+		if not children:
+			return
+		if self.has_value_changed("due_date") and self.due_date:
 			for child_name in children:
 				frappe.db.set_value(
 					"LYQD Upcoming Payment",
 					child_name,
 					"due_date",
 					self.due_date,
+					update_modified=True,
+				)
+		if self.has_value_changed("balance_as_of"):
+			for child_name in children:
+				frappe.db.set_value(
+					"LYQD Upcoming Payment",
+					child_name,
+					"balance_as_of",
+					self.balance_as_of,
 					update_modified=True,
 				)

@@ -513,21 +513,20 @@ def _account_balance_rows(
 	as_of: str,
 	meta: dict[str, dict],
 ) -> list[dict[str, Any]]:
+	from lyqd.recommendations.core import interpret_account_gl_balance
+
 	out = []
 	for account in accounts:
 		root = (meta.get(account) or {}).get("root_type")
 		acc_name = (meta.get(account) or {}).get("account_name") or account
 		if root == "Asset":
-			amount = _sum_gl_for_account(client, company, account, as_of, as_asset=True)
-			cash_effect = "Setoff"
+			signed = _sum_gl_for_account(client, company, account, as_of, as_asset=True)
 			category = "Tax"
-			title = f"{acc_name} · setoff (asset)"
 		else:
-			amount = _sum_gl_for_account(client, company, account, as_of)
-			cash_effect = "Outflow"
+			signed = _sum_gl_for_account(client, company, account, as_of)
 			category = "Tax" if root == "Liability" else "Other"
-			title = f"{acc_name} · GL balance"
-		if amount <= 0.01:
+		interp = interpret_account_gl_balance(root, signed, acc_name)
+		if interp["cleared"] or flt(interp["amount"]) <= 0.01:
 			continue
 		out.append(
 			{
@@ -535,11 +534,11 @@ def _account_balance_rows(
 				"account": account,
 				"source_doctype": "Account",
 				"source_name": account,
-				"title": title[:140],
+				"title": interp["title"][:140],
 				"category": category,
 				"due_date": None,
-				"amount": amount,
-				"cash_effect": cash_effect,
+				"amount": interp["amount"],
+				"cash_effect": interp["cash_effect"],
 				"party_type": None,
 				"party": None,
 				"engine": "remote_gl_balance",
@@ -685,16 +684,23 @@ def _remote_invoice_outstanding(
 def remote_account_balance(
 	account: str, as_of: str | None = None, lyqd_company: str | None = None
 ) -> dict[str, Any]:
+	from lyqd.recommendations.core import interpret_account_gl_balance
+
 	client, company = get_remote_client(lyqd_company)
 	as_of = str(getdate(as_of or today()))
 	meta = _account_meta_map(client, [account])
 	root = (meta.get(account) or {}).get("root_type")
-	amt = _sum_gl_for_account(client, company, account, as_of, as_asset=(root == "Asset"))
+	acc_name = (meta.get(account) or {}).get("account_name") or account
+	signed = _sum_gl_for_account(client, company, account, as_of, as_asset=(root == "Asset"))
+	interp = interpret_account_gl_balance(root, signed, acc_name)
 	return {
 		"ok": True,
 		"grain": "account",
-		"amount": amt,
-		"cleared": amt <= 0.01,
+		"amount": interp["amount"],
+		"cash_effect": interp["cash_effect"],
+		"title": interp["title"],
+		"cleared": interp["cleared"],
+		"signed_net": interp["signed_net"],
 		"due_date": None,
 	}
 

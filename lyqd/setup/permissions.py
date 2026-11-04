@@ -134,15 +134,37 @@ def get_lyqd_holding_query(user: str | None = None) -> str:
 
 
 def has_company_permission(doc, user: str | None = None, permission_type: str | None = None) -> bool:
+	"""Company-scoped access; allow LYQD roles to *create* a new LYQD Company (onboarding).
+
+	User Permission is granted in ``create_lyqd_company`` *after* insert, so create
+	must not require the company to already be in ``get_user_companies()``.
+	"""
 	if not user:
 		user = frappe.session.user
-	if user == "Administrator" or "System Manager" in frappe.get_roles(user):
+	roles = set(frappe.get_roles(user))
+	if user == "Administrator" or "System Manager" in roles:
 		return True
+	if not roles.intersection({"LYQD Manager", "LYQD User"}):
+		return False
+
+	doctype = getattr(doc, "doctype", None) or (doc.get("doctype") if hasattr(doc, "get") else None)
+	perm = (permission_type or "").lower()
+
+	# Onboarding: create a company the user does not yet have a User Permission for
+	if doctype == "LYQD Company":
+		is_new = False
+		if hasattr(doc, "is_new") and callable(doc.is_new):
+			is_new = bool(doc.is_new())
+		elif isinstance(doc, dict) and not doc.get("name"):
+			is_new = True
+		if perm == "create" or is_new:
+			return True
+
 	companies = get_user_companies()
 	if not companies:
 		return False
+
 	# LYQD Company itself is keyed by name; child docs use company Link
-	doctype = getattr(doc, "doctype", None) or (doc.get("doctype") if hasattr(doc, "get") else None)
 	if doctype == "LYQD Company":
 		name = getattr(doc, "name", None) or (doc.get("name") if hasattr(doc, "get") else None)
 		return name in companies if name else False

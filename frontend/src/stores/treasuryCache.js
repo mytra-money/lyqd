@@ -186,6 +186,7 @@ export const useTreasuryCacheStore = defineStore('treasuryCache', () => {
             'source_name',
             'source_account',
             'parent_payment',
+            'balance_as_of',
             'last_synced_on',
           ],
           filters: { company },

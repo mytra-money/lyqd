@@ -139,6 +139,13 @@
                   Setoff
                 </span>
                 <span v-if="row.status !== 'Planned'" class="text-gray-400">· {{ row.status }}</span>
+                <span
+                  v-if="row.balance_as_of"
+                  class="rounded bg-amber-50 px-1 font-medium text-amber-900"
+                  :title="'GL frozen as of ' + formatDate(row.balance_as_of)"
+                >
+                  As of {{ formatDate(row.balance_as_of) }}
+                </span>
               </div>
               <div v-if="row.source_doctype" class="mt-0.5 truncate text-xs text-gray-400">
                 Ref {{ row.source_doctype }} {{ row.source_name }}
@@ -160,31 +167,69 @@
               >
                 {{ row.cash_effect === 'Setoff' ? '−' : '' }}{{ formatINR(row.amount) }}
               </div>
-              <div class="mt-1 flex justify-end gap-1.5">
+              <div class="mt-1 flex flex-wrap items-center justify-end gap-0.5">
                 <button
                   v-if="groupCanRefresh(row)"
                   type="button"
-                  class="text-xs text-gray-500 hover:text-gray-900"
+                  class="inline-flex h-7 w-7 items-center justify-center rounded text-gray-500 hover:bg-gray-100 hover:text-gray-900 disabled:opacity-50"
                   :disabled="refreshing === row.name"
+                  :title="
+                    row.balance_as_of
+                      ? 'Refresh GL as of ' + formatDate(row.balance_as_of)
+                      : 'Refresh from live books'
+                  "
+                  :aria-label="
+                    row.balance_as_of
+                      ? 'Refresh GL as of ' + formatDate(row.balance_as_of)
+                      : 'Refresh from live books'
+                  "
                   @click="refreshRow(row)"
                 >
-                  Refresh
+                  <FeatherIcon
+                    name="refresh-cw"
+                    class="h-3.5 w-3.5"
+                    :class="refreshing === row.name ? 'animate-spin' : ''"
+                  />
                 </button>
+                <Button
+                  v-if="groupCanFreeze(row)"
+                  size="sm"
+                  variant="ghost"
+                  class="!h-auto !px-1.5 !py-0.5 !text-xs !font-normal !text-amber-800 hover:!bg-amber-50"
+                  :loading="freezing === row.name"
+                  :title="row.balance_as_of ? 'Unfreeze · use live GL' : 'Freeze GL as of a date'"
+                  @click="row.balance_as_of ? clearFreeze(row) : openFreeze(row)"
+                >
+                  {{
+                    freezing === row.name
+                      ? freezeAction === 'clear'
+                        ? 'Unfreezing…'
+                        : 'Freezing…'
+                      : row.balance_as_of
+                        ? 'Unfreeze'
+                        : 'Freeze as of…'
+                  }}
+                </Button>
                 <button
                   v-if="groupCanMarkPaid(row)"
                   type="button"
-                  class="text-xs font-medium text-gray-600 hover:text-gray-900"
+                  class="inline-flex h-7 items-center gap-1 rounded px-1.5 text-xs font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900 disabled:opacity-50"
                   :disabled="marking === row.name"
+                  title="Mark paid"
+                  aria-label="Mark paid"
                   @click="markPaid(row)"
                 >
-                  Mark paid
+                  <FeatherIcon name="check" class="h-3.5 w-3.5" />
+                  <span>Paid</span>
                 </button>
                 <button
                   type="button"
-                  class="text-xs text-gray-400 hover:text-gray-700"
+                  class="inline-flex h-7 w-7 items-center justify-center rounded text-gray-400 hover:bg-gray-100 hover:text-gray-800"
+                  title="Edit"
+                  aria-label="Edit"
                   @click="edit(row)"
                 >
-                  Edit
+                  <FeatherIcon name="edit-2" class="h-3.5 w-3.5" />
                 </button>
               </div>
             </div>
@@ -233,6 +278,12 @@
                   <span v-if="child.status !== 'Planned'" class="text-gray-400"
                     >· {{ child.status }}</span
                   >
+                  <span
+                    v-if="child.balance_as_of"
+                    class="rounded bg-amber-50 px-1 font-medium text-amber-900"
+                  >
+                    As of {{ formatDate(child.balance_as_of) }}
+                  </span>
                 </div>
                 <div v-if="child.source_doctype" class="mt-0.5 truncate text-xs text-gray-400">
                   Ref {{ child.source_doctype }} {{ child.source_name }}
@@ -420,7 +471,7 @@
           >
             Due date follows the parent plan row. Change the parent’s due date to update this group.
           </p>
-          <FormControl v-model="form.amount" type="number" label="Amount" />
+          <CurrencyControl v-model="form.amount" label="Amount" />
           <p
             v-if="form.cash_effect === 'Setoff'"
             class="rounded-md border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs text-emerald-900"
@@ -442,6 +493,27 @@
       </template>
     </Dialog>
 
+    <Dialog v-model="showFreeze" :options="{ title: 'Freeze GL as of date' }">
+      <template #body-content>
+        <div class="space-y-3">
+          <p class="text-sm text-gray-600">
+            Use the books balance on this date for the plan (and nested children). Typical for
+            GST/TDS: last day of the tax period — later GL movement won’t change the reserved
+            amount until you unfreeze or pick another date.
+          </p>
+          <FormControl v-model="freezeForm.as_of" type="date" label="Balance as of" />
+          <p v-if="freezeForm.title" class="text-xs text-gray-500">
+            Applying to {{ freezeForm.title }}
+            <span v-if="freezeForm.childCount">· {{ freezeForm.childCount + 1 }} rows</span>
+          </p>
+        </div>
+      </template>
+      <template #actions>
+        <Button variant="solid" :loading="!!freezing" @click="confirmFreeze">Freeze &amp; sync</Button>
+        <Button variant="outline" @click="showFreeze = false">Cancel</Button>
+      </template>
+    </Dialog>
+
     <Dialog v-model="showAccept" :options="{ title: 'Add to plan' }">
       <template #body-content>
         <div class="space-y-3">
@@ -460,7 +532,7 @@
             :options="categoryOptions"
           />
           <FormControl v-model="acceptForm.due_date" type="date" label="Due date" />
-          <FormControl v-model="acceptForm.amount" type="number" label="Amount" />
+          <CurrencyControl v-model="acceptForm.amount" label="Amount" />
           <p v-if="acceptForm.source_doctype" class="text-xs text-gray-500">
             Source {{ acceptForm.source_doctype }} {{ acceptForm.source_name }}
           </p>
@@ -475,8 +547,9 @@
 </template>
 
 <script setup>
-import { computed, onActivated, reactive, ref, watch } from 'vue'
-import { call, toast } from 'frappe-ui'
+import { computed, nextTick, onActivated, reactive, ref, watch } from 'vue'
+import { Button, call, toast } from 'frappe-ui'
+import CurrencyControl from '@/components/CurrencyControl.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import { useCompanyStore } from '@/stores/company'
 import { useTreasuryCacheStore } from '@/stores/treasuryCache'
@@ -494,6 +567,16 @@ const accepting = ref(null)
 const marking = ref(null)
 const syncing = ref(false)
 const refreshing = ref(null)
+const freezing = ref(null)
+/** 'clear' while unfreezing, 'set' while freezing from dialog */
+const freezeAction = ref(null)
+const showFreeze = ref(false)
+const freezeForm = reactive({
+  name: '',
+  title: '',
+  as_of: '',
+  childCount: 0,
+})
 let recsDeferTimer = null
 
 const plannedView = ref('active')
@@ -800,8 +883,86 @@ function groupCanRefresh(row) {
   return groupMembers(row).some((m) => m.source_doctype && m.source_name)
 }
 
+function groupCanFreeze(row) {
+  // Account-grain only (GST/TDS GL). Parent owns freeze for the whole group.
+  return groupMembers(row).some((m) => m.source_doctype === 'Account' && m.source_name)
+}
+
 function groupCanMarkPaid(row) {
   return groupMembers(row).some((m) => m.status === 'Planned')
+}
+
+async function openFreeze(row) {
+  freezeForm.name = row.name
+  freezeForm.title = row.title || row.name
+  freezeForm.childCount = row._childCount || 0
+  freezeForm.as_of = row.balance_as_of || ''
+  showFreeze.value = true
+  try {
+    const res = await call('lyqd.api.spa.default_balance_as_of', {
+      due_date: row.due_date || null,
+    })
+    if (!freezeForm.as_of && res?.balance_as_of) {
+      freezeForm.as_of = res.balance_as_of
+    }
+  } catch {
+    /* keep empty; user picks */
+  }
+}
+
+async function confirmFreeze() {
+  if (!freezeForm.as_of) {
+    toast.error('Pick a balance as-of date')
+    return
+  }
+  freezeAction.value = 'set'
+  freezing.value = freezeForm.name
+  await nextTick()
+  try {
+    const res = await call('lyqd.api.spa.freeze_upcoming_balance', {
+      name: freezeForm.name,
+      as_of: freezeForm.as_of,
+    })
+    const n = (res.updated || []).length
+    toast.success(
+      n > 1
+        ? `Frozen ${n} rows as of ${formatDate(freezeForm.as_of)}`
+        : `Frozen as of ${formatDate(freezeForm.as_of)}`,
+    )
+    showFreeze.value = false
+    cache.invalidatePlanRelated(company.current)
+    await reloadAll()
+  } catch (e) {
+    toast.error(e.messages?.[0] || e.message || 'Could not freeze balance')
+  } finally {
+    freezing.value = null
+    freezeAction.value = null
+  }
+}
+
+async function clearFreeze(row) {
+  freezeAction.value = 'clear'
+  freezing.value = row.name
+  await nextTick()
+  try {
+    const res = await call('lyqd.api.spa.freeze_upcoming_balance', {
+      name: row.name,
+      clear: 1,
+    })
+    const n = (res?.updated || []).length
+    toast.success(
+      n > 1
+        ? `Unfrozen ${n} rows · live GL again`
+        : 'Using live GL balance again',
+    )
+    cache.invalidatePlanRelated(company.current)
+    await reloadAll()
+  } catch (e) {
+    toast.error(e.messages?.[0] || e.message || 'Could not unfreeze')
+  } finally {
+    freezing.value = null
+    freezeAction.value = null
+  }
 }
 
 async function refreshRow(row) {
@@ -817,15 +978,21 @@ async function refreshRow(row) {
       skipped: 'Skipped',
     }
     let lastAction = 'unchanged'
+    let asOfUsed = null
     for (const m of targets) {
       const res = await call('lyqd.api.spa.refresh_upcoming_from_books', { name: m.name })
       lastAction = res.action || lastAction
+      asOfUsed = res.as_of_used || asOfUsed
     }
     const n = targets.length
+    const asOfNote =
+      row.balance_as_of || asOfUsed
+        ? ` (as of ${formatDate(row.balance_as_of || asOfUsed)})`
+        : ''
     toast.success(
       n > 1
-        ? `Refreshed ${n} linked rows from books`
-        : labels[lastAction] || `Synced (${lastAction})`,
+        ? `Refreshed ${n} linked rows from books${asOfNote}`
+        : `${labels[lastAction] || `Synced (${lastAction})`}${asOfNote}`,
     )
     cache.invalidatePlanRelated(company.current)
     await reloadAll()

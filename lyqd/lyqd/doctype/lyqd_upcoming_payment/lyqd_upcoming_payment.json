@@ -26,6 +26,7 @@
   "source_name",
   "source_account",
   "parent_payment",
+  "balance_as_of",
   "last_synced_on"
  ],
  "fields": [
@@ -164,6 +165,13 @@
    "read_only": 1
   },
   {
+   "description": "For Account-grain (GST/TDS etc.): refresh uses GL balance on this date instead of today. Clear to follow live books again.",
+   "fieldname": "balance_as_of",
+   "fieldtype": "Date",
+   "label": "Balance As Of",
+   "read_only": 1
+  },
+  {
    "fieldname": "last_synced_on",
    "fieldtype": "Datetime",
    "label": "Last Synced From Books",
@@ -171,7 +179,7 @@
   }
  ],
  "links": [],
- "modified": "2026-11-04 10:50:00.000000",
+ "modified": "2026-11-04 13:10:00.000000",
  "modified_by": "Administrator",
  "module": "LYQD",
  "name": "LYQD Upcoming Payment",

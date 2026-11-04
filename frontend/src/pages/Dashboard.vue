@@ -27,7 +27,8 @@
         <MetricCard
           :label="`Commitments (${d.horizon_days}d)`"
           :value="d.upcoming_total"
-          hint="Planned + overdue — manage below"
+          hint="Planned + overdue — open Commitments"
+          to="/upcoming"
         />
         <MetricCard
           :label="d.is_shortfall ? 'Liquidity shortfall' : 'Free cash today'"
@@ -165,44 +166,50 @@
       </div>
 
       <!-- Commitments work surface -->
-      <section id="commitments" class="rounded-md border border-gray-200 bg-white p-4">
-        <div class="mb-3 flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h2 class="text-base font-semibold text-gray-900">
-              Commitments
-              <span class="font-normal text-gray-500">({{ d.horizon_days }}d)</span>
-            </h2>
-            <p class="mt-0.5 text-p-base text-gray-600">
-              Planned payments that reduce free cash. Mark paid when settled; add new as needed.
-            </p>
+      <section id="commitments" class="rounded-md border border-gray-200 bg-white">
+        <header class="border-b border-gray-100 px-3 py-3 sm:px-4">
+          <div class="flex items-start justify-between gap-2">
+            <div class="min-w-0">
+              <h2 class="text-base font-semibold text-gray-900">
+                Commitments
+                <span class="font-normal text-gray-500">({{ d.horizon_days }}d)</span>
+              </h2>
+              <p class="mt-0.5 text-xs text-gray-500">
+                Planned payments that reduce free cash.
+              </p>
+            </div>
+            <div class="flex shrink-0 flex-col items-end gap-1.5 sm:flex-row">
+              <Button size="sm" variant="solid" @click="openNew">Add</Button>
+              <button
+                type="button"
+                class="text-xs text-gray-500 hover:text-gray-800"
+                @click="$router.push('/upcoming')"
+              >
+                Full list
+              </button>
+            </div>
           </div>
-          <div class="flex flex-wrap gap-2">
-            <Button size="sm" variant="solid" @click="openNew">Add payment</Button>
-            <Button size="sm" variant="outline" @click="$router.push('/upcoming')">
-              Full list & suggestions
-            </Button>
+
+          <div class="mt-3 flex gap-1 overflow-x-auto pb-0.5">
+            <button
+              v-for="f in filters"
+              :key="f.id"
+              type="button"
+              class="shrink-0 rounded-md px-2.5 py-1 text-xs font-medium"
+              :class="
+                commitmentFilter === f.id
+                  ? 'bg-gray-900 text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              "
+              @click="commitmentFilter = f.id"
+            >
+              {{ f.label }}
+              <span class="tabular-nums opacity-80">{{ f.count }}</span>
+            </button>
           </div>
-        </div>
+        </header>
 
-        <div class="mb-3 flex flex-wrap gap-1.5">
-          <button
-            v-for="f in filters"
-            :key="f.id"
-            type="button"
-            class="rounded-md px-2.5 py-1 text-xs font-medium"
-            :class="
-              commitmentFilter === f.id
-                ? 'bg-gray-900 text-white'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            "
-            @click="commitmentFilter = f.id"
-          >
-            {{ f.label }}
-            <span class="tabular-nums opacity-80">({{ f.count }})</span>
-          </button>
-        </div>
-
-        <div v-if="!filteredCommitments.length" class="py-6 text-center text-sm text-gray-500">
+        <div v-if="!filteredCommitments.length" class="px-3 py-8 text-center text-sm text-gray-500">
           No commitments in this filter.
           <button type="button" class="ml-1 text-gray-800 underline" @click="openNew">
             Add a payment
@@ -211,94 +218,102 @@
 
         <ul v-else class="divide-y divide-gray-100">
           <li v-for="u in nestedCommitments" :key="u.name">
-            <div class="flex flex-wrap items-center justify-between gap-3 py-3">
-              <div class="flex min-w-0 items-start gap-2">
-                <div class="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center">
-                  <button
-                    v-if="u._childCount"
-                    type="button"
-                    class="flex h-6 w-6 items-center justify-center rounded text-gray-500 hover:bg-gray-100 hover:text-gray-800"
-                    :aria-expanded="isGroupExpanded(u.name)"
-                    :aria-label="isGroupExpanded(u.name) ? 'Collapse group' : 'Expand group'"
-                    @click="toggleGroup(u.name)"
-                  >
-                    <FeatherIcon
-                      :name="isGroupExpanded(u.name) ? 'chevron-down' : 'chevron-right'"
-                      class="h-3.5 w-3.5"
-                    />
-                  </button>
-                </div>
-                <div class="min-w-0">
-                  <div class="flex flex-wrap items-center gap-2">
-                    <span class="text-sm font-medium text-gray-900">{{ u.title }}</span>
-                    <span
-                      v-if="u._childCount"
-                      class="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-gray-600"
-                    >
-                      Group · {{ u._childCount + 1 }}
-                    </span>
-                    <Badge v-if="isOverdue(u)" theme="red" variant="subtle">Overdue</Badge>
-                    <Badge v-else-if="isDueSoon(u)" theme="orange" variant="subtle">Due soon</Badge>
-                    <span class="text-xs text-gray-500">{{ u.category }}</span>
-                  </div>
-                  <div class="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-gray-500">
-                    <span>Due {{ formatDate(u.due_date) }}</span>
-                    <span
-                      v-if="u._childCount"
-                      class="tabular-nums text-[11px] text-gray-400"
-                    >
-                      · GL {{ formatINR(u.amount) }}
-                    </span>
-                  </div>
-                </div>
-              </div>
-              <div class="flex items-center gap-2">
-                <div class="text-right">
-                  <template v-if="u._childCount && u._groupNet != null">
-                    <div class="tabular-nums text-base font-semibold text-gray-900">
-                      {{ formatINR(u._groupNet) }}
+            <div class="flex items-start gap-2 px-3 py-3 sm:px-4">
+              <button
+                v-if="u._childCount"
+                type="button"
+                class="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded text-gray-500 hover:bg-gray-100 hover:text-gray-800"
+                :aria-expanded="isGroupExpanded(u.name)"
+                :aria-label="isGroupExpanded(u.name) ? 'Collapse group' : 'Expand group'"
+                @click="toggleGroup(u.name)"
+              >
+                <FeatherIcon
+                  :name="isGroupExpanded(u.name) ? 'chevron-down' : 'chevron-right'"
+                  class="h-3.5 w-3.5"
+                />
+              </button>
+              <div class="min-w-0 flex-1">
+                <div class="flex items-start justify-between gap-3">
+                  <div class="min-w-0">
+                    <div class="truncate text-sm font-medium text-gray-900">
+                      {{ u.title }}
                     </div>
-                    <div class="text-[10px] font-medium uppercase tracking-wide text-gray-400">
-                      Net
+                    <div class="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-gray-500">
+                      <Badge v-if="isOverdue(u)" theme="red" variant="subtle">Overdue</Badge>
+                      <Badge v-else-if="isDueSoon(u)" theme="orange" variant="subtle"
+                        >Due soon</Badge
+                      >
+                      <span v-if="u._childCount" class="font-medium text-gray-600"
+                        >Group · {{ u._childCount + 1 }}</span
+                      >
+                      <span>{{ u.category }}</span>
+                      <span>· Due {{ formatDate(u.due_date) }}</span>
+                      <span
+                        v-if="u._childCount"
+                        class="tabular-nums text-[11px] text-gray-400"
+                      >
+                        · GL {{ formatINR(u.amount) }}
+                      </span>
                     </div>
-                  </template>
-                  <span v-else class="tabular-nums text-sm font-semibold text-gray-900">
-                    {{ formatINR(u.amount) }}
-                  </span>
+                  </div>
+                  <div class="w-[5.75rem] shrink-0 text-right sm:w-auto sm:min-w-[6.5rem]">
+                    <template v-if="u._childCount && u._groupNet != null">
+                      <div class="tabular-nums text-sm font-semibold text-gray-900">
+                        {{ formatINR(u._groupNet) }}
+                      </div>
+                      <div class="text-[10px] font-medium uppercase tracking-wide text-gray-400">
+                        Net
+                      </div>
+                    </template>
+                    <div v-else class="tabular-nums text-sm font-semibold text-gray-900">
+                      {{ formatINR(u.amount) }}
+                    </div>
+                    <div class="mt-1.5 flex items-center justify-end gap-0.5">
+                      <button
+                        v-if="groupCanMarkPaid(u)"
+                        type="button"
+                        class="inline-flex h-7 items-center gap-1 rounded px-1.5 text-xs font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900 disabled:opacity-50"
+                        :disabled="marking === u.name"
+                        title="Mark paid"
+                        aria-label="Mark paid"
+                        @click="markPaid(u)"
+                      >
+                        <FeatherIcon name="check" class="h-3.5 w-3.5" />
+                        <span>Paid</span>
+                      </button>
+                      <button
+                        type="button"
+                        class="inline-flex h-7 w-7 items-center justify-center rounded text-gray-400 hover:bg-gray-100 hover:text-gray-800"
+                        title="Edit"
+                        aria-label="Edit"
+                        @click="openEdit(u)"
+                      >
+                        <FeatherIcon name="edit-2" class="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </div>
                 </div>
-                <Button size="sm" variant="ghost" @click="openEdit(u)">Edit</Button>
-                <Button
-                  v-if="groupCanMarkPaid(u)"
-                  size="sm"
-                  variant="outline"
-                  :loading="marking === u.name"
-                  @click="markPaid(u)"
-                >
-                  Mark paid
-                </Button>
               </div>
             </div>
             <ul
               v-if="u._childCount && isGroupExpanded(u.name)"
-              class="mb-2 border-l-2 border-gray-200 bg-gray-50/40"
+              class="border-t border-gray-50 bg-gray-50/50"
             >
               <li
                 v-for="child in u._children"
                 :key="child.name"
-                class="flex flex-wrap items-center justify-between gap-3 py-2 pl-8 pr-1"
+                class="border-l-2 border-gray-200 py-2.5 pl-8 pr-3 sm:pl-10 sm:pr-4"
               >
-                <div class="min-w-0">
-                  <div class="text-sm text-gray-800">
-                    <span class="mr-1 text-gray-400">↳</span>
-                    {{ child.title }}
-                  </div>
-                  <div class="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-gray-500">
-                    <span>Due {{ formatDate(child.due_date) }}</span>
-                    <span class="tabular-nums text-[11px] text-gray-400">
-                      · GL {{ formatINR(child.amount) }}
-                    </span>
-                    <span>· {{ child.category }}</span>
-                  </div>
+                <div class="truncate text-sm text-gray-800">
+                  <span class="mr-1 text-gray-400">↳</span>
+                  {{ child.title }}
+                </div>
+                <div class="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-xs text-gray-500">
+                  <span>Due {{ formatDate(child.due_date) }}</span>
+                  <span class="tabular-nums text-[11px] text-gray-400">
+                    · GL {{ formatINR(child.amount) }}
+                  </span>
+                  <span>· {{ child.category }}</span>
                 </div>
               </li>
             </ul>
@@ -332,7 +347,7 @@
           >
             Due date follows the parent plan row.
           </p>
-          <FormControl v-model="form.amount" type="number" label="Amount" />
+          <CurrencyControl v-model="form.amount" label="Amount" />
           <FormControl
             v-if="form.name"
             v-model="form.status"
@@ -356,6 +371,7 @@
 <script setup>
 import { computed, onActivated, reactive, ref, watch } from 'vue'
 import { call, toast } from 'frappe-ui'
+import CurrencyControl from '@/components/CurrencyControl.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import MetricCard from '@/components/MetricCard.vue'
 import HorizonPicker from '@/components/HorizonPicker.vue'

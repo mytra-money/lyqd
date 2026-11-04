@@ -117,6 +117,17 @@ def create_lyqd_company(
 	if books_source not in ("Manual", "This Site", "Other Site"):
 		books_source = "Manual"
 
+	books_company = (books_company or "").strip()
+	if books_source == "Other Site" and not books_company:
+		frappe.throw(
+			_(
+				"Remote company is required for Other Site books. "
+				"Select the ERPNext Company this LYQD Company should use."
+			)
+		)
+	if books_source != "Manual" and not books_company:
+		books_company = company_name
+
 	created = False
 	if frappe.db.exists("LYQD Company", company_name):
 		# Existing name: only System Managers may "claim" it; others need a fresh name
@@ -130,7 +141,7 @@ def create_lyqd_company(
 		doc.company_name = company_name
 		doc.abbr = abbr
 		doc.is_active = 1
-		doc.books_company = (books_company or company_name).strip()
+		doc.books_company = books_company
 		doc.apply_books_source(books_source)
 		doc.remote_site_url = (remote_site_url or "").strip() or None
 		doc.remote_api_key = (remote_api_key or "").strip() or None
@@ -758,14 +769,23 @@ def save_erpnext_settings(doc: str | dict) -> dict:
 	co = frappe.get_doc("LYQD Company", lyqd_company)
 	was_remote = (co.books_source or "") == SOURCE_OTHER_SITE
 	co.apply_books_source(books_source)
-	if books_source != "Manual":
-		co.books_company = (doc.get("remote_company") or co.books_company or lyqd_company).strip()
 	if books_source == SOURCE_OTHER_SITE:
+		remote_co = (doc.get("remote_company") or "").strip()
+		if not remote_co:
+			frappe.throw(
+				_(
+					"Remote company is required for Other Site books. "
+					"Select the ERPNext Company this LYQD Company should use."
+				)
+			)
+		co.books_company = remote_co
 		co.remote_site_url = (doc.get("remote_site_url") or "").strip()
 		co.remote_api_key = (doc.get("remote_api_key") or "").strip()
 		new_secret = doc.get("remote_api_secret")
 		if new_secret:
 			co.remote_api_secret = new_secret
+	elif books_source != "Manual":
+		co.books_company = (doc.get("remote_company") or co.books_company or lyqd_company).strip()
 	co.save()
 
 	payload = settings_for_api(lyqd_company)

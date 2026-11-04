@@ -101,10 +101,9 @@ class LYQDCompany(Document):
 		if self.books_source == "Manual":
 			return
 
-		if not (self.books_company or "").strip():
-			self.books_company = self.company_name
-
 		if self.books_source == "This Site":
+			if not (self.books_company or "").strip():
+				self.books_company = self.company_name
 			if "erpnext" not in frappe.get_installed_apps():
 				frappe.throw(
 					frappe._(
@@ -114,6 +113,13 @@ class LYQDCompany(Document):
 			return
 
 		if self.books_source == "Other Site":
+			if not (self.books_company or "").strip():
+				frappe.throw(
+					frappe._(
+						"Remote company is required for Other Site books. "
+						"Pick the ERPNext Company whose books this LYQD Company should use."
+					)
+				)
 			if not (self.remote_site_url or "").strip():
 				frappe.throw(frappe._("Remote Site URL is required for Other Site books."))
 			if not (self.remote_api_key or "").strip():

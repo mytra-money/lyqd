@@ -47,21 +47,26 @@ def list_remote_companies(client) -> list[str]:
 
 
 def resolve_remote_company(client, preferred: str | None = None) -> str:
-	"""Pick a company on the remote site (preferred → Global Defaults → sole company → first)."""
+	"""Resolve a remote Company. Preferred name is required when the site has multiple companies."""
 	preferred = (preferred or "").strip() or None
 	companies = list_remote_companies(client)
 	if not companies:
 		frappe.throw(frappe._("No Company found on the remote ERPNext site."))
-	if preferred and preferred in companies:
+	if preferred:
+		if preferred not in companies:
+			frappe.throw(
+				frappe._(
+					"Company {0} was not found on the remote site. Choose one of: {1}"
+				).format(preferred, ", ".join(companies[:12]))
+			)
 		return preferred
-	try:
-		gd = client.get_doc("Global Defaults", "Global Defaults") or {}
-		default = (gd.get("default_company") or "").strip()
-		if default and default in companies:
-			return default
-	except Exception:
-		pass
-	return companies[0]
+	if len(companies) == 1:
+		return companies[0]
+	frappe.throw(
+		frappe._(
+			"Remote company is required. This site has {0} companies — select which books company LYQD should use."
+		).format(len(companies))
+	)
 
 
 def probe_remote_connection(
@@ -73,7 +78,8 @@ def probe_remote_connection(
 	"""
 	Validate draft credentials and return remote companies.
 
-	Does not require LYQD Settings remote fields to be saved first.
+	When ``company`` is set, validates it exists on the remote site.
+	When omitted and multiple companies exist, returns the list without picking one.
 	"""
 	url = (url or "").strip().rstrip("/")
 	api_key = (api_key or "").strip()
@@ -86,7 +92,28 @@ def probe_remote_connection(
 	companies = list_remote_companies(client)
 	if not companies:
 		frappe.throw(frappe._("Connected, but no Company was found on that site."))
-	resolved = resolve_remote_company(client, company)
+
+	preferred = (company or "").strip()
+	if preferred:
+		if preferred not in companies:
+			frappe.throw(
+				frappe._(
+					"Company {0} was not found on the remote site. Choose one of: {1}"
+				).format(preferred, ", ".join(companies[:12]))
+			)
+		resolved = preferred
+	elif len(companies) == 1:
+		resolved = companies[0]
+	else:
+		return {
+			"ok": True,
+			"company": None,
+			"companies": companies,
+			"message": frappe._(
+				"Connected. Select the remote company LYQD should use ({0} found)."
+			).format(len(companies)),
+		}
+
 	# Confirm books access for the resolved company
 	client.get_list("Account", filters={"company": resolved}, fields=["name"], limit_page_length=1)
 	return {

@@ -72,10 +72,20 @@
               v-if="remoteCompanies.length"
               v-model="form.books_company"
               type="select"
-              label="Company"
+              label="Remote company"
               :options="remoteCompanies"
+              required
             />
-            <FormControl v-else v-model="form.books_company" label="Company (optional)" />
+            <FormControl
+              v-else
+              v-model="form.books_company"
+              label="Remote company"
+              placeholder="Exact ERPNext Company name"
+              required
+            />
+            <p class="text-xs text-gray-500">
+              Required for multi-company sites — LYQD binds recommendations to this books company.
+            </p>
             <div class="flex flex-wrap gap-2">
               <Button
                 variant="outline"
@@ -161,7 +171,9 @@ const canProbe = computed(
 
 const canSave = computed(() => {
   if (!(form.company_name || '').trim()) return false
-  if (booksSource.value === 'Other Site') return canProbe.value
+  if (booksSource.value === 'Other Site') {
+    return canProbe.value && !!(form.books_company || '').trim()
+  }
   return true
 })
 
@@ -243,7 +255,11 @@ async function probeRemote() {
       skip_mirror: 1,
     })
     remoteCompanies.value = res.companies || []
-    if (res.company) form.books_company = res.company
+    if (res.company) {
+      form.books_company = res.company
+    } else if ((res.companies || []).length > 1 && !(form.books_company || '').trim()) {
+      toast.success('Select the remote company for this LYQD Company')
+    }
     probeOk.value = true
     toast.success(res.message || 'Connected')
   } catch (e) {
@@ -260,11 +276,19 @@ async function save() {
   error.value = ''
   try {
     const source = booksSource.value
+    if (source === 'Other Site' && !(form.books_company || '').trim()) {
+      error.value = 'Remote company is required'
+      toast.error(error.value)
+      return
+    }
     const payload = {
       company_name: form.company_name.trim(),
       abbr: (form.abbr || '').trim() || null,
       books_source: source,
-      books_company: (form.books_company || form.company_name).trim(),
+      books_company:
+        source === 'Other Site'
+          ? form.books_company.trim()
+          : (form.books_company || form.company_name).trim(),
       mirror_banks: source === 'Other Site' ? 1 : 0,
     }
     if (source === 'Other Site') {

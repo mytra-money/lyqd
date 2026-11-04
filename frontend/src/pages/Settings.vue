@@ -65,14 +65,30 @@
                     : 'API Secret'
                 "
               />
-              <div v-if="remoteCompanies.length > 1">
-                <label class="mb-1 block text-xs font-medium text-gray-600">Company</label>
+              <div>
+                <label class="mb-1 block text-xs font-medium text-gray-600">
+                  Remote company <span class="text-red-600">*</span>
+                </label>
                 <select
+                  v-if="remoteCompanies.length"
                   v-model="erpForm.remote_company"
                   class="w-full rounded-md border border-gray-200 bg-white px-2 py-1.5 text-sm"
+                  required
                 >
+                  <option disabled value="">Select company…</option>
                   <option v-for="c in remoteCompanies" :key="c" :value="c">{{ c }}</option>
                 </select>
+                <input
+                  v-else
+                  v-model="erpForm.remote_company"
+                  type="text"
+                  required
+                  placeholder="Exact ERPNext Company name"
+                  class="w-full rounded-md border border-gray-200 bg-white px-2 py-1.5 text-sm"
+                />
+                <p class="mt-1 text-xs text-gray-500">
+                  Required — binds this LYQD Company to one books company on a multi-company site.
+                </p>
               </div>
               <div class="flex flex-wrap items-center gap-2">
                 <Button
@@ -91,7 +107,7 @@
               v-if="erpForm.source === 'Other Site' && !accountsPickerReady"
               class="rounded-md border border-dashed border-gray-300 bg-white px-3 py-6 text-center text-sm text-gray-500"
             >
-              Enter site URL, API Key, and Secret, then Connect.
+              Enter site URL, API Key, Secret, and remote company, then Connect.
             </div>
 
             <!-- Accounts from the active configured source only -->
@@ -961,6 +977,11 @@ async function connectRemote() {
     })
     remoteCompanies.value = res.companies || []
     if (res.company) erpForm.remote_company = res.company
+    if (!(erpForm.remote_company || '').trim()) {
+      remoteConnected.value = false
+      toast.error('Select the remote company before saving Other Site books')
+      return
+    }
     await saveErp()
     remoteConnected.value = true
     const mirror = res.bank_mirror

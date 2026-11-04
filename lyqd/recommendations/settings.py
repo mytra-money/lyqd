@@ -119,11 +119,18 @@ def get_remote_credentials(company: str | None = None) -> dict[str, str]:
 	secret = doc.get_password("remote_api_secret", raise_exception=False)
 	if not doc.remote_site_url or not doc.remote_api_key or not secret:
 		frappe.throw(frappe._("Remote site URL, API Key, and API Secret are required"))
+	books_company = (doc.books_company or "").strip()
+	if not books_company:
+		frappe.throw(
+			frappe._(
+				"Remote company is required for Other Site books on {0}."
+			).format(doc.name)
+		)
 	return {
 		"url": doc.remote_site_url.strip().rstrip("/"),
 		"api_key": doc.remote_api_key.strip(),
 		"api_secret": secret,
-		"company": (doc.books_company or "").strip() or None,
+		"company": books_company,
 		"lyqd_company": doc.name,
 	}
 

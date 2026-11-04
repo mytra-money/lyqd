@@ -71,20 +71,26 @@
         </div>
       </header>
 
-      <div v-if="!filteredList.length" class="px-4 py-10 text-center text-sm text-gray-500">
-        Nothing in this view.
-        <button
-          v-if="plannedFiltersActive"
-          type="button"
-          class="ml-1 text-gray-800 underline"
-          @click="resetPlannedFilters"
-        >
-          Clear filters
-        </button>
-        <button v-else type="button" class="ml-1 text-gray-800 underline" @click="openNew">
-          Add a payment
-        </button>
-      </div>
+      <EmptyState
+        v-if="!filteredList.length && plannedFiltersActive"
+        variant="filter"
+        title="Nothing matches"
+        description="Try another status, category, or clear the search."
+      >
+        <template #actions>
+          <Button size="sm" variant="outline" @click="resetPlannedFilters">Clear filters</Button>
+        </template>
+      </EmptyState>
+      <EmptyState
+        v-else-if="!filteredList.length"
+        variant="plan"
+        title="No payments on the plan yet"
+        description="Add a planned payment to reserve free cash and track what is due."
+      >
+        <template #actions>
+          <Button size="sm" variant="solid" @click="openNew">Add payment</Button>
+        </template>
+      </EmptyState>
 
       <ul v-else class="max-h-[70vh] divide-y divide-gray-100 overflow-y-auto">
         <li v-for="row in nestedFilteredList" :key="row.name" class="px-0">
@@ -367,19 +373,18 @@
         </template>
       </header>
 
-      <div v-if="recsLoaded && !recsEnabled" class="px-4 py-10 text-center">
-        <p class="text-sm text-gray-600">
-          {{ recsMessage || 'Turn on ERPNext to see liability suggestions.' }}
-        </p>
-        <Button
-          class="mt-3"
-          size="sm"
-          variant="outline"
-          @click="$router.push('/settings?tab=integrations')"
-        >
-          Open integrations
-        </Button>
-      </div>
+      <EmptyState
+        v-if="recsLoaded && !recsEnabled"
+        variant="books"
+        title="Books not connected"
+        :description="recsMessage || 'Turn on ERPNext to see liability suggestions from your books.'"
+      >
+        <template #actions>
+          <Button size="sm" variant="outline" @click="$router.push('/settings?tab=integrations')">
+            Open integrations
+          </Button>
+        </template>
+      </EmptyState>
 
       <div
         v-else-if="!recsLoaded || (recsLoading && !allRecs.length)"
@@ -388,26 +393,30 @@
         Loading suggestions…
       </div>
 
-      <div
+      <EmptyState
         v-else-if="recsLoaded && recsMessage && !allRecs.length"
-        class="px-4 py-10 text-center text-sm text-gray-500"
-      >
-        {{ recsMessage }}
-      </div>
+        variant="books"
+        title="Nothing from books"
+        :description="recsMessage"
+      />
 
-      <div
+      <EmptyState
         v-else-if="recsLoaded && !allRecs.length"
-        class="px-4 py-10 text-center text-sm text-gray-500"
-      >
-        No open suggestions right now.
-      </div>
+        variant="books"
+        title="No open suggestions"
+        description="When liabilities appear in your books, they will show up here to add to the plan."
+      />
 
-      <div v-else-if="!filteredRecs.length" class="px-4 py-10 text-center text-sm text-gray-500">
-        Nothing matches.
-        <button type="button" class="ml-1 text-gray-800 underline" @click="resetRecFilters">
-          Clear filters
-        </button>
-      </div>
+      <EmptyState
+        v-else-if="!filteredRecs.length"
+        variant="filter"
+        title="Nothing matches"
+        description="Try another account filter or clear the search."
+      >
+        <template #actions>
+          <Button size="sm" variant="outline" @click="resetRecFilters">Clear filters</Button>
+        </template>
+      </EmptyState>
 
       <ul v-else class="max-h-[70vh] divide-y divide-gray-100 overflow-y-auto">
         <li
@@ -550,6 +559,7 @@
 import { computed, nextTick, onActivated, reactive, ref, watch } from 'vue'
 import { Button, call, toast } from 'frappe-ui'
 import CurrencyControl from '@/components/CurrencyControl.vue'
+import EmptyState from '@/components/EmptyState.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import { useCompanyStore } from '@/stores/company'
 import { useTreasuryCacheStore } from '@/stores/treasuryCache'

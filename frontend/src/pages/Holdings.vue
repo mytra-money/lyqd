@@ -27,9 +27,21 @@
 
       <div v-if="loading && !positions.length" class="text-sm text-gray-500">Loading…</div>
 
-      <div v-else-if="!positions.length" class="rounded-lg border border-dashed border-gray-200 px-4 py-10 text-center text-sm text-gray-500">
-        No Mytra holdings yet. After an instruction is submitted and allotted on Mytra, positions
-        appear here.
+      <div
+        v-else-if="!positions.length"
+        class="rounded-lg border border-gray-200 bg-white"
+      >
+        <EmptyState
+          variant="portfolio"
+          title="No holdings yet"
+          description="After an instruction is submitted and allotted on Mytra, positions appear here."
+        >
+          <template #actions>
+            <Button variant="solid" size="sm" @click="$router.push('/proposal')">
+              Go to Proposal
+            </Button>
+          </template>
+        </EmptyState>
       </div>
 
       <div v-else class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
@@ -64,9 +76,18 @@
         </p>
       </header>
 
-      <div v-if="!transactions.length" class="px-4 py-10 text-center text-sm text-gray-500">
-        No transactions yet. Create an investment request, then submit the instruction to Mytra.
-      </div>
+      <EmptyState
+        v-if="!transactions.length"
+        variant="portfolio"
+        title="No transactions yet"
+        description="Create an investment request, then submit the instruction to Mytra."
+      >
+        <template #actions>
+          <Button variant="outline" size="sm" @click="$router.push('/proposal')">
+            Go to Proposal
+          </Button>
+        </template>
+      </EmptyState>
 
       <ul v-else class="divide-y divide-gray-100">
         <li
@@ -107,6 +128,7 @@
 <script setup>
 import { computed, onActivated, ref, watch } from 'vue'
 import { call, toast } from 'frappe-ui'
+import EmptyState from '@/components/EmptyState.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import { useCompanyStore } from '@/stores/company'
 import { formatDate, formatINR } from '@/utils/format'

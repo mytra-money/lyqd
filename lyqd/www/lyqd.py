@@ -73,6 +73,14 @@ def get_boot():
 		default_company = None
 	default_company = default_company or (companies[0] if companies else None)
 	company_settings = settings_for_api(default_company) if default_company else {}
+	in_beta = 1
+	if frappe.db.exists("DocType", "LYQD Settings"):
+		try:
+			val = frappe.db.get_single_value("LYQD Settings", "in_beta")
+			if val is not None:
+				in_beta = int(val)
+		except Exception:
+			pass
 
 	return frappe._dict(
 		{
@@ -94,6 +102,7 @@ def get_boot():
 			"developer_mode": bool(frappe.conf.developer_mode),
 			"tagline": "Make idle cash work smarter.",
 			"app_name": "LYQD by Mytra",
+			"in_beta": in_beta,
 			"erpnext_integration_enabled": bool(company_settings.get("enabled")),
 			"erpnext_installed": "erpnext" in frappe.get_installed_apps(),
 			"company_settings": company_settings,

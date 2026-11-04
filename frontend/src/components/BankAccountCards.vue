@@ -1,23 +1,20 @@
 <template>
   <div>
-    <div
+    <EmptyState
       v-if="!(accounts || []).length"
-      class="flex flex-col items-center justify-center rounded-md border border-dashed border-gray-300 bg-white px-6 py-10 text-center"
+      variant="bank"
+      :title="emptyTitle"
+      :description="emptyHint"
     >
-      <div
-        class="mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-gray-100 text-gray-600"
-      >
-        <FeatherIcon name="credit-card" class="h-5 w-5" />
-      </div>
-      <div class="text-sm font-medium text-gray-900">{{ emptyTitle }}</div>
-      <p class="mt-1 max-w-sm text-p-base text-gray-600">
-        {{ emptyHint }}
-      </p>
-      <div class="mt-4 flex flex-wrap justify-center gap-2">
-        <Button v-if="showAdd" variant="solid" @click="$emit('add')">Add bank account</Button>
-        <Button v-if="showDesk" variant="outline" @click="openDesk">{{ deskLabel }}</Button>
-      </div>
-    </div>
+      <template #actions>
+        <Button v-if="showAdd" variant="solid" size="sm" @click="$emit('add')">
+          Add bank account
+        </Button>
+        <Button v-if="showDesk" variant="outline" size="sm" @click="openDesk">
+          {{ deskLabel }}
+        </Button>
+      </template>
+    </EmptyState>
 
     <div v-else class="flex gap-3 overflow-x-auto pb-1">
       <button
@@ -87,6 +84,7 @@
 </template>
 
 <script setup>
+import EmptyState from '@/components/EmptyState.vue'
 import { formatINR } from '@/utils/format'
 import { useCompanyStore } from '@/stores/company'
 
@@ -99,7 +97,7 @@ const props = defineProps({
   emptyHint: {
     type: String,
     default:
-      'You have not added any company bank accounts yet. LYQD creates an ERPNext Chart of Accounts entry and a Bank Account (same as Banking expects).',
+      'Add a company bank account so statement balances can feed free cash.',
   },
   deskUrl: { type: String, default: null },
   deskLabel: { type: String, default: 'Open in Desk' },

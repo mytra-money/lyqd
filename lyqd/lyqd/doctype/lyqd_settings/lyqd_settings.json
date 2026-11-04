@@ -9,6 +9,7 @@
   "default_min_liquidity_buffer",
   "column_break_defaults",
   "default_restricted_cash",
+  "in_beta",
   "legacy_section",
   "tagline",
   "display_scheme_label",
@@ -43,6 +44,13 @@
    "fieldname": "default_restricted_cash",
    "fieldtype": "Currency",
    "label": "Default Restricted Cash"
+  },
+  {
+   "default": "1",
+   "description": "Show a Beta badge in the LYQD app navigation. Uncheck to hide it.",
+   "fieldname": "in_beta",
+   "fieldtype": "Check",
+   "label": "In Beta"
   },
   {
    "collapsible": 1,
@@ -81,7 +89,7 @@
  ],
  "issingle": 1,
  "links": [],
- "modified": "2026-11-03 15:00:00.000000",
+ "modified": "2026-11-04 16:30:00.000000",
  "modified_by": "Administrator",
  "module": "LYQD",
  "name": "LYQD Settings",

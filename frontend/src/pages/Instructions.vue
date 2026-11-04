@@ -13,31 +13,44 @@
       workflow — not from this app directly in the soft launch.
     </div>
 
-    <div class="rounded-md border border-gray-200 bg-white p-4 overflow-x-auto">
-      <table class="min-w-full text-sm">
+    <div class="rounded-md border border-gray-200 bg-white overflow-x-auto">
+      <EmptyState
+        v-if="!(list.data || []).length"
+        variant="portfolio"
+        title="No instructions yet"
+        description="Confirm a proposal amount, then create an instruction from Proposal."
+      >
+        <template #actions>
+          <Button variant="solid" size="sm" @click="$router.push('/proposal')">
+            Go to Proposal
+          </Button>
+        </template>
+      </EmptyState>
+
+      <table v-else class="min-w-full px-4 text-sm">
         <thead class="text-left text-xs uppercase text-gray-500">
           <tr>
-            <th class="py-2">Instruction</th>
-            <th class="py-2">Scheme</th>
-            <th class="py-2">Status</th>
-            <th class="py-2 text-right">Amount</th>
-            <th class="py-2">Mytra</th>
-            <th class="py-2"></th>
+            <th class="px-4 py-2">Instruction</th>
+            <th class="px-4 py-2">Scheme</th>
+            <th class="px-4 py-2">Status</th>
+            <th class="px-4 py-2 text-right">Amount</th>
+            <th class="px-4 py-2">Mytra</th>
+            <th class="px-4 py-2"></th>
           </tr>
         </thead>
         <tbody>
           <tr v-for="row in list.data || []" :key="row.name" class="border-t border-black/5">
-            <td class="py-3 font-mono text-xs">{{ row.name }}</td>
-            <td class="py-3">{{ row.scheme_label || row.scheme }}</td>
-            <td class="py-3"><Badge theme="blue">{{ row.status }}</Badge></td>
-            <td class="py-3 text-right tabular-nums">{{ formatINR(row.amount) }}</td>
-            <td class="py-3 text-xs text-gray-500">
+            <td class="px-4 py-3 font-mono text-xs">{{ row.name }}</td>
+            <td class="px-4 py-3">{{ row.scheme_label || row.scheme }}</td>
+            <td class="px-4 py-3"><Badge theme="blue">{{ row.status }}</Badge></td>
+            <td class="px-4 py-3 text-right tabular-nums">{{ formatINR(row.amount) }}</td>
+            <td class="px-4 py-3 text-xs text-gray-500">
               <div>{{ row.external_submit_status || '—' }}</div>
               <div v-if="row.mytra_transaction_ref" class="font-mono">
                 {{ row.mytra_transaction_ref }}
               </div>
             </td>
-            <td class="py-3 text-right space-x-1">
+            <td class="px-4 py-3 text-right space-x-1">
               <Button size="sm" variant="outline" @click="runMethod(row.name, 'mark_approved')">
                 Approve
               </Button>
@@ -51,9 +64,6 @@
           </tr>
         </tbody>
       </table>
-      <div v-if="!(list.data || []).length" class="py-8 text-center text-sm text-gray-500">
-        No instructions. Create one from a frozen proposal.
-      </div>
     </div>
   </div>
 </template>
@@ -61,6 +71,7 @@
 <script setup>
 import { watch } from 'vue'
 import { call, createListResource, toast } from 'frappe-ui'
+import EmptyState from '@/components/EmptyState.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import { useCompanyStore } from '@/stores/company'
 import { formatINR } from '@/utils/format'

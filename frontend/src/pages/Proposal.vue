@@ -6,7 +6,12 @@
     >
       <HorizonPicker v-model="horizon" />
       <Button variant="outline" @click="$router.push('/surplus')">Free cash</Button>
-      <Button variant="solid" :loading="creating" @click="primaryAction">
+      <Button
+        variant="solid"
+        :loading="creating"
+        :disabled="!canCreateProposal"
+        @click="primaryAction"
+      >
         {{ primaryCtaLabel }}
       </Button>
     </PageHeader>
@@ -28,46 +33,62 @@
 
     <section class="mb-5 rounded-md border border-gray-200 bg-white">
       <!-- Empty: shortfall with holdings → start redeem -->
-      <div v-if="!active && liveShortfall && canRedeem" class="px-5 py-10 text-center">
-        <Badge theme="red">Redeem</Badge>
-        <p class="mt-3 text-sm font-semibold text-gray-900">Liquidity shortfall this horizon</p>
-        <p class="mx-auto mt-2 max-w-md text-sm text-gray-600">
-          Suggest redeem
-          <span class="font-medium tabular-nums text-gray-900">{{ formatINR(redemptionNeed) }}</span>
-          from holdings
-          <span class="tabular-nums">({{ formatINR(liquidTotal) }} available)</span>
-          to cover commitments and reserves.
-        </p>
-        <Button class="mt-4" variant="solid" :loading="creating" @click="createFromShortfall">
-          Start redeem
-        </Button>
-      </div>
+      <EmptyState
+        v-if="!active && liveShortfall && canRedeem"
+        variant="invest"
+        title="Liquidity shortfall this horizon"
+        :description="`Suggest redeem ${formatINR(redemptionNeed)} from holdings (${formatINR(liquidTotal)} available) to cover commitments and reserves.`"
+      >
+        <template #actions>
+          <Button variant="solid" size="sm" :loading="creating" @click="createFromShortfall">
+            Start redeem
+          </Button>
+        </template>
+      </EmptyState>
 
       <!-- Empty: shortfall, no holdings -->
-      <div v-else-if="!active && liveShortfall" class="px-5 py-10 text-center">
-        <Badge theme="red">Redeem</Badge>
-        <p class="mt-3 text-sm font-semibold text-gray-900">Nothing to invest this horizon</p>
-        <p class="mx-auto mt-2 max-w-md text-sm text-gray-600">
-          Free cash is negative and there are no liquid holdings to redeem. Review Free cash or top
-          up the bank.
-        </p>
-        <div class="mt-4 flex flex-wrap justify-center gap-2">
-          <Button variant="outline" @click="$router.push('/surplus')">Review free cash</Button>
-          <Button variant="ghost" @click="$router.push('/holdings')">Open holdings</Button>
-        </div>
-      </div>
+      <EmptyState
+        v-else-if="!active && liveShortfall"
+        variant="invest"
+        title="Nothing to invest this horizon"
+        description="Free cash is negative and there are no liquid holdings to redeem. Review Free cash or top up the bank."
+      >
+        <template #actions>
+          <Button variant="outline" size="sm" @click="$router.push('/surplus')">
+            Review free cash
+          </Button>
+          <Button variant="ghost" size="sm" @click="$router.push('/holdings')">Open holdings</Button>
+        </template>
+      </EmptyState>
+
+      <!-- Empty: free cash is zero (incl. when banks are not connected) -->
+      <EmptyState
+        v-else-if="!active && !canInvest"
+        variant="invest"
+        title="Nothing to invest this horizon"
+        description="Free cash is zero after commitments and buffers — add bank balances or adjust the plan before drafting a proposal."
+      >
+        <template #actions>
+          <Button variant="solid" size="sm" @click="$router.push('/cash')">Add bank balance</Button>
+          <Button variant="outline" size="sm" @click="$router.push('/surplus')">
+            Review free cash
+          </Button>
+        </template>
+      </EmptyState>
 
       <!-- Empty: ready to invest -->
-      <div v-else-if="!active" class="px-5 py-10 text-center">
-        <Badge theme="green">Invest</Badge>
-        <p class="mt-3 text-sm font-semibold text-gray-900">No open proposal</p>
-        <p class="mx-auto mt-2 max-w-md text-sm text-gray-600">
-          Start from today’s free cash to lock an amount and scheme, then create a Mytra instruction.
-        </p>
-        <Button class="mt-4" variant="solid" :loading="creating" @click="createFromSurplus">
-          Start from free cash
-        </Button>
-      </div>
+      <EmptyState
+        v-else-if="!active"
+        variant="invest"
+        title="No open proposal"
+        description="Start from today’s free cash to lock an amount and scheme, then create a Mytra instruction."
+      >
+        <template #actions>
+          <Button variant="solid" size="sm" :loading="creating" @click="createFromSurplus">
+            Start from free cash
+          </Button>
+        </template>
+      </EmptyState>
 
       <!-- Active request -->
       <div v-else>
@@ -343,6 +364,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { call, createListResource, createResource, toast } from 'frappe-ui'
 import { useRoute, useRouter } from 'vue-router'
+import EmptyState from '@/components/EmptyState.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import HorizonPicker from '@/components/HorizonPicker.vue'
 import MetricCard from '@/components/MetricCard.vue'
@@ -484,9 +506,18 @@ const activeInstruction = computed(() => {
 const liveSurplus = computed(() => cache.getSurplus(company.current, horizon.value))
 const liveMis = computed(() => cache.getMis(company.current, horizon.value))
 const liveShortfall = computed(() => !!liveSurplus.value?.is_shortfall)
+const liveFreeCash = computed(() =>
+  Math.max(0, Number(liveSurplus.value?.investable_surplus || liveMis.value?.investable_surplus || 0)),
+)
 const liquidTotal = computed(() => Number(liveMis.value?.liquid_fund_total || 0))
 const redemptionNeed = computed(() => Number(liveMis.value?.redemption_need || 0))
 const canRedeem = computed(() => liquidTotal.value > 0.01 && redemptionNeed.value > 0.01)
+const canInvest = computed(() => !liveShortfall.value && liveFreeCash.value > 0.01)
+const canCreateProposal = computed(() => {
+  if (active.value) return true // refresh / replace still allowed; API rejects zero
+  if (liveShortfall.value) return canRedeem.value
+  return canInvest.value
+})
 
 const schemeUrl = computed(() =>
   schemeInfoUrl(active.value?.display_scheme_isin, active.value?.display_scheme_label),
@@ -541,6 +572,7 @@ const primaryCtaLabel = computed(() => {
   }
   if (liveShortfall.value && canRedeem.value) return 'Start redeem'
   if (liveShortfall.value) return 'Review free cash'
+  if (!canInvest.value) return 'No free cash'
   return 'Start from free cash'
 })
 
@@ -584,6 +616,10 @@ async function primaryAction() {
   if (liveShortfall.value && canRedeem.value) return createFromShortfall()
   if (liveShortfall.value) {
     router.push('/surplus')
+    return
+  }
+  if (!canInvest.value) {
+    toast.error('No free cash to invest for this horizon')
     return
   }
   return createFromSurplus()

@@ -70,6 +70,10 @@ def ensure_settings() -> None:
 	if not settings.default_forecast_horizon_days:
 		settings.default_forecast_horizon_days = 7
 		dirty = True
+	# New Check fields on existing Singles land as 0 — seed once if never stored.
+	if not frappe.db.exists("Singles", {"doctype": "LYQD Settings", "field": "in_beta"}):
+		settings.in_beta = 1
+		dirty = True
 	if dirty:
 		settings.flags.ignore_permissions = True
 		settings.save()

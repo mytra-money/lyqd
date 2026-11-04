@@ -38,7 +38,9 @@ export const useCompanyStore = defineStore('company', () => {
   const userFullname = ref(window.user_fullname || '')
   const userImage = ref(window.user_image || null)
   const tagline = ref(window.tagline || 'Make idle cash work smarter.')
-  const settings = ref({})
+  const settings = ref({
+    in_beta: window.in_beta != null ? Number(window.in_beta) : 1,
+  })
   const companySettings = ref(window.company_settings || {})
   const roles = ref(window.roles || [])
   const erpnextIntegrationEnabled = ref(!!window.erpnext_integration_enabled)
@@ -64,7 +66,13 @@ export const useCompanyStore = defineStore('company', () => {
       userFullname.value = data.user_fullname
       userImage.value = data.user_image || null
       tagline.value = data.tagline || tagline.value
-      settings.value = data.settings || {}
+      settings.value = {
+        in_beta: 1,
+        ...(data.settings || {}),
+      }
+      if (data.settings?.in_beta == null && data.in_beta != null) {
+        settings.value.in_beta = Number(data.in_beta)
+      }
       companySettings.value = data.company_settings || {}
       roles.value = data.roles || []
       erpnextIntegrationEnabled.value = !!data.erpnext_integration_enabled
@@ -165,6 +173,13 @@ export const useCompanyStore = defineStore('company', () => {
     () => !!Number(settings.value?.investment_account_activated || 0),
   )
 
+  /** Site-wide badge from LYQD Settings → In Beta (default on). */
+  const inBeta = computed(() => {
+    const v = settings.value?.in_beta
+    if (v == null) return true
+    return !!Number(v)
+  })
+
   return {
     companies,
     current,
@@ -178,6 +193,7 @@ export const useCompanyStore = defineStore('company', () => {
     erpnextIntegrationEnabled,
     erpnextInstalled,
     investmentAccountActivated,
+    inBeta,
     isManager,
     needsOnboarding,
     showAddCompany,

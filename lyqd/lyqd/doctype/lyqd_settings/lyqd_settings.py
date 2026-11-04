@@ -19,6 +19,7 @@ class LYQDSettings(Document):
 		display_scheme_isin: DF.Data | None
 		display_scheme_label: DF.Data | None
 		enable_draft_proposals: DF.Check
+		in_beta: DF.Check
 		tagline: DF.Data | None
 	# end: auto-generated types
 

@@ -40,10 +40,13 @@ class LYQDDraftProposal(Document):
 			self.request_type = "Invest"
 		if self.status != "Cancelled" and not self.surplus_run:
 			frappe.throw(frappe._("Surplus Run is required on the request."))
-		if self.status == "Frozen" and (self.proposed_amount is None or flt(self.proposed_amount) < 0):
-			frappe.throw(frappe._("Proposed amount cannot be negative."))
-		if self.status != "Cancelled" and self.request_type == "Redeem" and flt(self.proposed_amount) <= 0:
-			frappe.throw(frappe._("Redeem amount must be greater than zero."))
+		if self.status != "Cancelled" and flt(self.proposed_amount) <= 0:
+			frappe.throw(
+				frappe._(
+					"Proposed amount must be greater than zero. "
+					"There is no free cash to invest / nothing to redeem."
+				)
+			)
 		if self.surplus_run and self.status != "Cancelled":
 			is_shortfall = frappe.db.get_value("LYQD Surplus Run", self.surplus_run, "is_shortfall")
 			if self.request_type == "Invest" and is_shortfall:

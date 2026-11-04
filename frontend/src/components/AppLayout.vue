@@ -114,6 +114,12 @@
           <span class="truncate">{{ pageHint }}</span>
         </div>
         <div class="flex min-w-0 items-center gap-2">
+          <span
+            v-if="company.inBeta"
+            class="shrink-0 rounded-full bg-red-600 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white"
+          >
+            Beta
+          </span>
           <FormControl
             type="select"
             size="sm"

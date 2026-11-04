@@ -123,7 +123,11 @@ const canAddBanks = computed(() => {
 
 const cashSubtitle = computed(() => 'Statement balances for this company')
 
-const emptyHint = computed(() => cash.value.data?.message || '')
+const emptyHint = computed(
+  () =>
+    cash.value.data?.message ||
+    'Add a bank account and update its statement balance so free cash can be calculated.',
+)
 
 const cashCards = computed(() =>
   (cash.value.data?.accounts || []).map((row) => ({

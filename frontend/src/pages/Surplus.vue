@@ -17,7 +17,7 @@
           Open proposal
         </Button>
         <Button
-          v-else-if="r && !r.is_shortfall"
+          v-else-if="r && !r.is_shortfall && Number(r.investable_surplus || 0) > 0.01"
           variant="solid"
           :loading="investing"
           @click="investNow"

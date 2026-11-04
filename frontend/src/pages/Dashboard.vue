@@ -209,12 +209,26 @@
           </div>
         </header>
 
-        <div v-if="!filteredCommitments.length" class="px-3 py-8 text-center text-sm text-gray-500">
-          No commitments in this filter.
-          <button type="button" class="ml-1 text-gray-800 underline" @click="openNew">
-            Add a payment
-          </button>
-        </div>
+        <EmptyState
+          v-if="!filteredCommitments.length && commitmentFilter !== 'all'"
+          variant="filter"
+          title="No commitments in this filter"
+          description="Switch filter or add a payment for this window."
+        >
+          <template #actions>
+            <Button size="sm" variant="solid" @click="openNew">Add payment</Button>
+          </template>
+        </EmptyState>
+        <EmptyState
+          v-else-if="!filteredCommitments.length"
+          variant="plan"
+          title="No payments planned yet"
+          description="Add a planned payment to reserve free cash for the next few days."
+        >
+          <template #actions>
+            <Button size="sm" variant="solid" @click="openNew">Add payment</Button>
+          </template>
+        </EmptyState>
 
         <ul v-else class="divide-y divide-gray-100">
           <li v-for="u in nestedCommitments" :key="u.name">
@@ -372,6 +386,7 @@
 import { computed, onActivated, reactive, ref, watch } from 'vue'
 import { call, toast } from 'frappe-ui'
 import CurrencyControl from '@/components/CurrencyControl.vue'
+import EmptyState from '@/components/EmptyState.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import MetricCard from '@/components/MetricCard.vue'
 import HorizonPicker from '@/components/HorizonPicker.vue'

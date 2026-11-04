@@ -32,6 +32,7 @@ def get_boot_data() -> dict:
 		settings = {
 			"default_forecast_horizon_days": s.default_forecast_horizon_days,
 			"enable_draft_proposals": s.enable_draft_proposals,
+			"in_beta": int(getattr(s, "in_beta", 1) or 0),
 			"tagline": s.tagline,
 			"display_scheme_label": s.display_scheme_label,
 			"display_scheme_isin": s.display_scheme_isin,
@@ -900,6 +901,7 @@ def save_settings(doc: str | dict) -> dict:
 		"default_min_liquidity_buffer",
 		"default_restricted_cash",
 		"enable_draft_proposals",
+		"in_beta",
 		"tagline",
 		"display_scheme_label",
 		"display_scheme_isin",
@@ -1051,6 +1053,12 @@ def create_proposal_from_surplus(
 			frappe.delete_doc("LYQD Surplus Run", run.name, force=1, ignore_permissions=True)
 		frappe.throw(_("No free cash to invest for this horizon (liquidity shortfall)."))
 
+	invest_amount = flt(run.investable_surplus)
+	if invest_amount <= 0.01:
+		if not getattr(run.flags, "reused", False):
+			frappe.delete_doc("LYQD Surplus Run", run.name, force=1, ignore_permissions=True)
+		frappe.throw(_("No free cash to invest for this horizon (amount is zero)."))
+
 	matched = _open_proposal_matching_run(company, run.name, "Invest")
 	if matched:
 		return matched
@@ -1165,6 +1173,8 @@ def create_instruction_from_proposal(proposal: str) -> dict:
 		frappe.throw(_("Cannot create an instruction from a cancelled request."))
 	if prop.status != "Frozen":
 		frappe.throw(_("Confirm the request before creating an instruction."))
+	if flt(prop.proposed_amount) <= 0.01:
+		frappe.throw(_("Cannot create an instruction for a zero-amount proposal."))
 	if not prop.surplus_run:
 		frappe.throw(_("Request is missing a Surplus Run. Create a new request from free cash."))
 	existing = frappe.db.exists(

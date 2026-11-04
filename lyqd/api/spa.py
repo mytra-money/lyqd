@@ -73,6 +73,18 @@ def get_companies() -> list[str]:
 
 
 @frappe.whitelist()
+def list_local_erpnext_companies() -> dict:
+	"""ERPNext Company names on this site (for This Site books binding)."""
+	frappe.only_for(("System Manager", "LYQD Manager", "LYQD User"))
+	if "erpnext" not in frappe.get_installed_apps():
+		return {"companies": [], "erpnext_installed": False}
+	if not frappe.db.exists("DocType", "Company"):
+		return {"companies": [], "erpnext_installed": False}
+	companies = frappe.get_all("Company", pluck="name", order_by="name asc")
+	return {"companies": companies, "erpnext_installed": True}
+
+
+@frappe.whitelist()
 def set_current_company(company: str | None = None) -> dict:
 	"""Remember the active LYQD Company for this user (survives refresh)."""
 	company = (company or "").strip()
@@ -118,15 +130,15 @@ def create_lyqd_company(
 		books_source = "Manual"
 
 	books_company = (books_company or "").strip()
-	if books_source == "Other Site" and not books_company:
+	if books_source in ("This Site", "Other Site") and not books_company:
 		frappe.throw(
 			_(
-				"Remote company is required for Other Site books. "
+				"Books company is required when ERPNext is enabled. "
 				"Select the ERPNext Company this LYQD Company should use."
 			)
 		)
-	if books_source != "Manual" and not books_company:
-		books_company = company_name
+	if books_source == "This Site" and not frappe.db.exists("Company", books_company):
+		frappe.throw(_("Company {0} was not found on this site.").format(books_company))
 
 	created = False
 	if frappe.db.exists("LYQD Company", company_name):
@@ -756,11 +768,20 @@ def save_erpnext_settings(doc: str | dict) -> dict:
 	else:
 		books_source = "This Site"
 
+	books_company = (doc.get("remote_company") or "").strip()
+	if books_source in ("This Site", SOURCE_OTHER_SITE) and not books_company:
+		frappe.throw(
+			_(
+				"Books company is required when ERPNext is enabled. "
+				"Select the ERPNext Company this LYQD Company should use."
+			)
+		)
+
 	if not frappe.db.exists("LYQD Company", lyqd_company):
 		create_lyqd_company(
 			company_name=lyqd_company,
 			books_source=books_source,
-			books_company=(doc.get("remote_company") or lyqd_company).strip(),
+			books_company=books_company,
 			remote_site_url=doc.get("remote_site_url"),
 			remote_api_key=doc.get("remote_api_key"),
 			remote_api_secret=doc.get("remote_api_secret"),
@@ -770,22 +791,14 @@ def save_erpnext_settings(doc: str | dict) -> dict:
 	was_remote = (co.books_source or "") == SOURCE_OTHER_SITE
 	co.apply_books_source(books_source)
 	if books_source == SOURCE_OTHER_SITE:
-		remote_co = (doc.get("remote_company") or "").strip()
-		if not remote_co:
-			frappe.throw(
-				_(
-					"Remote company is required for Other Site books. "
-					"Select the ERPNext Company this LYQD Company should use."
-				)
-			)
-		co.books_company = remote_co
+		co.books_company = books_company
 		co.remote_site_url = (doc.get("remote_site_url") or "").strip()
 		co.remote_api_key = (doc.get("remote_api_key") or "").strip()
 		new_secret = doc.get("remote_api_secret")
 		if new_secret:
 			co.remote_api_secret = new_secret
-	elif books_source != "Manual":
-		co.books_company = (doc.get("remote_company") or co.books_company or lyqd_company).strip()
+	elif books_source == "This Site":
+		co.books_company = books_company
 	co.save()
 
 	payload = settings_for_api(lyqd_company)

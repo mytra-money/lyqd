@@ -99,12 +99,29 @@
             </div>
           </div>
 
-          <FormControl
+          <div
             v-else-if="form.enabled && form.is_erpnext_in_the_current_site"
-            v-model="form.books_company"
-            label="Company"
-            :placeholder="form.company_name || ''"
-          />
+            class="space-y-1 border-t border-gray-100 pt-3"
+          >
+            <FormControl
+              v-if="localCompanies.length"
+              v-model="form.books_company"
+              type="select"
+              label="Books company"
+              :options="localCompanies"
+              required
+            />
+            <FormControl
+              v-else
+              v-model="form.books_company"
+              label="Books company"
+              placeholder="Exact ERPNext Company name on this site"
+              required
+            />
+            <p class="text-xs text-gray-500">
+              Required — binds this LYQD Company to one ERPNext Company on this site.
+            </p>
+          </div>
         </div>
 
         <p v-if="error" class="text-sm text-red-600">{{ error }}</p>
@@ -150,6 +167,7 @@ const saving = ref(false)
 const probing = ref(false)
 const probeOk = ref(false)
 const remoteCompanies = ref([])
+const localCompanies = ref([])
 const error = ref('')
 
 const showRemoteFields = computed(
@@ -171,11 +189,25 @@ const canProbe = computed(
 
 const canSave = computed(() => {
   if (!(form.company_name || '').trim()) return false
-  if (booksSource.value === 'Other Site') {
-    return canProbe.value && !!(form.books_company || '').trim()
-  }
+  if (booksSource.value === 'Manual') return true
+  // This Site / Other Site — books company is mandatory (multi-company safe)
+  if (!(form.books_company || '').trim()) return false
+  if (booksSource.value === 'Other Site') return canProbe.value
   return true
 })
+
+async function loadLocalCompanies() {
+  if (!erpnextInstalled.value) {
+    localCompanies.value = []
+    return
+  }
+  try {
+    const res = await call('lyqd.api.spa.list_local_erpnext_companies')
+    localCompanies.value = res.companies || []
+  } catch {
+    localCompanies.value = []
+  }
+}
 
 function reset() {
   form.company_name = ''
@@ -214,6 +246,7 @@ watch(
       if (erpnextInstalled.value && form.enabled) {
         form.is_erpnext_in_the_current_site = true
       }
+      loadLocalCompanies()
     } else if (!props.required) {
       reset()
     }
@@ -276,8 +309,8 @@ async function save() {
   error.value = ''
   try {
     const source = booksSource.value
-    if (source === 'Other Site' && !(form.books_company || '').trim()) {
-      error.value = 'Remote company is required'
+    if (source !== 'Manual' && !(form.books_company || '').trim()) {
+      error.value = 'Books company is required'
       toast.error(error.value)
       return
     }
@@ -285,10 +318,7 @@ async function save() {
       company_name: form.company_name.trim(),
       abbr: (form.abbr || '').trim() || null,
       books_source: source,
-      books_company:
-        source === 'Other Site'
-          ? form.books_company.trim()
-          : (form.books_company || form.company_name).trim(),
+      books_company: source === 'Manual' ? null : form.books_company.trim(),
       mirror_banks: source === 'Other Site' ? 1 : 0,
     }
     if (source === 'Other Site') {

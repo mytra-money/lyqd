@@ -51,6 +51,35 @@
             </label>
 
             <div
+              v-if="erpForm.source === 'This Site'"
+              class="space-y-1 rounded-md border border-gray-200 bg-gray-50 p-3"
+            >
+              <label class="mb-1 block text-xs font-medium text-gray-600">
+                Books company <span class="text-red-600">*</span>
+              </label>
+              <select
+                v-if="localCompanies.length"
+                v-model="erpForm.remote_company"
+                class="w-full rounded-md border border-gray-200 bg-white px-2 py-1.5 text-sm"
+                required
+              >
+                <option disabled value="">Select company…</option>
+                <option v-for="c in localCompanies" :key="c" :value="c">{{ c }}</option>
+              </select>
+              <input
+                v-else
+                v-model="erpForm.remote_company"
+                type="text"
+                required
+                placeholder="Exact ERPNext Company name on this site"
+                class="w-full rounded-md border border-gray-200 bg-white px-2 py-1.5 text-sm"
+              />
+              <p class="mt-1 text-xs text-gray-500">
+                Required — binds this LYQD Company to one ERPNext Company on this site.
+              </p>
+            </div>
+
+            <div
               v-if="erpForm.source === 'Other Site'"
               class="space-y-3 rounded-md border border-gray-200 bg-gray-50 p-3"
             >
@@ -87,7 +116,7 @@
                   class="w-full rounded-md border border-gray-200 bg-white px-2 py-1.5 text-sm"
                 />
                 <p class="mt-1 text-xs text-gray-500">
-                  Required — binds this LYQD Company to one books company on a multi-company site.
+                  Required — binds this LYQD Company to one ERPNext Company on the remote site.
                 </p>
               </div>
               <div class="flex flex-wrap items-center gap-2">
@@ -457,6 +486,20 @@ watch(
 const testingRemote = ref(false)
 const remoteConnected = ref(false)
 const remoteCompanies = ref([])
+const localCompanies = ref([])
+
+async function loadLocalCompanies() {
+  if (!company.erpnextInstalled) {
+    localCompanies.value = []
+    return
+  }
+  try {
+    const res = await call('lyqd.api.spa.list_local_erpnext_companies')
+    localCompanies.value = res.companies || []
+  } catch {
+    localCompanies.value = []
+  }
+}
 
 const policyForm = reactive({
   name: null,
@@ -702,6 +745,7 @@ const accountSourceLabel = computed(() => {
 /** Only show the picker when the form source matches what the server will actually query. */
 const accountsPickerReady = computed(() => {
   if (!erpForm.enabled) return false
+  if (!(erpForm.remote_company || '').trim()) return false
   if (erpForm.source === 'This Site') return true
   // Other Site: require a successful Connect (or previously saved remote source)
   return (
@@ -803,7 +847,7 @@ onMounted(async () => {
   } else if (typeof tab === 'string' && tabs.some((t) => t.id === tab)) {
     activeTab.value = tab
   }
-  await loadSiteDefaults()
+  await Promise.all([loadSiteDefaults(), loadLocalCompanies()])
   if (company.current) await loadCompanyErp(company.current)
 })
 
@@ -933,6 +977,14 @@ async function requestInvestmentAccount() {
 }
 
 async function saveErp() {
+  if (
+    erpForm.enabled &&
+    (erpForm.source === 'This Site' || erpForm.source === 'Other Site') &&
+    !(erpForm.remote_company || '').trim()
+  ) {
+    toast.error('Books company is required when ERPNext is enabled')
+    throw new Error('Books company is required')
+  }
   const payload = {
     company: company.current,
     enabled: erpForm.enabled ? 1 : 0,

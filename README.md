@@ -16,7 +16,7 @@
 
 LYQD helps finance teams see bank cash, upcoming payments, and free cash in one place — then create an **Invest** or **Redeem** proposal when they’re ready.
 
-It is built for companies that collect money before payroll, vendors, and taxes are due, and want a clear answer to: *“How much can we park in a liquid fund until the next payment?”*
+It is built for companies that collect money before payroll, vendors, and taxes are due, and want a clear answer to: *“How much can free cash does the business have (to park in a liquid fund) until the next payment?”*
 
 ---
 
@@ -25,12 +25,14 @@ It is built for companies that collect money before payroll, vendors, and taxes 
 ![Sign in](docs/screenshots/login.jpg)
 
 1. Open [lyqd.mytra.money](https://lyqd.mytra.money) and sign in (or create an account).
-2. Create your **company** (name is enough to start).
+2. Create your **company** (name is enough to start). You can also **Connect your ERPNext Site** on LYQD to get recommendations.
 3. Add or select **bank accounts**, then enter today’s **statement balances**.
 4. Add **upcoming payments** (or connect books later — optional).
 5. Check **Free cash**, then create an **Invest** or **Redeem** proposal when it makes sense.
 
 You can install LYQD on your phone with **Add to Home Screen** for a simple app-like experience.
+
+You can install LYQD on your own bench as well.
 
 ---
 
@@ -75,15 +77,23 @@ In plain words:
 
 If free cash is negative, LYQD shows a **shortfall** — useful when you may need to redeem investments before a due date.
 
-### Proposal (Invest / Redeem)
+### Optional: Proposal (Invest / Redeem)
 
-When free cash looks good, create an **Invest** proposal.  
+When free cash looks good, create an **Invest** proposal.
 When the horizon shows a shortfall, create a **Redeem** proposal (limited by what you hold).
 
 ![Proposal](docs/screenshots/proposal.jpg)
 
-Only one open proposal is kept at a time. Review it, then send it forward once your investment account is activated.
+Only one open proposal is kept at a time. Review it, then send it forward once your investment account is activated by Mytra (AMFI Registered Mutual Fund Distributor).
 
+---
+
+>## Why liquid funds?
+
+>Idle money in a current account often earns little between known payment dates. LYQD is built around **short-term surplus** — cash you may need again for payroll, taxes, or vendors within days or weeks.
+
+>Human approval always comes before investment instructions. Mutual fund investments are subject to market risks; read all scheme-related documents carefully.
+---
 ### Portfolio
 
 See holdings and recent investment activity in one place.
@@ -113,7 +123,7 @@ Open **Settings** from the menu to configure your company.
 
 You can manage more than one company. Switch companies from the top of the app.
 
-### Optional: connect books
+### Optional: connect books (ERPNext)
 
 Books are optional. Three modes:
 
@@ -145,13 +155,6 @@ Bank **balances** are always updated in LYQD, even when account names are mirror
 
 Day-to-day work happens in the LYQD app (`/lyqd`), not in Desk.
 
----
-
-## Why liquid funds?
-
-Idle money in a current account often earns little between known payment dates. LYQD is built around **short-term surplus** — cash you may need again for payroll, taxes, or vendors within days or weeks.
-
-Human approval always comes before investment instructions. Mutual fund investments are subject to market risks; read all scheme-related documents carefully.
 
 ---
 

@@ -14,7 +14,6 @@
 
 ![Cash position](docs/screenshots/cash-position.jpg)
 
-*Screenshots are full-width desktop captures: sign-in from [lyqd.mytra.money](https://lyqd.mytra.money); mostly **LYQD Demo Corp** in-app, with Settings (ERPNext) from **pwctech** and Proposal from **Mytra**.*
 
 LYQD helps finance teams see bank cash, upcoming payments, and free cash in one place — then create an **Invest** or **Redeem** proposal when they’re ready.
 
@@ -26,15 +25,14 @@ It is built for companies that collect money before payroll, vendors, and taxes 
 
 ![Sign in](docs/screenshots/login.jpg)
 
-1. Open [lyqd.mytra.money](https://lyqd.mytra.money) and sign in (or create an account).
+
+1. Open [lyqd.mytra.money](https://lyqd.mytra.money) and sign in (or create an account). You can install LYQD on your own bench as well.
 2. Create your **company** (name is enough to start). You can also **Connect your ERPNext Site** on LYQD to get recommendations.
 3. Add or select **bank accounts**, then enter today’s **statement balances**.
 4. Add **upcoming payments** (or connect books later — optional).
 5. Check **Free cash**, then create an **Invest** or **Redeem** proposal when it makes sense.
 
 You can install LYQD on your phone with **Add to Home Screen** for a simple app-like experience.
-
-You can install LYQD on your own bench as well.
 
 ---
 
@@ -63,11 +61,11 @@ You can:
 - **Add a payment** yourself (amount, due date, category)
 - Mark payments **Paid** when done
 - Set a payment to **repeat** (for example monthly rent)
+- Related payments (for example tax groups) can appear nested so the plan stays readable.
 - Optionally pull **suggestions from your books** (ERPNext) and add them to the plan
 
 ![Add a manual payment](docs/screenshots/add-payment.jpg)
 
-Related payments (for example tax groups) can appear nested so the plan stays readable.
 
 ### Free cash
 
@@ -116,8 +114,6 @@ Update statement balances for your bank accounts. These balances always live in 
 
 Open **Settings** from the menu to configure your company.
 
-![Settings](docs/screenshots/settings.jpg)
-
 | Section | What you set |
 |---------|----------------|
 | **Integrations** | Optional link to ERPNext (this site or another site) for payment suggestions |
@@ -133,7 +129,10 @@ Books are optional. Three modes:
 
 - **Manual** — enter balances and payments in LYQD only  
 - **This site** — use ERPNext on the same site for suggestions  
-- **Other site** — connect a remote ERPNext with URL + API key  
+- **Other site** — connect a remote ERPNext with URL + API key
+
+![Settings](docs/screenshots/settings.jpg)
+
 
 Bank **balances** are always updated in LYQD, even when account names are mirrored from books.
 

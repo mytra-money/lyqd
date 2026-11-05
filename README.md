@@ -14,7 +14,7 @@
 
 ![Cash position](docs/screenshots/cash-position.jpg)
 
-*Screenshots are full-width desktop captures: mostly **LYQD Demo Corp**, with Settings (ERPNext) from **pwctech** and Proposal from **Mytra**.*
+*Screenshots are full-width desktop captures: sign-in from [lyqd.mytra.money](https://lyqd.mytra.money); mostly **LYQD Demo Corp** in-app, with Settings (ERPNext) from **pwctech** and Proposal from **Mytra**.*
 
 LYQD helps finance teams see bank cash, upcoming payments, and free cash in one place — then create an **Invest** or **Redeem** proposal when they’re ready.
 
@@ -64,6 +64,8 @@ You can:
 - Mark payments **Paid** when done
 - Set a payment to **repeat** (for example monthly rent)
 - Optionally pull **suggestions from your books** (ERPNext) and add them to the plan
+
+![Add a manual payment](docs/screenshots/add-payment.jpg)
 
 Related payments (for example tax groups) can appear nested so the plan stays readable.
 

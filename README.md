@@ -14,7 +14,7 @@
 
 ![Cash position](docs/screenshots/cash-position.jpg)
 
-*Screenshots below are from the **LYQD Demo Corp** company (full-width desktop).*
+*Screenshots are full-width desktop captures: mostly **LYQD Demo Corp**, with Settings (ERPNext) from **pwctech** and Proposal from **Mytra**.*
 
 LYQD helps finance teams see bank cash, upcoming payments, and free cash in one place — then create an **Invest** or **Redeem** proposal when they’re ready.
 

@@ -12,7 +12,7 @@
 
 </div>
 
-![Cash position](docs/screenshots/cash-position.jpg)
+![Cash position](docs/screenshots/cash-position-home.jpg)
 
 
 LYQD helps finance teams see bank cash, upcoming payments, and free cash in one place — then create an **Invest** or **Redeem** proposal when they’re ready.
@@ -46,7 +46,7 @@ Cash position  →  Commitments  →  Free cash  →  Proposal  →  Portfolio
 
 Your morning view: bank cash, portfolio, commitments in the next few days, and free cash (or shortfall).
 
-![Cash position](docs/screenshots/cash-position.jpg)
+![Cash position](docs/screenshots/cash-position-home.jpg)
 
 Use the day picker (7 / 14 / 30 / 60 days) to change how far ahead you look.
 
@@ -54,7 +54,7 @@ Use the day picker (7 / 14 / 30 / 60 days) to change how far ahead you look.
 
 The payment plan that reserves cash — salaries, vendors, taxes, rent, and anything else you expect to pay.
 
-![Commitments](docs/screenshots/commitments.jpg)
+![Commitments](docs/screenshots/commitments-plan.jpg)
 
 You can:
 

@@ -68,10 +68,7 @@
             type="number"
             label="Opening balance (optional)"
           />
-          <label class="flex items-center gap-2 text-sm">
-            <input v-model="addBank.is_default" type="checkbox" class="rounded" />
-            Set as default
-          </label>
+          <Checkbox v-model="addBank.is_default" label="Set as default" />
         </div>
       </template>
       <template #actions>
@@ -84,6 +81,7 @@
 
 <script setup>
 import { computed, onActivated, reactive, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { call, toast } from 'frappe-ui'
 import CurrencyControl from '@/components/CurrencyControl.vue'
 import PageHeader from '@/components/PageHeader.vue'
@@ -96,6 +94,7 @@ defineOptions({ name: 'Cash' })
 
 const company = useCompanyStore()
 const cache = useTreasuryCacheStore()
+const route = useRoute()
 const show = ref(false)
 const showAdd = ref(false)
 const saving = ref(false)
@@ -167,6 +166,16 @@ watch(
 )
 
 onActivated(() => loadCash(false))
+
+watch(
+  [() => route.query.add, () => cash.value.data, canAddBanks],
+  ([add]) => {
+    if (String(add) === '1' && canAddBanks.value && !showAdd.value) {
+      openAddBank()
+    }
+  },
+  { immediate: true },
+)
 
 function openBalanceFor(ba) {
   const name = ba?.name || ba?.bank_account || ''

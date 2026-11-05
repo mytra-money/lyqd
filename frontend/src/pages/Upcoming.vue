@@ -48,25 +48,17 @@
             </button>
           </div>
           <div class="flex min-w-0 flex-1 gap-2">
-            <div class="relative min-w-0 flex-1">
-              <FeatherIcon
-                name="search"
-                class="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400"
-              />
-              <input
-                v-model="plannedQuery"
-                type="search"
-                placeholder="Search plan"
-                class="w-full rounded-md border border-gray-200 py-1.5 pl-8 pr-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-gray-400 focus:outline-none"
-              />
-            </div>
-            <select
+            <FormControl
+              v-model="plannedQuery"
+              class="min-w-0 flex-1"
+              placeholder="Search plan"
+            />
+            <FormControl
               v-model="categoryFilter"
-              class="max-w-[9rem] shrink-0 rounded-md border border-gray-200 bg-white px-2 py-1.5 text-sm text-gray-700"
-            >
-              <option value="all">Category</option>
-              <option v-for="c in plannedCategories" :key="c" :value="c">{{ c }}</option>
-            </select>
+              class="max-w-[9rem] shrink-0"
+              type="select"
+              :options="plannedCategoryOptions"
+            />
           </div>
         </div>
       </header>
@@ -131,11 +123,39 @@
                   {{ dueLabel(row.due_date) }}
                 </span>
                 <span
+                  v-if="row.is_recurring"
+                  class="rounded bg-blue-50 px-1 font-medium text-blue-800"
+                >
+                  {{ row.frequency || 'Monthly' }}
+                </span>
+                <span
                   v-if="row._childCount"
                   class="tabular-nums text-[11px] text-gray-400"
-                  :class="row.cash_effect === 'Setoff' ? 'text-emerald-700/80' : ''"
+                  :class="
+                    row.cash_effect === 'Setoff' || row.cash_effect === 'Inflow'
+                      ? 'text-emerald-700/80'
+                      : ''
+                  "
                 >
-                  · GL {{ row.cash_effect === 'Setoff' ? '−' : '' }}{{ formatINR(row.amount) }}
+                  · GL
+                  {{
+                    row.cash_effect === 'Setoff' || row.cash_effect === 'Inflow' ? '−' : ''
+                  }}{{ formatINR(row.amount) }}
+                </span>
+                <span
+                  v-else-if="row.is_recurring && row.occurrence_count > 1"
+                  class="tabular-nums text-[11px] text-gray-400"
+                >
+                  ·
+                  {{ formatINR(row.period_amount ?? row.amount / row.occurrence_count) }} ×
+                  {{ row.occurrence_count }}
+                </span>
+                <span
+                  v-else-if="row.is_recurring && !(row.occurrence_count > 0)"
+                  class="rounded bg-gray-100 px-1 font-medium text-gray-600"
+                  title="Next due is outside the forecast horizon — nothing reserved yet"
+                >
+                  Outside horizon
                 </span>
                 <span>· {{ row.category }}</span>
                 <span
@@ -143,6 +163,12 @@
                   class="rounded bg-emerald-50 px-1 font-medium text-emerald-800"
                 >
                   Setoff
+                </span>
+                <span
+                  v-else-if="row.cash_effect === 'Inflow'"
+                  class="rounded bg-emerald-50 px-1 font-medium text-emerald-800"
+                >
+                  Inflow
                 </span>
                 <span v-if="row.status !== 'Planned'" class="text-gray-400">· {{ row.status }}</span>
                 <span
@@ -169,9 +195,27 @@
               <div
                 v-else
                 class="tabular-nums text-sm font-semibold"
-                :class="row.cash_effect === 'Setoff' ? 'text-emerald-800' : 'text-gray-900'"
+                :class="
+                  row.cash_effect === 'Setoff' || row.cash_effect === 'Inflow'
+                    ? 'text-emerald-800'
+                    : 'text-gray-900'
+                "
               >
-                {{ row.cash_effect === 'Setoff' ? '−' : '' }}{{ formatINR(row.amount) }}
+                {{
+                  row.cash_effect === 'Setoff' || row.cash_effect === 'Inflow' ? '−' : ''
+                }}{{ formatINR(displayPlanAmount(row)) }}
+                <div
+                  v-if="row.is_recurring && !(row.occurrence_count > 0)"
+                  class="text-[10px] font-medium uppercase tracking-wide text-gray-400"
+                >
+                  / {{ frequencyUnit(row.frequency) }}
+                </div>
+                <div
+                  v-else-if="row.is_recurring && row.occurrence_count > 1"
+                  class="text-[10px] font-medium uppercase tracking-wide text-gray-400"
+                >
+                  in horizon
+                </div>
               </div>
               <div class="mt-1 flex flex-wrap items-center justify-end gap-0.5">
                 <button
@@ -221,12 +265,20 @@
                   type="button"
                   class="inline-flex h-7 items-center gap-1 rounded px-1.5 text-xs font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900 disabled:opacity-50"
                   :disabled="marking === row.name"
-                  title="Mark paid"
-                  aria-label="Mark paid"
+                  :title="
+                    row.is_recurring
+                      ? `Record ${(row.frequency || 'Monthly').toLowerCase()} · advance next due`
+                      : 'Mark paid'
+                  "
+                  :aria-label="
+                    row.is_recurring
+                      ? `Record ${(row.frequency || 'Monthly').toLowerCase()}`
+                      : 'Mark paid'
+                  "
                   @click="markPaid(row)"
                 >
                   <FeatherIcon name="check" class="h-3.5 w-3.5" />
-                  <span>Paid</span>
+                  <span>{{ row.is_recurring ? row.frequency || 'Monthly' : 'Paid' }}</span>
                 </button>
                 <button
                   type="button"
@@ -268,10 +320,14 @@
                   <span
                     class="tabular-nums text-[11px]"
                     :class="
-                      child.cash_effect === 'Setoff' ? 'text-emerald-700/80' : 'text-gray-400'
+                      child.cash_effect === 'Setoff' || child.cash_effect === 'Inflow'
+                        ? 'text-emerald-700/80'
+                        : 'text-gray-400'
                     "
                   >
-                    · GL {{ child.cash_effect === 'Setoff' ? '−' : ''
+                    · GL
+                    {{
+                      child.cash_effect === 'Setoff' || child.cash_effect === 'Inflow' ? '−' : ''
                     }}{{ formatINR(child.amount) }}
                   </span>
                   <span>· {{ child.category }}</span>
@@ -280,6 +336,12 @@
                     class="rounded bg-emerald-50 px-1 font-medium text-emerald-800"
                   >
                     Setoff
+                  </span>
+                  <span
+                    v-else-if="child.cash_effect === 'Inflow'"
+                    class="rounded bg-emerald-50 px-1 font-medium text-emerald-800"
+                  >
+                    Inflow
                   </span>
                   <span v-if="child.status !== 'Planned'" class="text-gray-400"
                     >· {{ child.status }}</span
@@ -346,28 +408,18 @@
               </button>
             </div>
             <div class="flex min-w-0 flex-1 gap-2">
-              <div class="relative min-w-0 flex-1">
-                <FeatherIcon
-                  name="search"
-                  class="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400"
-                />
-                <input
-                  v-model="recQuery"
-                  type="search"
-                  placeholder="Search suggestions"
-                  class="w-full rounded-md border border-gray-200 py-1.5 pl-8 pr-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-gray-400 focus:outline-none"
-                />
-              </div>
-              <select
+              <FormControl
+                v-model="recQuery"
+                class="min-w-0 flex-1"
+                placeholder="Search suggestions"
+              />
+              <FormControl
                 v-model="recAccount"
-                class="max-w-[11rem] shrink-0 rounded-md border border-gray-200 bg-white px-2 py-1.5 text-sm text-gray-700"
+                class="max-w-[11rem] shrink-0"
+                type="select"
                 :title="recAccount === 'all' ? 'All accounts' : recAccount"
-              >
-                <option value="all">All accounts</option>
-                <option v-for="a in suggestionAccounts" :key="a" :value="a">
-                  {{ shortAccount(a) }}
-                </option>
-              </select>
+                :options="suggestionAccountOptions"
+              />
             </div>
           </div>
         </template>
@@ -387,11 +439,24 @@
       </EmptyState>
 
       <div
-        v-else-if="!recsLoaded || (recsLoading && !allRecs.length)"
+        v-else-if="recsLoading && !recsLoaded"
         class="px-4 py-10 text-center text-sm text-gray-500"
       >
         Loading suggestions…
       </div>
+
+      <EmptyState
+        v-else-if="recsError"
+        variant="books"
+        title="Could not load suggestions"
+        :description="recsError"
+      >
+        <template #actions>
+          <Button size="sm" variant="solid" :loading="recsLoading" @click="scheduleRecs(true)">
+            Retry
+          </Button>
+        </template>
+      </EmptyState>
 
       <EmptyState
         v-else-if="recsLoaded && recsMessage && !allRecs.length"
@@ -419,40 +484,113 @@
       </EmptyState>
 
       <ul v-else class="max-h-[70vh] divide-y divide-gray-100 overflow-y-auto">
-        <li
-          v-for="item in filteredRecs"
-          :key="`${item.source_doctype}:${item.source_name}:${item.account}`"
-          class="flex items-center gap-3 px-4 py-3 hover:bg-gray-50/80"
-        >
-          <div class="min-w-0 flex-1">
-            <div class="truncate text-sm font-medium text-gray-900">{{ item.title }}</div>
-            <div class="mt-0.5 truncate text-xs text-gray-500">
-              <span :class="isOverdue(item.due_date) ? 'font-medium text-red-600' : ''">
-                {{ dueLabel(item.due_date) }}
-              </span>
-              <span v-if="item.account"> · {{ shortAccount(item.account) }}</span>
-              <span v-if="item.category"> · {{ item.category }}</span>
-              <span v-if="item.cash_effect === 'Setoff'" class="font-medium text-emerald-800">
-                · Setoff
-              </span>
+        <li v-for="item in nestedFilteredRecs" :key="recommendationKey(item)" class="px-0">
+          <div class="flex items-center gap-3 px-4 py-3 hover:bg-gray-50/80">
+            <div class="flex h-6 w-6 shrink-0 items-center justify-center">
+              <button
+                v-if="item._childCount"
+                type="button"
+                class="flex h-6 w-6 items-center justify-center rounded text-gray-500 hover:bg-gray-100 hover:text-gray-800"
+                :aria-expanded="isRecGroupExpanded(item)"
+                :aria-label="isRecGroupExpanded(item) ? 'Collapse group' : 'Expand group'"
+                @click="toggleRecGroup(item)"
+              >
+                <FeatherIcon
+                  :name="isRecGroupExpanded(item) ? 'chevron-down' : 'chevron-right'"
+                  class="h-3.5 w-3.5"
+                />
+              </button>
+            </div>
+            <div class="min-w-0 flex-1">
+              <div class="flex flex-wrap items-center gap-2 truncate text-sm font-medium text-gray-900">
+                {{ item.title }}
+                <span
+                  v-if="item._childCount"
+                  class="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-gray-600"
+                >
+                  Group · {{ item._childCount + 1 }}
+                </span>
+              </div>
+              <div class="mt-0.5 truncate text-xs text-gray-500">
+                <span :class="isOverdue(item.due_date) ? 'font-medium text-red-600' : ''">
+                  {{ dueLabel(item.due_date) }}
+                </span>
+                <span v-if="item.account"> · {{ shortAccount(item.account) }}</span>
+                <span v-if="item.category"> · {{ item.category }}</span>
+                <span v-if="item.cash_effect === 'Setoff'" class="font-medium text-emerald-800">
+                  · Setoff
+                </span>
+              </div>
+            </div>
+            <div class="shrink-0 text-right">
+              <div
+                v-if="item._childCount && item._groupNet != null"
+                class="tabular-nums text-sm font-semibold text-gray-900"
+              >
+                {{ formatINR(item._groupNet) }}
+                <div class="text-[10px] font-medium uppercase tracking-wide text-gray-400">Net</div>
+              </div>
+              <div
+                v-else
+                class="tabular-nums text-sm font-semibold"
+                :class="item.cash_effect === 'Setoff' ? 'text-emerald-800' : 'text-gray-900'"
+              >
+                {{ item.cash_effect === 'Setoff' ? '−' : '' }}{{ formatINR(item.amount) }}
+              </div>
+              <button
+                type="button"
+                class="mt-1 text-xs font-medium text-gray-900 hover:underline disabled:opacity-50"
+                :disabled="accepting === recommendationKey(item)"
+                @click="openAccept(item)"
+              >
+                Add to plan
+              </button>
             </div>
           </div>
-          <div class="shrink-0 text-right">
-            <div
-              class="tabular-nums text-sm font-semibold"
-              :class="item.cash_effect === 'Setoff' ? 'text-emerald-800' : 'text-gray-900'"
+
+          <ul
+            v-if="item._childCount && isRecGroupExpanded(item)"
+            class="border-t border-gray-50 bg-gray-50/40"
+          >
+            <li
+              v-for="child in item._children"
+              :key="recommendationKey(child)"
+              class="flex items-center gap-3 border-l-2 border-gray-200 py-2.5 pl-10 pr-4 hover:bg-gray-50/80"
             >
-              {{ item.cash_effect === 'Setoff' ? '−' : '' }}{{ formatINR(item.amount) }}
-            </div>
-            <button
-              type="button"
-              class="mt-1 text-xs font-medium text-gray-900 hover:underline disabled:opacity-50"
-              :disabled="accepting === item.source_name"
-              @click="openAccept(item)"
-            >
-              Add to plan
-            </button>
-          </div>
+              <div class="min-w-0 flex-1">
+                <div class="truncate text-sm text-gray-800">
+                  <span class="mr-1 text-gray-400">↳</span>
+                  {{ child.title }}
+                </div>
+                <div class="mt-0.5 truncate text-xs text-gray-500">
+                  <span v-if="child.account">{{ shortAccount(child.account) }}</span>
+                  <span v-if="child.category"> · {{ child.category }}</span>
+                  <span
+                    v-if="child.cash_effect === 'Setoff'"
+                    class="font-medium text-emerald-800"
+                  >
+                    · Setoff
+                  </span>
+                </div>
+              </div>
+              <div class="shrink-0 text-right">
+                <div
+                  class="tabular-nums text-sm font-semibold"
+                  :class="child.cash_effect === 'Setoff' ? 'text-emerald-800' : 'text-gray-900'"
+                >
+                  {{ child.cash_effect === 'Setoff' ? '−' : '' }}{{ formatINR(child.amount) }}
+                </div>
+                <button
+                  type="button"
+                  class="mt-1 text-xs font-medium text-gray-900 hover:underline disabled:opacity-50"
+                  :disabled="accepting === recommendationKey(child)"
+                  @click="openAccept(child)"
+                >
+                  Add to plan
+                </button>
+              </div>
+            </li>
+          </ul>
         </li>
       </ul>
     </section>
@@ -461,17 +599,26 @@
     <Dialog v-model="show" :options="{ title: form.name ? 'Edit payment' : 'Add payment' }">
       <template #body-content>
         <div class="space-y-3">
-          <FormControl v-model="form.title" label="Title" />
           <FormControl
             v-model="form.category"
             type="select"
             label="Category"
             :options="categoryOptions"
+            @update:model-value="onCategoryChange"
+          />
+          <FormControl v-model="form.title" label="Title" />
+          <FormControl
+            v-model="form.cash_effect"
+            type="select"
+            label="Cash effect"
+            :options="cashEffectOptions"
+            :disabled="!!form.parent_payment || !!form.is_recurring || !!form.source_doctype"
+            @update:model-value="onCashEffectChange"
           />
           <FormControl
             v-model="form.due_date"
             type="date"
-            label="Due date"
+            :label="form.is_recurring ? 'Next due' : 'Due date'"
             :disabled="!!form.parent_payment"
           />
           <p
@@ -480,14 +627,51 @@
           >
             Due date follows the parent plan row. Change the parent’s due date to update this group.
           </p>
-          <CurrencyControl v-model="form.amount" label="Amount" />
+          <CurrencyControl
+            v-model="form.amount"
+            :label="
+              form.is_recurring
+                ? `Amount each ${frequencyUnit(form.frequency)}`
+                : 'Amount'
+            "
+          />
+          <Checkbox
+            v-if="
+              !form.source_doctype &&
+              !form.parent_payment &&
+              (form.cash_effect === 'Outflow' || form.is_recurring)
+            "
+            v-model="form.is_recurring"
+            label="Repeats (outgoing)"
+            @update:model-value="onRecurringToggle"
+          />
+          <FormControl
+            v-if="form.is_recurring"
+            v-model="form.frequency"
+            type="select"
+            label="Frequency"
+            :options="frequencyOptions"
+          />
+          <FormControl
+            v-if="form.is_recurring"
+            v-model="form.recurrence_end"
+            type="date"
+            label="Repeat until (optional)"
+          />
           <p
             v-if="form.cash_effect === 'Setoff'"
             class="rounded-md border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs text-emerald-900"
           >
             Setoff — reduces net commitments. Derived from the books account; not editable.
           </p>
+          <p
+            v-else-if="form.cash_effect === 'Inflow'"
+            class="rounded-md border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs text-emerald-900"
+          >
+            Inflow — expected receipt (FD maturity, loan proceeds) increases free cash.
+          </p>
           <FormControl
+            v-if="!form.is_recurring"
             v-model="form.status"
             type="select"
             label="Status"
@@ -552,6 +736,55 @@
         <Button variant="outline" @click="showAccept = false">Cancel</Button>
       </template>
     </Dialog>
+
+    <Dialog
+      v-model="showStaleFreeze"
+      :options="{ title: 'Live GL is lower than freeze date' }"
+    >
+      <template #body-content>
+        <div class="space-y-3">
+          <p class="text-sm text-gray-600">
+            Today’s books balance is lower than the frozen as-of balance (likely paid or
+            cleared). Unfreeze to pull live GL onto the plan. If live were higher, the freeze
+            date would just be refreshed with no prompt.
+          </p>
+          <ul class="divide-y divide-gray-100 rounded-md border border-gray-200">
+            <li
+              v-for="item in staleFreezeRows"
+              :key="item.name"
+              class="px-3 py-2.5 text-sm"
+            >
+              <div class="font-medium text-gray-900">{{ item.title || item.name }}</div>
+              <div class="mt-0.5 text-xs text-gray-500">
+                <template v-if="item.memberCount > 1">
+                  Frozen net {{ formatINR(item.freezeNet) }}
+                  <span v-if="item.balance_as_of">
+                    as of {{ formatDate(item.balance_as_of) }}</span
+                  >
+                  · Live net {{ formatINR(item.liveNet) }}
+                  · {{ item.memberCount }} accounts
+                </template>
+                <template v-else>
+                  Frozen {{ formatINR(item.amount) }}
+                  <span v-if="item.balance_as_of">
+                    as of {{ formatDate(item.balance_as_of) }}</span
+                  >
+                  · Live {{ formatINR(item.live_today_amount) }}
+                </template>
+              </div>
+            </li>
+          </ul>
+        </div>
+      </template>
+      <template #actions>
+        <Button variant="solid" :loading="unfreezingStale" @click="confirmUnfreezeStale">
+          Unfreeze &amp; update
+        </Button>
+        <Button variant="outline" :disabled="unfreezingStale" @click="dismissStaleFreeze">
+          Keep freeze
+        </Button>
+      </template>
+    </Dialog>
   </div>
 </template>
 
@@ -564,7 +797,13 @@ import PageHeader from '@/components/PageHeader.vue'
 import { useCompanyStore } from '@/stores/company'
 import { useTreasuryCacheStore } from '@/stores/treasuryCache'
 import { formatDate, formatINR } from '@/utils/format'
-import { groupMembers, nestPlanRows } from '@/utils/planNest'
+import {
+  groupMembers,
+  nestPlanRows,
+  nestRecommendationRows,
+  recommendationKey,
+  signedCashAmount,
+} from '@/utils/planNest'
 
 defineOptions({ name: 'Upcoming' })
 
@@ -587,6 +826,9 @@ const freezeForm = reactive({
   as_of: '',
   childCount: 0,
 })
+const showStaleFreeze = ref(false)
+const staleFreezeRows = ref([])
+const unfreezingStale = ref(false)
 let recsDeferTimer = null
 
 const plannedView = ref('active')
@@ -594,6 +836,8 @@ const categoryFilter = ref('all')
 const plannedQuery = ref('')
 /** Group parents expanded by name; default collapsed. */
 const expandedGroups = ref({})
+/** From-books nested groups expanded by recommendation key. */
+const expandedRecGroups = ref({})
 
 const suggestionView = ref('all')
 const recAccount = ref('all')
@@ -606,13 +850,25 @@ const categoryOptions = [
   'Customer',
   'Tax',
   'Loan',
+  'FD Maturity',
+  'Loan Proceeds',
   'Other',
 ].map((c) => ({ label: c, value: c }))
+const cashEffectOptions = [
+  { label: 'Outflow (pay)', value: 'Outflow' },
+  { label: 'Inflow (receive)', value: 'Inflow' },
+]
+const frequencyOptions = ['Weekly', 'Monthly', 'Quarterly'].map((f) => ({
+  label: f,
+  value: f,
+}))
 const statusOptions = ['Planned', 'Paid', 'Cancelled'].map((s) => ({ label: s, value: s }))
+
+const categoryValues = categoryOptions.map((c) => c.value)
 
 const empty = () => ({
   name: null,
-  title: '',
+  title: 'Other',
   category: 'Other',
   due_date: '',
   amount: 0,
@@ -620,12 +876,38 @@ const empty = () => ({
   status: 'Planned',
   notes: '',
   parent_payment: '',
+  source_doctype: '',
+  is_recurring: false,
+  frequency: 'Monthly',
+  recurrence_end: '',
 })
 const form = reactive(empty())
+
+function onCategoryChange(value) {
+  const next = value || form.category
+  // Keep title in sync until the user types a custom name
+  if (!form.title || categoryValues.includes(form.title)) {
+    form.title = next
+  }
+}
+
+function onRecurringToggle() {
+  if (form.is_recurring) {
+    form.cash_effect = 'Outflow'
+    if (!form.frequency) form.frequency = 'Monthly'
+  }
+}
+
+function onCashEffectChange(value) {
+  if (value !== 'Outflow' && form.is_recurring) {
+    form.is_recurring = false
+  }
+}
 
 const emptyAccept = () => ({
   source_doctype: '',
   source_name: '',
+  source_row: '',
   account: '',
   title: '',
   category: 'Other',
@@ -641,6 +923,7 @@ const recsPayload = computed(() => cache.getRecommendations(company.current))
 const recsLoaded = computed(() => recsPayload.value != null)
 const recsEnabled = computed(() => !!recsPayload.value?.enabled)
 const recsMessage = computed(() => recsPayload.value?.message || '')
+const recsError = computed(() => cache.getRecommendationsError(company.current))
 
 const todayStr = () => new Date().toISOString().slice(0, 10)
 
@@ -678,6 +961,21 @@ function daysUntil(due) {
 function isOverdue(due) {
   const d = daysUntil(due)
   return d !== null && d < 0
+}
+
+/** Recurring outside the forecast horizon expands to ₹0 reserved — still show per period. */
+function displayPlanAmount(row) {
+  if (row?.is_recurring && !(row.occurrence_count > 0) && row.period_amount != null) {
+    return row.period_amount
+  }
+  return row?.amount
+}
+
+function frequencyUnit(frequency) {
+  const f = (frequency || 'Monthly').toLowerCase()
+  if (f === 'weekly') return 'week'
+  if (f === 'quarterly') return 'quarter'
+  return 'month'
 }
 
 function dueLabel(due) {
@@ -745,6 +1043,11 @@ const plannedCategories = computed(() => {
   return [...set].sort()
 })
 
+const plannedCategoryOptions = computed(() => [
+  { label: 'Category', value: 'all' },
+  ...plannedCategories.value.map((c) => ({ label: c, value: c })),
+])
+
 const suggestionAccounts = computed(() => {
   // Prefer accounts that currently have open suggestions; fall back to configured list.
   const fromItems = allRecs.value.map((i) => i.account).filter(Boolean)
@@ -755,6 +1058,11 @@ const suggestionAccounts = computed(() => {
     shortAccount(a).localeCompare(shortAccount(b), undefined, { sensitivity: 'base' }),
   )
 })
+
+const suggestionAccountOptions = computed(() => [
+  { label: 'All accounts', value: 'all' },
+  ...suggestionAccounts.value.map((a) => ({ label: shortAccount(a), value: a })),
+])
 
 const plannedFiltersActive = computed(
   () =>
@@ -799,6 +1107,8 @@ const filteredRecs = computed(() => {
   })
 })
 
+const nestedFilteredRecs = computed(() => nestRecommendationRows(filteredRecs.value))
+
 watch(
   () => company.current,
   (c) => {
@@ -840,11 +1150,15 @@ function edit(row) {
     title: row.title,
     category: row.category,
     due_date: row.due_date,
-    amount: row.amount,
+    amount: row.period_amount != null ? row.period_amount : row.amount,
     cash_effect: row.cash_effect || 'Outflow',
     status: row.status,
     notes: row.notes || '',
     parent_payment: row.parent_payment || '',
+    source_doctype: row.source_doctype || '',
+    is_recurring: !!row.is_recurring,
+    frequency: row.frequency || 'Monthly',
+    recurrence_end: row.recurrence_end || '',
   })
   show.value = true
 }
@@ -856,6 +1170,101 @@ function syncToast(summary) {
   if (summary.cancelled) parts.push(`${summary.cancelled} cancelled`)
   if (summary.reopened) parts.push(`${summary.reopened} reopened`)
   return parts.length ? parts.join(' · ') : 'Plan already in sync with books'
+}
+
+/**
+ * Freeze-date amounts already refreshed. Prompt only when today's *net* reserve
+ * is lower than the freeze-date net (nested groups use signed Outflow / Setoff).
+ */
+function promptsFromFreezeCompare(rows) {
+  const compares = (rows || []).filter(
+    (r) => r?.name && r.balance_as_of && r.live_today_amount != null,
+  )
+  if (!compares.length) return []
+
+  const plan = cache.getPlan(company.current) || []
+  const byName = Object.fromEntries(plan.map((p) => [p.name, p]))
+
+  const enriched = compares.map((r) => {
+    const planRow = byName[r.name] || {}
+    return {
+      ...r,
+      cash_effect: r.cash_effect || planRow.cash_effect || 'Outflow',
+      parent_payment: r.parent_payment || planRow.parent_payment || '',
+      title: r.title || planRow.title || r.name,
+    }
+  })
+
+  const groups = new Map()
+  for (const r of enriched) {
+    const root = r.parent_payment || r.name
+    if (!groups.has(root)) groups.set(root, [])
+    groups.get(root).push(r)
+  }
+
+  const prompts = []
+  for (const [root, members] of groups) {
+    let freezeNet = 0
+    let liveNet = 0
+    for (const m of members) {
+      freezeNet += signedCashAmount(m.amount, m.cash_effect)
+      liveNet += signedCashAmount(m.live_today_amount, m.cash_effect)
+    }
+    // Live net reserve lower than freeze-date net → payment / clearance
+    if (!(liveNet < freezeNet - 0.01)) continue
+
+    const rootMeta = byName[root] || members.find((m) => m.name === root) || members[0]
+    const asOf = members.find((m) => m.balance_as_of)?.balance_as_of
+    prompts.push({
+      name: root,
+      title: rootMeta.title || root,
+      balance_as_of: asOf,
+      amount: members.length === 1 ? members[0].amount : freezeNet,
+      live_today_amount: members.length === 1 ? members[0].live_today_amount : liveNet,
+      freezeNet,
+      liveNet,
+      memberCount: members.length,
+    })
+  }
+  return prompts
+}
+
+function promptStaleFreeze(rows) {
+  const prompts = promptsFromFreezeCompare(rows)
+  if (!prompts.length) return false
+  staleFreezeRows.value = prompts
+  showStaleFreeze.value = true
+  return true
+}
+
+function dismissStaleFreeze() {
+  showStaleFreeze.value = false
+  staleFreezeRows.value = []
+}
+
+async function confirmUnfreezeStale() {
+  unfreezingStale.value = true
+  try {
+    for (const item of staleFreezeRows.value) {
+      await call('lyqd.api.spa.freeze_upcoming_balance', {
+        name: item.name,
+        clear: 1,
+      })
+    }
+    const n = staleFreezeRows.value.length
+    toast.success(
+      n > 1
+        ? `Unfrozen ${n} rows · live GL updated`
+        : 'Unfrozen · live GL updated',
+    )
+    dismissStaleFreeze()
+    cache.invalidatePlanRelated(company.current)
+    await reloadAll()
+  } catch (e) {
+    toast.error(e.messages?.[0] || e.message || 'Could not unfreeze')
+  } finally {
+    unfreezingStale.value = false
+  }
 }
 
 async function syncFromBooks() {
@@ -871,6 +1280,10 @@ async function syncFromBooks() {
     toast.success(syncToast(res.summary || {}))
     cache.invalidatePlanRelated(company.current)
     await reloadAll()
+    const prompted = promptStaleFreeze(res.freeze_compare || [])
+    if (prompted) {
+      /* dialog handles next step */
+    }
   } catch (e) {
     toast.error(e.messages?.[0] || e.message || 'Sync failed')
   } finally {
@@ -886,6 +1299,18 @@ function toggleGroup(name) {
   expandedGroups.value = {
     ...expandedGroups.value,
     [name]: !expandedGroups.value[name],
+  }
+}
+
+function isRecGroupExpanded(item) {
+  return !!expandedRecGroups.value[recommendationKey(item)]
+}
+
+function toggleRecGroup(item) {
+  const key = recommendationKey(item)
+  expandedRecGroups.value = {
+    ...expandedRecGroups.value,
+    [key]: !expandedRecGroups.value[key],
   }
 }
 
@@ -989,23 +1414,36 @@ async function refreshRow(row) {
     }
     let lastAction = 'unchanged'
     let asOfUsed = null
+    let anyAmountUpdated = false
+    const freezeCompare = []
     for (const m of targets) {
       const res = await call('lyqd.api.spa.refresh_upcoming_from_books', { name: m.name })
       lastAction = res.action || lastAction
       asOfUsed = res.as_of_used || asOfUsed
+      if (res.action === 'amount_updated') anyAmountUpdated = true
+      if (res.balance_as_of && res.live_today_amount != null) freezeCompare.push(res)
     }
     const n = targets.length
     const asOfNote =
       row.balance_as_of || asOfUsed
         ? ` (as of ${formatDate(row.balance_as_of || asOfUsed)})`
         : ''
-    toast.success(
-      n > 1
-        ? `Refreshed ${n} linked rows from books${asOfNote}`
-        : `${labels[lastAction] || `Synced (${lastAction})`}${asOfNote}`,
-    )
     cache.invalidatePlanRelated(company.current)
     await reloadAll()
+    const prompted = promptStaleFreeze(freezeCompare)
+    if (prompted) {
+      toast.success(
+        n > 1
+          ? `Refreshed ${n} rows at freeze date${asOfNote}`
+          : `Refreshed freeze date${asOfNote}`,
+      )
+    } else {
+      toast.success(
+        n > 1
+          ? `Refreshed ${n} linked rows from books${asOfNote}`
+          : `${labels[anyAmountUpdated ? 'amount_updated' : lastAction] || `Synced (${lastAction})`}${asOfNote}`,
+      )
+    }
   } catch (e) {
     toast.error(e.messages?.[0] || e.message || 'Refresh failed')
   } finally {
@@ -1017,6 +1455,7 @@ async function markPaid(row) {
   marking.value = row.name
   try {
     const targets = groupMembers(row).filter((m) => m.status === 'Planned')
+    let advanced = 0
     for (const m of targets) {
       await call('lyqd.api.spa.save_upcoming_payment', {
         doc: {
@@ -1025,13 +1464,25 @@ async function markPaid(row) {
           title: m.title,
           category: m.category,
           due_date: m.due_date,
-          amount: m.amount,
+          amount: m.period_amount != null ? m.period_amount : m.amount,
+          period_amount: m.period_amount != null ? m.period_amount : m.amount,
+          cash_effect: m.cash_effect,
+          is_recurring: m.is_recurring ? 1 : 0,
+          frequency: m.frequency,
+          recurrence_end: m.recurrence_end,
           status: 'Paid',
           notes: m.notes,
         },
       })
+      if (m.is_recurring) advanced += 1
     }
-    toast.success(targets.length > 1 ? `Marked ${targets.length} paid` : 'Marked paid')
+    toast.success(
+      advanced && targets.length === 1
+        ? `Recorded ${(row.frequency || 'Monthly').toLowerCase()} · next due advanced`
+        : targets.length > 1
+          ? `Marked ${targets.length} paid`
+          : 'Marked paid',
+    )
     cache.invalidatePlanRelated(company.current)
     await loadPlan(true)
   } catch (e) {
@@ -1045,6 +1496,7 @@ function openAccept(item) {
   Object.assign(acceptForm, {
     source_doctype: item.source_doctype,
     source_name: item.source_name,
+    source_row: item.source_row || '',
     account: item.account || '',
     title: item.title || '',
     category: item.category || 'Other',
@@ -1060,12 +1512,13 @@ async function confirmAccept() {
     toast.error('Due date is required')
     return
   }
-  accepting.value = acceptForm.source_name
+  accepting.value = recommendationKey(acceptForm)
   try {
     await call('lyqd.api.spa.accept_upcoming_recommendation', {
       company: company.current,
       source_doctype: acceptForm.source_doctype,
       source_name: acceptForm.source_name,
+      source_row: acceptForm.source_row || null,
       amount: acceptForm.amount,
       title: acceptForm.title,
       category: acceptForm.category,
@@ -1093,9 +1546,14 @@ async function save() {
         company: company.current,
         title: form.title,
         category: form.category,
+        cash_effect: form.is_recurring ? 'Outflow' : form.cash_effect || 'Outflow',
         due_date: form.due_date,
         amount: form.amount,
-        status: form.status || 'Planned',
+        period_amount: form.amount,
+        is_recurring: form.is_recurring ? 1 : 0,
+        frequency: form.is_recurring ? form.frequency || 'Monthly' : null,
+        recurrence_end: form.is_recurring ? form.recurrence_end || null : null,
+        status: form.is_recurring ? 'Planned' : form.status || 'Planned',
         notes: form.notes,
       },
     })

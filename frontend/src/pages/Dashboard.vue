@@ -178,8 +178,23 @@
                 Planned payments that reduce free cash.
               </p>
             </div>
-            <div class="flex shrink-0 flex-col items-end gap-1.5 sm:flex-row">
-              <Button size="sm" variant="solid" @click="openNew">Add</Button>
+            <div class="flex shrink-0 flex-col items-end gap-1.5 sm:flex-row sm:items-center">
+              <Button
+                v-if="filteredCommitments.length && !hasBanks"
+                size="sm"
+                variant="solid"
+                @click="$router.push({ path: '/cash', query: { add: '1' } })"
+              >
+                Add bank account
+              </Button>
+              <Button
+                v-if="filteredCommitments.length"
+                size="sm"
+                variant="solid"
+                @click="openNew"
+              >
+                Add payment
+              </Button>
               <button
                 type="button"
                 class="text-xs text-gray-500 hover:text-gray-800"
@@ -220,6 +235,23 @@
           </template>
         </EmptyState>
         <EmptyState
+          v-else-if="!filteredCommitments.length && !hasBanks"
+          variant="bank"
+          title="Add a bank account first"
+          description="Statement balances unlock free cash. Then add planned payments for the horizon."
+        >
+          <template #actions>
+            <Button
+              size="sm"
+              variant="solid"
+              @click="$router.push({ path: '/cash', query: { add: '1' } })"
+            >
+              Add bank account
+            </Button>
+            <Button size="sm" variant="outline" @click="openNew">Add payment</Button>
+          </template>
+        </EmptyState>
+        <EmptyState
           v-else-if="!filteredCommitments.length"
           variant="plan"
           title="No payments planned yet"
@@ -233,19 +265,21 @@
         <ul v-else class="divide-y divide-gray-100">
           <li v-for="u in nestedCommitments" :key="u.name">
             <div class="flex items-start gap-2 px-3 py-3 sm:px-4">
-              <button
-                v-if="u._childCount"
-                type="button"
-                class="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded text-gray-500 hover:bg-gray-100 hover:text-gray-800"
-                :aria-expanded="isGroupExpanded(u.name)"
-                :aria-label="isGroupExpanded(u.name) ? 'Collapse group' : 'Expand group'"
-                @click="toggleGroup(u.name)"
-              >
-                <FeatherIcon
-                  :name="isGroupExpanded(u.name) ? 'chevron-down' : 'chevron-right'"
-                  class="h-3.5 w-3.5"
-                />
-              </button>
+              <div class="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center">
+                <button
+                  v-if="u._childCount"
+                  type="button"
+                  class="flex h-6 w-6 items-center justify-center rounded text-gray-500 hover:bg-gray-100 hover:text-gray-800"
+                  :aria-expanded="isGroupExpanded(u.name)"
+                  :aria-label="isGroupExpanded(u.name) ? 'Collapse group' : 'Expand group'"
+                  @click="toggleGroup(u.name)"
+                >
+                  <FeatherIcon
+                    :name="isGroupExpanded(u.name) ? 'chevron-down' : 'chevron-right'"
+                    class="h-3.5 w-3.5"
+                  />
+                </button>
+              </div>
               <div class="min-w-0 flex-1">
                 <div class="flex items-start justify-between gap-3">
                   <div class="min-w-0">
@@ -257,13 +291,26 @@
                       <Badge v-else-if="isDueSoon(u)" theme="orange" variant="subtle"
                         >Due soon</Badge
                       >
+                      <Badge v-if="u.is_recurring" theme="blue" variant="subtle">
+                        {{ u.frequency || 'Monthly' }}
+                      </Badge>
+                      <Badge v-if="u.cash_effect === 'Inflow'" theme="green" variant="subtle"
+                        >Inflow</Badge
+                      >
                       <span v-if="u._childCount" class="font-medium text-gray-600"
                         >Group · {{ u._childCount + 1 }}</span
                       >
                       <span>{{ u.category }}</span>
                       <span>· Due {{ formatDate(u.due_date) }}</span>
                       <span
-                        v-if="u._childCount"
+                        v-if="u.is_recurring && u.occurrence_count > 1"
+                        class="tabular-nums text-[11px] text-gray-400"
+                      >
+                        · {{ formatINR(u.period_amount ?? u.amount / u.occurrence_count) }} ×
+                        {{ u.occurrence_count }}
+                      </span>
+                      <span
+                        v-else-if="u._childCount"
                         class="tabular-nums text-[11px] text-gray-400"
                       >
                         · GL {{ formatINR(u.amount) }}
@@ -279,8 +326,18 @@
                         Net
                       </div>
                     </template>
-                    <div v-else class="tabular-nums text-sm font-semibold text-gray-900">
-                      {{ formatINR(u.amount) }}
+                    <div
+                      v-else
+                      class="tabular-nums text-sm font-semibold"
+                      :class="
+                        u.cash_effect === 'Inflow' || u.cash_effect === 'Setoff'
+                          ? 'text-emerald-800'
+                          : 'text-gray-900'
+                      "
+                    >
+                      {{
+                        u.cash_effect === 'Inflow' || u.cash_effect === 'Setoff' ? '−' : ''
+                      }}{{ formatINR(u.amount) }}
                     </div>
                     <div class="mt-1.5 flex items-center justify-end gap-0.5">
                       <button
@@ -288,12 +345,20 @@
                         type="button"
                         class="inline-flex h-7 items-center gap-1 rounded px-1.5 text-xs font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900 disabled:opacity-50"
                         :disabled="marking === u.name"
-                        title="Mark paid"
-                        aria-label="Mark paid"
+                        :title="
+                          u.is_recurring
+                            ? `Record ${(u.frequency || 'Monthly').toLowerCase()} · advance next due`
+                            : 'Mark paid'
+                        "
+                        :aria-label="
+                          u.is_recurring
+                            ? `Record ${(u.frequency || 'Monthly').toLowerCase()}`
+                            : 'Mark paid'
+                        "
                         @click="markPaid(u)"
                       >
                         <FeatherIcon name="check" class="h-3.5 w-3.5" />
-                        <span>Paid</span>
+                        <span>{{ u.is_recurring ? u.frequency || 'Monthly' : 'Paid' }}</span>
                       </button>
                       <button
                         type="button"
@@ -342,17 +407,26 @@
     >
       <template #body-content>
         <div class="space-y-3">
-          <FormControl v-model="form.title" label="Title" />
           <FormControl
             v-model="form.category"
             type="select"
             label="Category"
             :options="categoryOptions"
+            @update:model-value="onCategoryChange"
+          />
+          <FormControl v-model="form.title" label="Title" />
+          <FormControl
+            v-model="form.cash_effect"
+            type="select"
+            label="Cash effect"
+            :options="cashEffectOptions"
+            :disabled="!!form.parent_payment || !!form.is_recurring"
+            @update:model-value="onCashEffectChange"
           />
           <FormControl
             v-model="form.due_date"
             type="date"
-            label="Due date"
+            :label="form.is_recurring ? 'Next due' : 'Due date'"
             :disabled="!!form.parent_payment"
           />
           <p
@@ -361,9 +435,39 @@
           >
             Due date follows the parent plan row.
           </p>
-          <CurrencyControl v-model="form.amount" label="Amount" />
+          <CurrencyControl
+            v-model="form.amount"
+            :label="
+              form.is_recurring
+                ? `Amount each ${frequencyUnit(form.frequency)}`
+                : 'Amount'
+            "
+          />
+          <Checkbox
+            v-if="
+              !form.source_doctype &&
+              !form.parent_payment &&
+              (form.cash_effect === 'Outflow' || form.is_recurring)
+            "
+            v-model="form.is_recurring"
+            label="Repeats (outgoing)"
+            @update:model-value="onRecurringToggle"
+          />
           <FormControl
-            v-if="form.name"
+            v-if="form.is_recurring"
+            v-model="form.frequency"
+            type="select"
+            label="Frequency"
+            :options="frequencyOptions"
+          />
+          <FormControl
+            v-if="form.is_recurring"
+            v-model="form.recurrence_end"
+            type="date"
+            label="Repeat until (optional)"
+          />
+          <FormControl
+            v-if="form.name && !form.is_recurring"
             v-model="form.status"
             type="select"
             label="Status"
@@ -414,24 +518,69 @@ const categoryOptions = [
   'Customer',
   'Tax',
   'Loan',
+  'FD Maturity',
+  'Loan Proceeds',
   'Other',
 ].map((c) => ({ label: c, value: c }))
+const cashEffectOptions = [
+  { label: 'Outflow (pay)', value: 'Outflow' },
+  { label: 'Inflow (receive)', value: 'Inflow' },
+]
+const frequencyOptions = ['Weekly', 'Monthly', 'Quarterly'].map((f) => ({
+  label: f,
+  value: f,
+}))
 const statusOptions = ['Planned', 'Paid', 'Cancelled'].map((s) => ({ label: s, value: s }))
+
+const categoryValues = categoryOptions.map((c) => c.value)
 
 const emptyForm = () => ({
   name: null,
-  title: '',
+  title: 'Other',
   category: 'Other',
+  cash_effect: 'Outflow',
   due_date: '',
   amount: 0,
   status: 'Planned',
   notes: '',
   parent_payment: '',
+  source_doctype: '',
+  is_recurring: false,
+  frequency: 'Monthly',
+  recurrence_end: '',
 })
 const form = reactive(emptyForm())
 
 const d = computed(() => cache.getMis(company.current, horizon.value))
 const loading = computed(() => cache.misLoading && !d.value)
+const hasBanks = computed(() => (d.value?.banks || []).length > 0)
+
+function frequencyUnit(frequency) {
+  const f = (frequency || 'Monthly').toLowerCase()
+  if (f === 'weekly') return 'week'
+  if (f === 'quarterly') return 'quarter'
+  return 'month'
+}
+
+function onCategoryChange(value) {
+  const next = value || form.category
+  if (!form.title || categoryValues.includes(form.title)) {
+    form.title = next
+  }
+}
+
+function onRecurringToggle() {
+  if (form.is_recurring) {
+    form.cash_effect = 'Outflow'
+    if (!form.frequency) form.frequency = 'Monthly'
+  }
+}
+
+function onCashEffectChange(value) {
+  if (value !== 'Outflow' && form.is_recurring) {
+    form.is_recurring = false
+  }
+}
 
 async function loadMis(force = false) {
   if (!company.current) return
@@ -531,11 +680,16 @@ function openEdit(u) {
     name: u.name,
     title: u.title,
     category: u.category || 'Other',
+    cash_effect: u.cash_effect || 'Outflow',
     parent_payment: u.parent_payment || '',
+    source_doctype: u.source_doctype || '',
     due_date: u.due_date,
-    amount: u.amount,
+    amount: u.period_amount != null ? u.period_amount : u.amount,
     status: u.status || 'Planned',
     notes: u.notes || '',
+    is_recurring: !!u.is_recurring,
+    frequency: u.frequency || 'Monthly',
+    recurrence_end: u.recurrence_end || '',
   })
   showNew.value = true
 }
@@ -544,6 +698,7 @@ async function markPaid(u) {
   marking.value = u.name
   try {
     const targets = groupMembers(u).filter((m) => m.status === 'Planned')
+    let advanced = 0
     for (const m of targets) {
       await call('lyqd.api.spa.save_upcoming_payment', {
         doc: {
@@ -552,16 +707,24 @@ async function markPaid(u) {
           title: m.title,
           category: m.category,
           due_date: m.due_date,
-          amount: m.amount,
+          amount: m.period_amount != null ? m.period_amount : m.amount,
+          period_amount: m.period_amount != null ? m.period_amount : m.amount,
+          cash_effect: m.cash_effect,
+          is_recurring: m.is_recurring ? 1 : 0,
+          frequency: m.frequency,
+          recurrence_end: m.recurrence_end,
           status: 'Paid',
           notes: m.notes,
         },
       })
+      if (m.is_recurring) advanced += 1
     }
     toast.success(
-      targets.length > 1
-        ? `Marked ${targets.length} paid`
-        : `Marked ${u.title} as paid`,
+      advanced && targets.length === 1
+        ? `Recorded ${(u.frequency || 'Monthly').toLowerCase()} · next due advanced`
+        : targets.length > 1
+          ? `Marked ${targets.length} paid`
+          : `Marked ${u.title} as paid`,
     )
     cache.invalidatePlanRelated(company.current)
     await loadMis(true)
@@ -581,9 +744,14 @@ async function savePayment() {
         company: company.current,
         title: form.title,
         category: form.category,
+        cash_effect: form.is_recurring ? 'Outflow' : form.cash_effect || 'Outflow',
         due_date: form.due_date,
         amount: form.amount,
-        status: form.name ? form.status : 'Planned',
+        period_amount: form.amount,
+        is_recurring: form.is_recurring ? 1 : 0,
+        frequency: form.is_recurring ? form.frequency || 'Monthly' : null,
+        recurrence_end: form.is_recurring ? form.recurrence_end || null : null,
+        status: form.name && !form.is_recurring ? form.status : 'Planned',
         notes: form.notes,
       },
     })

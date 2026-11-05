@@ -6,6 +6,8 @@ import {
   FrappeUI,
   Button,
   FormControl,
+  TextInput,
+  Checkbox,
   Dialog,
   Badge,
   FeatherIcon,
@@ -30,6 +32,8 @@ app.use(router)
 for (const [name, component] of Object.entries({
   Button,
   FormControl,
+  TextInput,
+  Checkbox,
   Dialog,
   Badge,
   FeatherIcon,

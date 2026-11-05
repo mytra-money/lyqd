@@ -3,6 +3,7 @@
 
 import frappe
 from frappe.model.document import Document
+from frappe.utils import cint
 
 
 class LYQDUpcomingPayment(Document):
@@ -16,17 +17,31 @@ class LYQDUpcomingPayment(Document):
 
 		amount: DF.Currency
 		balance_as_of: DF.Date | None
-		cash_effect: DF.Literal["Outflow", "Setoff"]
-		category: DF.Literal["Salary", "Import-LC", "Vendor", "Customer", "Tax", "Loan", "Other"]
+		cash_effect: DF.Literal["Outflow", "Setoff", "Inflow"]
+		category: DF.Literal[
+			"Salary",
+			"Import-LC",
+			"Vendor",
+			"Customer",
+			"Tax",
+			"Loan",
+			"FD Maturity",
+			"Loan Proceeds",
+			"Other",
+		]
 		company: DF.Link
 		due_date: DF.Date
+		frequency: DF.Literal["Weekly", "Monthly", "Quarterly"] | None
+		is_recurring: DF.Check
 		last_synced_on: DF.Datetime | None
 		naming_series: DF.Literal["LYQD-UP-.YYYY.-.#####"]
 		notes: DF.SmallText | None
 		parent_payment: DF.Link | None
+		recurrence_end: DF.Date | None
 		source_account: DF.Data | None
 		source_doctype: DF.Data | None
 		source_name: DF.Data | None
+		source_row: DF.Data | None
 		status: DF.Literal["Planned", "Paid", "Cancelled"]
 		title: DF.Data
 	# end: auto-generated types
@@ -34,6 +49,23 @@ class LYQDUpcomingPayment(Document):
 	def validate(self):
 		if self.amount is not None and self.amount < 0:
 			frappe.throw(frappe._("Amount cannot be negative"))
+		if not self.cash_effect:
+			self.cash_effect = "Outflow"
+		if cint(self.is_recurring):
+			if self.cash_effect != "Outflow":
+				frappe.throw(frappe._("Recurring series is only supported for Outflow payments."))
+			if self.parent_payment:
+				frappe.throw(frappe._("Nested plan rows cannot be recurring."))
+			if not self.frequency:
+				self.frequency = "Monthly"
+			if self.frequency not in ("Weekly", "Monthly", "Quarterly"):
+				frappe.throw(frappe._("Invalid recurrence frequency."))
+			if self.recurrence_end and self.due_date and self.recurrence_end < self.due_date:
+				frappe.throw(frappe._("Repeat Until cannot be before the next due date."))
+		else:
+			self.frequency = None
+			self.recurrence_end = None
+
 		if self.parent_payment:
 			if self.parent_payment == self.name:
 				frappe.throw(frappe._("Payment cannot be its own parent."))
@@ -49,15 +81,12 @@ class LYQDUpcomingPayment(Document):
 				frappe.throw(frappe._("Parent payment must belong to the same company."))
 			if parent.parent_payment:
 				frappe.throw(frappe._("Only one level of plan nesting is allowed."))
-			# Child due date locked to parent
 			if parent.due_date:
 				self.due_date = parent.due_date
-			# Child balance freeze follows parent when parent has one
 			if parent.balance_as_of:
 				self.balance_as_of = parent.balance_as_of
 
 	def on_update(self):
-		# Cascade due date / balance_as_of to Planned children when this row is a parent
 		if self.parent_payment:
 			return
 		children = frappe.get_all(

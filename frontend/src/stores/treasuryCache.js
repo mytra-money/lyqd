@@ -38,26 +38,44 @@ export const useTreasuryCacheStore = defineStore('treasuryCache', () => {
     recs: new Map(),
   }
 
+  function _bucketMap(bucket) {
+    return bucket === 'mis'
+      ? mis
+      : bucket === 'cash'
+        ? cash
+        : bucket === 'surplus'
+          ? surplus
+          : bucket === 'plan'
+            ? plan
+            : recommendations
+  }
+
   async function _fetch(bucket, key, loader, loadingRef, { silent = false } = {}) {
     if (inflight[bucket].has(key)) {
       return inflight[bucket].get(key)
     }
     if (!silent) loadingRef.value = true
     const promise = (async () => {
+      const target = _bucketMap(bucket)
       try {
         const data = await loader()
-        const target =
-          bucket === 'mis'
-            ? mis
-            : bucket === 'cash'
-              ? cash
-              : bucket === 'surplus'
-                ? surplus
-                : bucket === 'plan'
-                  ? plan
-                  : recommendations
-        target[key] = { data, fetchedAt: Date.now() }
+        target[key] = { data, fetchedAt: Date.now(), error: null }
         return data
+      } catch (e) {
+        // Keep a stub so the UI can leave "Loading…" and show the error
+        const msg =
+          e?.messages?.[0] || e?.message || e?.exc_type || 'Could not load from books'
+        const prev = target[key]?.data
+        target[key] = {
+          data:
+            prev ||
+            (bucket === 'recs'
+              ? { enabled: true, items: [], message: String(msg).slice(0, 400) }
+              : null),
+          fetchedAt: Date.now(),
+          error: String(msg).slice(0, 400),
+        }
+        throw e
       } finally {
         inflight[bucket].delete(key)
         if (!silent) {
@@ -87,6 +105,10 @@ export const useTreasuryCacheStore = defineStore('treasuryCache', () => {
 
   function getRecommendations(company) {
     return recommendations[cacheKey([company])]?.data || null
+  }
+
+  function getRecommendationsError(company) {
+    return recommendations[cacheKey([company])]?.error || null
   }
 
   /**
@@ -170,29 +192,7 @@ export const useTreasuryCacheStore = defineStore('treasuryCache', () => {
       'plan',
       key,
       async () => {
-        const rows = await call('frappe.client.get_list', {
-          doctype: 'LYQD Upcoming Payment',
-          fields: [
-            'name',
-            'title',
-            'category',
-            'due_date',
-            'amount',
-            'cash_effect',
-            'status',
-            'notes',
-            'company',
-            'source_doctype',
-            'source_name',
-            'source_account',
-            'parent_payment',
-            'balance_as_of',
-            'last_synced_on',
-          ],
-          filters: { company },
-          order_by: 'due_date asc',
-          limit_page_length: 500,
-        })
+        const rows = await call('lyqd.api.spa.list_upcoming_payments', { company })
         return rows || []
       },
       planLoading,
@@ -267,6 +267,7 @@ export const useTreasuryCacheStore = defineStore('treasuryCache', () => {
     getSurplus,
     getPlan,
     getRecommendations,
+    getRecommendationsError,
     ensureMis,
     ensureCash,
     ensureSurplus,

@@ -16,7 +16,7 @@ from dataclasses import asdict, dataclass, field
 from typing import Any
 
 import frappe
-from frappe.utils import add_days, flt, getdate, today
+from frappe.utils import add_days, cint, flt, getdate, today
 
 from lyqd.cash.bank_cash import get_eligible_bank_cash
 
@@ -136,9 +136,14 @@ def get_planned_upcoming_payments(
 
 	Includes overdue (due_date < as_of) — still Planned means cash is still committed.
 	Excludes Paid / Cancelled.
+
+	Recurring Outflow series: one doc; ``amount`` is expanded to the sum of cycles
+	that fall in the horizon (period amount kept as ``period_amount``).
 	"""
+	from lyqd.cash.recurring import expand_recurring_row
+
 	end = getdate(add_days(getdate(as_of), horizon_days))
-	return frappe.get_all(
+	rows = frappe.get_all(
 		"LYQD Upcoming Payment",
 		filters={
 			"company": company,
@@ -158,9 +163,20 @@ def get_planned_upcoming_payments(
 			"source_name",
 			"source_account",
 			"parent_payment",
+			"is_recurring",
+			"frequency",
+			"recurrence_end",
 		],
 		order_by="due_date asc, amount desc",
 	)
+	out: list[dict[str, Any]] = []
+	for row in rows:
+		expand_recurring_row(row, as_of, horizon_days)
+		# Drop recurring series with nothing left in this horizon (e.g. past end)
+		if cint(row.get("is_recurring")) and flt(row.get("amount")) <= 0.01:
+			continue
+		out.append(row)
+	return out
 
 
 def compute_surplus(
@@ -215,8 +231,9 @@ def compute_surplus(
 
 	def _signed_commitment(p: dict[str, Any]) -> float:
 		amt = flt(p.get("amount"))
-		# Setoff (Asset ITC etc.) reduces net cash reserved for commitments
-		if (p.get("cash_effect") or "Outflow") == "Setoff":
+		effect = p.get("cash_effect") or "Outflow"
+		# Setoff (asset ITC) and Inflow (FD / loan proceeds) increase free cash
+		if effect in ("Setoff", "Inflow"):
 			return -amt
 		return amt
 
@@ -253,21 +270,32 @@ def compute_surplus(
 		due_s = str(getdate(due)) if due else None
 		title = p.get("title") or p.get("name") or "Upcoming payment"
 		overdue = bool(due and getdate(due) < getdate(as_of))
-		is_setoff = (p.get("cash_effect") or "Outflow") == "Setoff"
+		effect = p.get("cash_effect") or "Outflow"
+		is_credit = effect in ("Setoff", "Inflow")
 		own_amt = flt(p.get("amount"))
-		own_sign = "+" if is_setoff else "-"
+		own_sign = "+" if is_credit else "-"
+		if effect == "Inflow":
+			kind_label = "Inflow"
+		elif effect == "Setoff":
+			kind_label = "Setoff"
+		else:
+			kind_label = "Reserve"
 		if signed_net is None:
 			disp_amt, disp_sign = own_amt, own_sign
 			gl_amount = gl_sign = None
 		else:
-			# reserved cash > 0 → outflow (−); net setoff credit → (+)
+			# reserved cash > 0 → outflow (−); net setoff/inflow credit → (+)
 			disp_amt = abs(flt(signed_net))
 			disp_sign = "-" if flt(signed_net) >= 0 else "+"
 			gl_amount, gl_sign = own_amt, own_sign
+		occ = cint(p.get("occurrence_count") or 0)
+		recurring_note = ""
+		if cint(p.get("is_recurring")) and occ > 1:
+			recurring_note = f"; recurring ×{occ}"
 		return ExplanationLine(
 			kind="upcoming",
 			label=(
-				f"{'Setoff' if is_setoff else 'Reserve'} — {title}"
+				f"{kind_label} — {title}"
 				+ (" (overdue)" if overdue else "")
 			),
 			amount=disp_amt,
@@ -277,7 +305,9 @@ def compute_surplus(
 			due_date=due_s,
 			category=p.get("category"),
 			notes=(p.get("notes") or "")
-			+ ("; setoff" if is_setoff else "")
+			+ ("; setoff" if effect == "Setoff" else "")
+			+ ("; inflow" if effect == "Inflow" else "")
+			+ recurring_note
 			+ ("; overdue" if overdue else ""),
 			gl_amount=gl_amount,
 			gl_sign=gl_sign,

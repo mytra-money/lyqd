@@ -34,22 +34,14 @@
         </div>
 
         <div class="space-y-3 rounded-md border border-gray-200 p-3">
-          <label class="flex items-center gap-3">
-            <input v-model="form.enabled" type="checkbox" class="rounded border-gray-300" />
-            <span class="text-sm font-medium text-gray-900">Enable ERPNext</span>
-          </label>
+          <Checkbox v-model="form.enabled" label="Enable ERPNext" />
 
-          <label
+          <Checkbox
             v-if="form.enabled && erpnextInstalled"
-            class="flex items-center gap-3 border-t border-gray-100 pt-3"
-          >
-            <input
-              v-model="form.is_erpnext_in_the_current_site"
-              type="checkbox"
-              class="rounded border-gray-300"
-            />
-            <span class="text-sm font-medium text-gray-900">ERPNext is on this site</span>
-          </label>
+            v-model="form.is_erpnext_in_the_current_site"
+            class="border-t border-gray-100 pt-3"
+            label="ERPNext is on this site"
+          />
 
           <div
             v-if="form.enabled && showRemoteFields"

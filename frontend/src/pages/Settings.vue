@@ -9,20 +9,15 @@
 
     <div class="flex flex-col gap-4 lg:flex-row">
       <nav class="flex shrink-0 gap-1 overflow-x-auto lg:w-48 lg:flex-col">
-        <button
+        <Button
           v-for="tab in tabs"
           :key="tab.id"
-          type="button"
-          class="rounded-md px-3 py-2 text-left text-sm"
-          :class="
-            activeTab === tab.id
-              ? 'bg-gray-900 text-white'
-              : 'text-gray-700 hover:bg-gray-100'
-          "
+          :variant="activeTab === tab.id ? 'solid' : 'ghost'"
+          class="justify-start"
           @click="activeTab = tab.id"
         >
           {{ tab.label }}
-        </button>
+        </Button>
       </nav>
 
       <div class="min-w-0 flex-1 space-y-4">
@@ -32,47 +27,33 @@
           class="space-y-4 rounded-md border border-gray-200 bg-white p-4"
         >
           <h2 class="text-base font-semibold text-gray-900">ERPNext</h2>
-          <label class="flex items-center gap-3">
-            <input v-model="erpForm.enabled" type="checkbox" class="rounded border-gray-300" />
-            <span class="text-sm font-medium text-gray-900">Enable ERPNext</span>
-          </label>
+          <Checkbox v-model="erpForm.enabled" label="Enable ERPNext" />
 
           <div v-if="erpForm.enabled" class="space-y-4 border-t border-gray-100 pt-4">
-            <label
+            <Checkbox
               v-if="company.erpnextInstalled"
-              class="flex items-center gap-3"
-            >
-              <input
-                v-model="erpForm.is_erpnext_in_the_current_site"
-                type="checkbox"
-                class="rounded border-gray-300"
-              />
-              <span class="text-sm font-medium text-gray-900">ERPNext is on this site</span>
-            </label>
+              v-model="erpForm.is_erpnext_in_the_current_site"
+              label="ERPNext is on this site"
+            />
 
             <div
               v-if="erpForm.source === 'This Site'"
               class="space-y-1 rounded-md border border-gray-200 bg-gray-50 p-3"
             >
-              <label class="mb-1 block text-xs font-medium text-gray-600">
-                Books company <span class="text-red-600">*</span>
-              </label>
-              <select
+              <FormControl
                 v-if="localCompanies.length"
                 v-model="erpForm.remote_company"
-                class="w-full rounded-md border border-gray-200 bg-white px-2 py-1.5 text-sm"
+                type="select"
+                label="Books company"
+                :options="[{ label: 'Select company…', value: '' }, ...localCompanyOptions]"
                 required
-              >
-                <option disabled value="">Select company…</option>
-                <option v-for="c in localCompanies" :key="c" :value="c">{{ c }}</option>
-              </select>
-              <input
+              />
+              <FormControl
                 v-else
                 v-model="erpForm.remote_company"
-                type="text"
+                label="Books company"
                 required
                 placeholder="Exact ERPNext Company name on this site"
-                class="w-full rounded-md border border-gray-200 bg-white px-2 py-1.5 text-sm"
               />
               <p class="mt-1 text-xs text-gray-500">
                 Required — binds this LYQD Company to one ERPNext Company on this site.
@@ -95,25 +76,20 @@
                 "
               />
               <div>
-                <label class="mb-1 block text-xs font-medium text-gray-600">
-                  Remote company <span class="text-red-600">*</span>
-                </label>
-                <select
+                <FormControl
                   v-if="remoteCompanies.length"
                   v-model="erpForm.remote_company"
-                  class="w-full rounded-md border border-gray-200 bg-white px-2 py-1.5 text-sm"
+                  type="select"
+                  label="Remote company"
+                  :options="[{ label: 'Select company…', value: '' }, ...remoteCompanyOptions]"
                   required
-                >
-                  <option disabled value="">Select company…</option>
-                  <option v-for="c in remoteCompanies" :key="c" :value="c">{{ c }}</option>
-                </select>
-                <input
+                />
+                <FormControl
                   v-else
                   v-model="erpForm.remote_company"
-                  type="text"
+                  label="Remote company"
                   required
                   placeholder="Exact ERPNext Company name"
-                  class="w-full rounded-md border border-gray-200 bg-white px-2 py-1.5 text-sm"
                 />
                 <p class="mt-1 text-xs text-gray-500">
                   Required — binds this LYQD Company to one ERPNext Company on the remote site.
@@ -155,34 +131,22 @@
                 </Button>
               </div>
 
-              <div class="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-                <div class="relative min-w-0 flex-1">
-                  <FeatherIcon
-                    name="search"
-                    class="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400"
-                  />
-                  <input
-                    v-model="accountSearch"
-                    type="search"
-                    placeholder="Search accounts"
-                    class="w-full rounded-md border border-gray-200 py-1.5 pl-8 pr-2 text-sm focus:border-gray-400 focus:outline-none"
-                  />
-                </div>
-                <select
+              <div class="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-end">
+                <FormControl
+                  v-model="accountSearch"
+                  class="min-w-0 flex-1"
+                  placeholder="Search accounts"
+                />
+                <FormControl
                   v-model="accountRootFilter"
-                  class="rounded-md border border-gray-200 bg-white px-2 py-1.5 text-sm text-gray-700"
-                >
-                  <option value="All">All roots</option>
-                  <option value="Liability">Liability</option>
-                  <option value="Asset">Asset (setoff)</option>
-                </select>
-                <select
+                  type="select"
+                  :options="accountRootOptions"
+                />
+                <FormControl
                   v-model="accountTypeFilter"
-                  class="rounded-md border border-gray-200 bg-white px-2 py-1.5 text-sm text-gray-700"
-                >
-                  <option value="All">All account types</option>
-                  <option v-for="t in accountTypeChoices" :key="t" :value="t">{{ t }}</option>
-                </select>
+                  type="select"
+                  :options="accountTypeFilterOptions"
+                />
               </div>
 
               <p v-if="accountOptions.data?.message" class="text-xs text-amber-800">
@@ -197,11 +161,9 @@
                   :class="acc._child ? 'ml-4 border-l border-gray-200 pl-3' : ''"
                 >
                   <div class="flex items-center gap-3">
-                    <input
-                      type="checkbox"
-                      class="rounded border-gray-300"
-                      :checked="isAccountSelected(acc.name)"
-                      @change="toggleAccount(acc.name)"
+                    <Checkbox
+                      :model-value="isAccountSelected(acc.name)"
+                      @update:model-value="(on) => setAccountSelected(acc.name, on)"
                     />
                     <div class="min-w-0 flex-1">
                       <div class="truncate text-sm text-gray-900">
@@ -217,39 +179,27 @@
                         {{ acc.root_type || '—' }} · {{ acc.account_type || '—' }} · {{ acc.name }}
                       </div>
                     </div>
-                    <label
+                    <Checkbox
                       v-if="isAccountSelected(acc.name)"
-                      class="flex shrink-0 items-center gap-1.5 text-xs text-gray-600"
+                      class="shrink-0"
+                      label="Refs"
                       title="Show voucher / reference lines instead of account balance only"
-                    >
-                      <input
-                        type="checkbox"
-                        class="rounded border-gray-300"
-                        :checked="accountRefs[acc.name] !== false"
-                        @change="setAccountRefs(acc.name, $event.target.checked)"
-                      />
-                      Refs
-                    </label>
+                      :model-value="accountRefs[acc.name] !== false"
+                      @update:model-value="(on) => setAccountRefs(acc.name, on)"
+                    />
                   </div>
                   <div
                     v-if="isAccountSelected(acc.name) && accountRefs[acc.name] === false"
                     class="ml-7 flex flex-wrap items-center gap-2"
                   >
-                    <label class="text-xs text-gray-500">Parent</label>
-                    <select
-                      class="max-w-full rounded border border-gray-200 bg-white px-1.5 py-0.5 text-xs text-gray-700"
-                      :value="accountParents[acc.name] || ''"
-                      @change="setAccountParent(acc.name, $event.target.value)"
-                    >
-                      <option value="">None (top-level)</option>
-                      <option
-                        v-for="p in refsOffParentOptions(acc.name)"
-                        :key="p"
-                        :value="p"
-                      >
-                        {{ accountLabel(p) }}
-                      </option>
-                    </select>
+                    <FormControl
+                      class="min-w-[12rem] flex-1"
+                      type="select"
+                      label="Parent"
+                      :model-value="accountParents[acc.name] || ''"
+                      :options="parentOptionsFor(acc.name)"
+                      @update:model-value="(v) => setAccountParent(acc.name, v)"
+                    />
                   </div>
                 </div>
                 <div
@@ -390,10 +340,7 @@
             type="number"
             label="Opening balance (optional)"
           />
-          <label class="flex items-center gap-2 text-sm">
-            <input v-model="addBank.is_default" type="checkbox" class="rounded" />
-            Set as default bank account
-          </label>
+          <Checkbox v-model="addBank.is_default" label="Set as default bank account" />
         </div>
       </template>
       <template #actions>
@@ -533,20 +480,28 @@ function refsOffParentOptions(exclude) {
   })
 }
 
-function toggleAccount(name) {
-  const idx = policyForm.selectedAccounts.indexOf(name)
-  if (idx >= 0) {
-    policyForm.selectedAccounts.splice(idx, 1)
-    delete accountRefs[name]
-    delete accountParents[name]
-    // Clear children pointing at this account
-    for (const k of Object.keys(accountParents)) {
-      if (accountParents[k] === name) delete accountParents[k]
-    }
-  } else {
+function setAccountSelected(name, on) {
+  const selected = policyForm.selectedAccounts.includes(name)
+  if (!!on === selected) return
+  if (on) {
     policyForm.selectedAccounts.push(name)
     accountRefs[name] = true
+    return
   }
+  const idx = policyForm.selectedAccounts.indexOf(name)
+  if (idx >= 0) policyForm.selectedAccounts.splice(idx, 1)
+  delete accountRefs[name]
+  delete accountParents[name]
+  for (const k of Object.keys(accountParents)) {
+    if (accountParents[k] === name) delete accountParents[k]
+  }
+}
+
+function parentOptionsFor(name) {
+  return [
+    { label: 'None (top-level)', value: '' },
+    ...refsOffParentOptions(name).map((p) => ({ label: accountLabel(p), value: p })),
+  ]
 }
 
 function setAccountRefs(name, on) {
@@ -659,6 +614,22 @@ const accountTypeChoices = computed(() => {
   return [...set].sort()
 })
 
+const localCompanyOptions = computed(() =>
+  localCompanies.value.map((c) => ({ label: c, value: c })),
+)
+const remoteCompanyOptions = computed(() =>
+  remoteCompanies.value.map((c) => ({ label: c, value: c })),
+)
+const accountRootOptions = [
+  { label: 'All roots', value: 'All' },
+  { label: 'Liability', value: 'Liability' },
+  { label: 'Asset (setoff)', value: 'Asset' },
+]
+const accountTypeFilterOptions = computed(() => [
+  { label: 'All account types', value: 'All' },
+  ...accountTypeChoices.value.map((t) => ({ label: t, value: t })),
+])
+
 function matchesAccountFilters(a) {
   const q = accountSearch.value.trim().toLowerCase()
   if (q) {
@@ -670,7 +641,7 @@ function matchesAccountFilters(a) {
   return true
 }
 
-/** Selected first (parents → children → flats), then unselected matches. */
+/** Selected first (parents → children → flats), then unselected — both honor search/filters. */
 const orderedAccounts = computed(() => {
   const byName = new Map(accountList.value.map((a) => [a.name, a]))
   // Ensure selected accounts appear even if not in current COA page
@@ -684,6 +655,9 @@ const orderedAccounts = computed(() => {
       })
     }
   }
+
+  const rowFor = (name) => byName.get(name) || { name, account_name: name }
+  const selectedMatches = (name) => matchesAccountFilters(rowFor(name))
 
   const selectedSet = new Set(policyForm.selectedAccounts)
   const selectedParents = []
@@ -712,18 +686,22 @@ const orderedAccounts = computed(() => {
 
   const out = []
   const pushSelected = (name, child = false) => {
-    const base = byName.get(name) || { name, account_name: name }
-    out.push({ ...base, _selected: true, _child: child })
+    out.push({ ...rowFor(name), _selected: true, _child: child })
   }
 
   for (const parent of selectedParents) {
+    const matchingChildren = (selectedChildrenByParent.get(parent) || []).filter(selectedMatches)
+    const parentOk = selectedMatches(parent)
+    // Keep parent visible when a nested child matches the search
+    if (!parentOk && !matchingChildren.length) continue
     pushSelected(parent, false)
-    for (const child of selectedChildrenByParent.get(parent) || []) {
+    for (const child of matchingChildren) {
       pushSelected(child, true)
     }
   }
   for (const name of selectedFlats) {
     if (selectedChildrenByParent.has(name)) continue
+    if (!selectedMatches(name)) continue
     pushSelected(name, false)
   }
 

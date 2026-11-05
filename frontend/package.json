@@ -13,7 +13,6 @@
     "feather-icons": "^4.29.2",
     "frappe-ui": "^0.1.278",
     "pinia": "^2.1.7",
-    "socket.io-client": "^4.7.5",
     "vue": "^3.4.31",
     "vue-router": "^4.4.0"
   },

@@ -69,11 +69,6 @@ def get_boot_data() -> dict:
 
 
 @frappe.whitelist()
-def get_companies() -> list[str]:
-	return get_user_companies()
-
-
-@frappe.whitelist()
 def list_local_erpnext_companies() -> dict:
 	"""ERPNext Company names on this site (for This Site books binding)."""
 	frappe.only_for(("System Manager", "LYQD Manager", "LYQD User"))
@@ -588,7 +583,7 @@ def get_recommendation_account_options(
 
 @frappe.whitelist()
 def get_upcoming_recommendations(company: str | None = None, horizon_days: int | None = None) -> dict:
-	from lyqd.cash.recommendations import get_liability_recommendations
+	from lyqd.recommendations import get_liability_recommendations
 
 	return get_liability_recommendations(
 		company=company or _default_company(),
@@ -607,8 +602,9 @@ def accept_upcoming_recommendation(
 	due_date: str | None = None,
 	account: str | None = None,
 	cash_effect: str | None = None,
+	source_row: str | None = None,
 ) -> dict:
-	from lyqd.cash.recommendations import accept_recommendation
+	from lyqd.recommendations import accept_recommendation
 
 	return accept_recommendation(
 		company=company or _default_company(),
@@ -620,13 +616,14 @@ def accept_upcoming_recommendation(
 		due_date=due_date,
 		account=account,
 		cash_effect=cash_effect,
+		source_row=source_row,
 	)
 
 
 @frappe.whitelist()
 def sync_upcoming_from_books(company: str | None = None) -> dict:
 	"""Refresh ERPNext-sourced plan rows: amounts, Paid when cleared, Account GL balances."""
-	from lyqd.cash.recommendations import sync_planned_from_books
+	from lyqd.recommendations import sync_planned_from_books
 
 	return sync_planned_from_books(company or _default_company())
 
@@ -645,7 +642,7 @@ def relink_commitment_parents(company: str | None = None) -> dict:
 @frappe.whitelist()
 def refresh_upcoming_from_books(name: str) -> dict:
 	"""Refresh a single Upcoming Payment from its ERPNext source."""
-	from lyqd.cash.recommendations import sync_upcoming_payment_from_books
+	from lyqd.recommendations import sync_upcoming_payment_from_books
 
 	return sync_upcoming_payment_from_books(name)
 
@@ -685,8 +682,60 @@ def freeze_upcoming_balance(
 
 
 @frappe.whitelist()
+def list_upcoming_payments(company: str | None = None) -> list[dict]:
+	"""SPA plan list: all statuses, with Planned recurring series expanded to the policy horizon."""
+	from frappe.utils import cint
+
+	from lyqd.cash.recurring import expand_recurring_row
+
+	company = company or _default_company()
+	as_of = today()
+	policy = get_policy(company)
+	horizon_days = parse_horizon_days(policy.get("default_forecast_horizon_days") or 7)
+	rows = frappe.get_all(
+		"LYQD Upcoming Payment",
+		filters={"company": company},
+		fields=[
+			"name",
+			"title",
+			"category",
+			"due_date",
+			"amount",
+			"cash_effect",
+			"status",
+			"notes",
+			"company",
+			"source_doctype",
+			"source_name",
+			"source_row",
+			"source_account",
+			"parent_payment",
+			"balance_as_of",
+			"last_synced_on",
+			"is_recurring",
+			"frequency",
+			"recurrence_end",
+		],
+		order_by="due_date asc",
+		limit_page_length=500,
+	)
+	for row in rows:
+		if row.get("status") == "Planned":
+			expand_recurring_row(row, as_of, horizon_days)
+		else:
+			row["period_amount"] = flt(row.get("amount"))
+			row["occurrence_count"] = 1
+			row["occurrence_dates"] = [str(row["due_date"])] if row.get("due_date") else []
+	return rows
+
+
+@frappe.whitelist()
 def save_upcoming_payment(doc: str | dict | None = None) -> dict:
 	"""Create or update an LYQD Upcoming Payment from the SPA (edit plan rows)."""
+	from frappe.utils import cint
+
+	from lyqd.cash.recurring import advance_recurring_after_paid
+
 	if isinstance(doc, str):
 		doc = frappe.parse_json(doc)
 	if not doc:
@@ -694,6 +743,7 @@ def save_upcoming_payment(doc: str | dict | None = None) -> dict:
 
 	company = doc.get("company") or _default_company()
 	name = doc.get("name")
+	allowed_effects = ("Outflow", "Setoff", "Inflow")
 
 	if name:
 		payment = frappe.get_doc("LYQD Upcoming Payment", name)
@@ -705,16 +755,40 @@ def save_upcoming_payment(doc: str | dict | None = None) -> dict:
 		# Child due dates follow parent — ignore SPA edits on nested rows
 		if not payment.parent_payment:
 			payment.due_date = doc.get("due_date") or payment.due_date
-		payment.amount = flt(doc.get("amount"))
-		# cash_effect is account-derived — SPA cannot flip Outflow ↔ Setoff on edit
+		# Prefer period_amount when SPA sends horizon-expanded amount by mistake
+		if doc.get("period_amount") is not None:
+			payment.amount = flt(doc.get("period_amount"))
+		else:
+			payment.amount = flt(doc.get("amount"))
+		# Manual rows may set Outflow/Inflow; books-sourced Setoff stays unless SPA sends effect
+		if not payment.source_doctype and doc.get("cash_effect") in allowed_effects:
+			payment.cash_effect = doc.get("cash_effect")
+		if "is_recurring" in doc:
+			payment.is_recurring = 1 if cint(doc.get("is_recurring")) else 0
+		if payment.is_recurring:
+			payment.frequency = doc.get("frequency") or payment.frequency or "Monthly"
+			payment.recurrence_end = doc.get("recurrence_end") or None
+			payment.cash_effect = "Outflow"
+		elif "is_recurring" in doc:
+			payment.frequency = None
+			payment.recurrence_end = None
 		if doc.get("status") in ("Planned", "Paid", "Cancelled"):
-			payment.status = doc.get("status")
+			want = doc.get("status")
+			# Recurring series: "Paid" advances next due and stays Planned (like GL grain)
+			if want == "Paid" and cint(payment.is_recurring):
+				advance_recurring_after_paid(payment)
+			else:
+				payment.status = want
 		payment.notes = doc.get("notes")
 		if not payment.title:
 			frappe.throw(_("Title is required"))
 		payment.save()
 		return payment.as_dict()
 
+	cash_effect = doc.get("cash_effect") if doc.get("cash_effect") in allowed_effects else "Outflow"
+	is_recurring = 1 if cint(doc.get("is_recurring")) else 0
+	if is_recurring:
+		cash_effect = "Outflow"
 	payment = frappe.get_doc(
 		{
 			"doctype": "LYQD Upcoming Payment",
@@ -722,9 +796,11 @@ def save_upcoming_payment(doc: str | dict | None = None) -> dict:
 			"title": (doc.get("title") or "").strip(),
 			"category": doc.get("category") or "Other",
 			"due_date": doc.get("due_date") or today(),
-			"amount": flt(doc.get("amount")),
-			# Manual plan rows are always cash outflows; setoff comes only from books accept
-			"cash_effect": "Outflow",
+			"amount": flt(doc.get("period_amount") if doc.get("period_amount") is not None else doc.get("amount")),
+			"cash_effect": cash_effect,
+			"is_recurring": is_recurring,
+			"frequency": (doc.get("frequency") or "Monthly") if is_recurring else None,
+			"recurrence_end": doc.get("recurrence_end") if is_recurring else None,
 			"status": doc.get("status") if doc.get("status") in ("Planned", "Paid", "Cancelled") else "Planned",
 			"notes": doc.get("notes"),
 		}
@@ -819,15 +895,6 @@ def save_erpnext_settings(doc: str | dict) -> dict:
 			frappe.log_error(title="LYQD bank mirror on save settings")
 			payload["bank_mirror_error"] = str(e)
 	return payload
-
-
-@frappe.whitelist()
-def test_remote_erpnext_connection(company: str | None = None) -> dict:
-	"""Ping saved Other Site credentials for a LYQD Company."""
-	frappe.only_for(("System Manager", "LYQD Manager"))
-	from lyqd.recommendations.remote import test_remote_connection
-
-	return test_remote_connection(company or _default_company())
 
 
 @frappe.whitelist()

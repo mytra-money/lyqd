@@ -316,7 +316,12 @@ def sync_nested_account_plans(company: str) -> dict[str, Any]:
 
 
 
-def _already_accepted(company: str) -> set[tuple[str, str]]:
+def _already_accepted(company: str) -> set[tuple[str, str, str]]:
+	"""Accepted keys: (source_doctype, source_name, source_row).
+
+	``source_row`` is empty for whole-voucher / Account-grain rows, or the
+	Payment Schedule child name for invoice installments.
+	"""
 	rows = frappe.get_all(
 		"LYQD Upcoming Payment",
 		filters={
@@ -324,9 +329,184 @@ def _already_accepted(company: str) -> set[tuple[str, str]]:
 			"status": ("in", ["Planned", "Paid"]),
 			"source_doctype": ("is", "set"),
 		},
-		fields=["source_doctype", "source_name"],
+		fields=["source_doctype", "source_name", "source_row"],
 	)
-	return {(r.source_doctype, r.source_name) for r in rows if r.source_doctype and r.source_name}
+	out: set[tuple[str, str, str]] = set()
+	for r in rows:
+		if not r.source_doctype or not r.source_name:
+			continue
+		out.add((r.source_doctype, r.source_name, (r.source_row or "").strip()))
+	return out
+
+
+def _payment_schedule_rows(
+	voucher_type: str,
+	voucher_no: str,
+	*,
+	lyqd_company: str | None = None,
+) -> list[dict[str, Any]]:
+	"""Payment Schedule child rows for a PI/SI (local or remote books)."""
+	fields = [
+		"name",
+		"due_date",
+		"payment_term",
+		"description",
+		"payment_amount",
+		"outstanding",
+		"paid_amount",
+		"base_payment_amount",
+		"base_outstanding",
+		"idx",
+	]
+	if lyqd_company and is_remote_source(lyqd_company):
+		from lyqd.recommendations.remote import get_remote_client
+
+		client, _books = get_remote_client(lyqd_company)
+		# Child DocType get_list often PermissionError on remote sites — read from parent.
+		try:
+			doc = client.get_doc(voucher_type, voucher_no) or {}
+			rows = doc.get("payment_schedule") or []
+			# Normalize to field dicts (get_doc returns full child rows)
+			return [
+				{k: r.get(k) for k in fields}
+				for r in rows
+				if isinstance(r, dict)
+			]
+		except Exception:
+			frappe.log_error(title="LYQD remote payment schedule")
+			return []
+	if not frappe.db.exists("DocType", "Payment Schedule"):
+		return []
+	return frappe.get_all(
+		"Payment Schedule",
+		filters={
+			"parenttype": voucher_type,
+			"parent": voucher_no,
+			"parentfield": "payment_schedule",
+		},
+		fields=fields,
+		order_by="idx asc",
+	)
+
+
+def expand_payment_schedule_item(
+	item: dict[str, Any],
+	*,
+	lyqd_company: str | None = None,
+) -> list[dict[str, Any]]:
+	"""Split a PI/SI recommendation into one row per open Payment Schedule installment.
+
+	Single-schedule (or no schedule) invoices stay one row. Multi-due invoices become
+	separate suggestions with ``source_row`` = Payment Schedule child name.
+	"""
+	voucher_type = item.get("source_doctype")
+	voucher_no = item.get("source_name")
+	if voucher_type not in ("Purchase Invoice", "Sales Invoice") or not voucher_no:
+		return [item]
+	if item.get("source_row"):
+		return [item]
+
+	sched = _payment_schedule_rows(voucher_type, voucher_no, lyqd_company=lyqd_company)
+	if len(sched) <= 1:
+		return [item]
+
+	invoice_outstanding = flt(item.get("amount"))
+	if invoice_outstanding <= 0.01:
+		return []
+
+	parts: list[dict[str, Any]] = []
+	for row in sched:
+		base_out = flt(row.get("base_outstanding"))
+		party_out = flt(row.get("outstanding"))
+		base_pay = flt(row.get("base_payment_amount")) or flt(row.get("payment_amount"))
+		paid = flt(row.get("paid_amount"))
+		# Prefer company-currency outstanding when present
+		amt = base_out if base_out > 0.01 else party_out
+		if amt <= 0.01:
+			# Untracked schedule: fall back to payment amount unless clearly paid
+			if paid >= flt(row.get("payment_amount")) - 0.01 and paid > 0:
+				continue
+			amt = base_pay
+		if amt <= 0.01:
+			continue
+		due = row.get("due_date")
+		term = (row.get("payment_term") or row.get("description") or "").strip()
+		suffix = term or (str(due) if due else "installment")
+		title_base = item.get("title") or f"{voucher_type} {voucher_no}"
+		# Avoid duplicating installment label if title already long
+		title = f"{title_base} · {suffix}"
+		parts.append(
+			{
+				**item,
+				"amount": amt,
+				"due_date": str(due) if due else item.get("due_date"),
+				"source_row": row.get("name"),
+				"title": title[:140],
+				"grain": "voucher_installment",
+				"payment_term": term or None,
+			}
+		)
+
+	if not parts:
+		return [item]
+
+	total = sum(flt(p["amount"]) for p in parts)
+	if total > 0.01 and abs(total - invoice_outstanding) > 0.05:
+		factor = invoice_outstanding / total
+		for p in parts:
+			p["amount"] = flt(p["amount"] * factor, 2)
+		parts = [p for p in parts if flt(p["amount"]) > 0.01]
+
+	return parts or [item]
+
+
+def _installment_outstanding(
+	voucher_type: str,
+	voucher_no: str,
+	source_row: str,
+	invoice_outstanding: float,
+	*,
+	lyqd_company: str | None = None,
+) -> dict[str, Any]:
+	"""Outstanding for one Payment Schedule row, clamped to invoice outstanding."""
+	sched = _payment_schedule_rows(voucher_type, voucher_no, lyqd_company=lyqd_company)
+	row = next((r for r in sched if r.get("name") == source_row), None)
+	if not row:
+		return {
+			"ok": True,
+			"grain": "voucher_installment",
+			"amount": 0.0,
+			"cleared": True,
+			"missing": True,
+			"due_date": None,
+		}
+	base_out = flt(row.get("base_outstanding"))
+	party_out = flt(row.get("outstanding"))
+	amt = base_out if base_out > 0.01 else party_out
+	if amt <= 0.01:
+		paid = flt(row.get("paid_amount"))
+		pay = flt(row.get("payment_amount"))
+		if paid >= pay - 0.01 and paid > 0:
+			amt = 0.0
+		else:
+			# Scale this row's share of remaining invoice outstanding
+			base_pay = flt(row.get("base_payment_amount")) or pay
+			total_pay = sum(
+				flt(r.get("base_payment_amount")) or flt(r.get("payment_amount")) for r in sched
+			)
+			if total_pay > 0.01 and invoice_outstanding > 0.01:
+				amt = flt(invoice_outstanding * (base_pay / total_pay), 2)
+			else:
+				amt = 0.0
+	amt = min(amt, max(flt(invoice_outstanding), 0.0))
+	return {
+		"ok": True,
+		"grain": "voucher_installment",
+		"amount": amt,
+		"cleared": amt <= 0.01,
+		"due_date": row.get("due_date"),
+		"source_row": source_row,
+	}
 
 
 def _classify_accounts(account_names: list[str]) -> tuple[list[str], list[str], list[str]]:
@@ -810,15 +990,40 @@ def get_liability_recommendations(
 		}
 
 	accepted = _already_accepted(company)
+	parent_map = _parent_account_map(company)
 	filtered = []
-	for item in items:
-		key = (item["source_doctype"], item["source_name"])
-		if key in accepted:
-			continue
-		if item.get("due_date"):
-			if getdate(item["due_date"]) > horizon_end:
+	for raw in items:
+		# PI/SI with multiple due dates → one suggestion per open installment.
+		# Never let schedule expand kill the whole From-books column.
+		try:
+			expanded = expand_payment_schedule_item(raw, lyqd_company=company)
+		except Exception:
+			frappe.log_error(title="LYQD expand payment schedule")
+			expanded = [raw]
+		for item in expanded:
+			key = (
+				item.get("source_doctype") or "",
+				item.get("source_name") or "",
+				(item.get("source_row") or "").strip(),
+			)
+			if key in accepted:
 				continue
-		filtered.append(item)
+			# Legacy whole-invoice accept should hide all installments of that voucher
+			if (
+				item.get("source_row")
+				and (item.get("source_doctype"), item.get("source_name"), "") in accepted
+			):
+				continue
+			if item.get("due_date"):
+				if getdate(item["due_date"]) > horizon_end:
+					continue
+			# Nest Account-grain suggestions the same way as the plan (Settings parent_account)
+			if item.get("source_doctype") == "Account":
+				acc = item.get("source_name") or item.get("account")
+				item["parent_account"] = parent_map.get(acc) or None
+			else:
+				item["parent_account"] = None
+			filtered.append(item)
 
 	filtered.sort(key=lambda x: (x.get("due_date") or "9999", -flt(x.get("amount"))))
 
@@ -849,22 +1054,27 @@ def accept_recommendation(
 	due_date: str | None = None,
 	account: str | None = None,
 	cash_effect: str | None = None,
+	source_row: str | None = None,
 ) -> dict[str, Any]:
 	"""Create a Planned LYQD Upcoming Payment from a recommendation row."""
 	if not is_erpnext_integration_enabled(company):
 		frappe.throw(frappe._("Enable ERPNext integration before accepting recommendations"))
 
-	existing = frappe.db.exists(
+	source_row = (source_row or "").strip() or None
+	want_row = source_row or ""
+	for existing_name, existing_row in frappe.get_all(
 		"LYQD Upcoming Payment",
-		{
+		filters={
 			"company": company,
 			"source_doctype": source_doctype,
 			"source_name": source_name,
 			"status": ("in", ["Planned", "Paid"]),
 		},
-	)
-	if existing:
-		return frappe.get_doc("LYQD Upcoming Payment", existing).as_dict()
+		fields=["name", "source_row"],
+		as_list=True,
+	):
+		if (existing_row or "") == want_row:
+			return frappe.get_doc("LYQD Upcoming Payment", existing_name).as_dict()
 
 	# Resolve amount/title if caller only sent keys
 	if amount is None or not title:
@@ -873,7 +1083,9 @@ def accept_recommendation(
 			(
 				i
 				for i in bundle.get("items") or []
-				if i.get("source_doctype") == source_doctype and i.get("source_name") == source_name
+				if i.get("source_doctype") == source_doctype
+				and i.get("source_name") == source_name
+				and (i.get("source_row") or "") == (source_row or "")
 			),
 			None,
 		)
@@ -885,6 +1097,7 @@ def accept_recommendation(
 		due_date = due_date or match.get("due_date")
 		account = account or match.get("account")
 		cash_effect = cash_effect or match.get("cash_effect")
+		source_row = source_row or match.get("source_row")
 
 	if cash_effect not in ("Outflow", "Setoff"):
 		# Infer from account root when missing
@@ -923,6 +1136,7 @@ def accept_recommendation(
 			+ (f" · {account}" if account else ""),
 			"source_doctype": source_doctype,
 			"source_name": source_name,
+			"source_row": source_row,
 			"source_account": account,
 			"parent_payment": parent_payment,
 			"last_synced_on": frappe.utils.now_datetime(),
@@ -1013,9 +1227,11 @@ def resolve_books_outstanding(
 	source_name: str | None,
 	account: str | None = None,
 	as_of: str | None = None,
+	source_row: str | None = None,
 ) -> dict[str, Any]:
 	"""Live outstanding for a plan row source. cleared=True means mark Paid / zero reserve."""
 	as_of = str(getdate(as_of or today()))
+	source_row = (source_row or "").strip() or None
 	if not source_doctype or not source_name:
 		return {"ok": False, "reason": "manual_row"}
 
@@ -1027,13 +1243,31 @@ def resolve_books_outstanding(
 				source_name, as_of=as_of, lyqd_company=company
 			)
 		if source_doctype == "Purchase Invoice":
-			return remote_src.remote_purchase_invoice_outstanding(
+			live = remote_src.remote_purchase_invoice_outstanding(
 				source_name, lyqd_company=company
 			)
+			if source_row and live.get("ok"):
+				return _installment_outstanding(
+					source_doctype,
+					source_name,
+					source_row,
+					flt(live.get("amount")),
+					lyqd_company=company,
+				)
+			return live
 		if source_doctype == "Sales Invoice":
-			return remote_src.remote_sales_invoice_outstanding(
+			live = remote_src.remote_sales_invoice_outstanding(
 				source_name, lyqd_company=company
 			)
+			if source_row and live.get("ok"):
+				return _installment_outstanding(
+					source_doctype,
+					source_name,
+					source_row,
+					flt(live.get("amount")),
+					lyqd_company=company,
+				)
+			return live
 		# Purchase Receipt (+ other vouchers): remote GL; billed PRs cleared inside helper
 		return remote_src.remote_gl_voucher_outstanding(
 			source_doctype,
@@ -1108,6 +1342,14 @@ def resolve_books_outstanding(
 				or company_ccy
 			).upper()
 		amt = invoice_outstanding_in_company_currency(inv, company_ccy, as_of=as_of)
+		if source_row:
+			return _installment_outstanding(
+				source_doctype,
+				source_name,
+				source_row,
+				amt,
+				lyqd_company=None,
+			)
 		return {
 			"ok": True,
 			"grain": "voucher",
@@ -1192,6 +1434,7 @@ def sync_upcoming_payment_from_books(name: str, as_of: str | None = None) -> dic
 		doc.source_name,
 		account=getattr(doc, "source_account", None),
 		as_of=sync_as_of,
+		source_row=getattr(doc, "source_row", None),
 	)
 	if not live.get("ok"):
 		return {"name": name, "action": "skipped", "reason": live.get("reason") or "no_source"}
@@ -1252,8 +1495,32 @@ def sync_upcoming_payment_from_books(name: str, as_of: str | None = None) -> dic
 	doc.last_synced_on = frappe.utils.now_datetime()
 	doc.save(ignore_permissions=True)
 
+	# Frozen Account-grain: always refresh GL as of balance_as_of (above).
+	# Compare today's GL: offer unfreeze only when live is *lower* than the
+	# freeze-date amount (payment / clearance). If live is higher or equal,
+	# keep the freeze — Oct 31 (etc.) amount was already updated if it drifted.
+	suggest_unfreeze = False
+	live_today_amount = None
+	if (
+		grain == "account"
+		and getattr(doc, "balance_as_of", None)
+		and doc.status == "Planned"
+	):
+		live_today = resolve_books_outstanding(
+			doc.company,
+			doc.source_doctype,
+			doc.source_name,
+			account=getattr(doc, "source_account", None),
+			as_of=None,
+		)
+		if live_today.get("ok") and not live_today.get("cancelled") and not live_today.get("missing"):
+			live_today_amount = max(flt(live_today.get("amount")), 0.0)
+			if live_today_amount < flt(doc.amount) - 0.01:
+				suggest_unfreeze = True
+
 	return {
 		"name": name,
+		"title": doc.title,
 		"action": action,
 		"status": doc.status,
 		"amount": flt(doc.amount),
@@ -1261,8 +1528,12 @@ def sync_upcoming_payment_from_books(name: str, as_of: str | None = None) -> dic
 		"previous_status": prev_status,
 		"live_amount": flt(live.get("amount")),
 		"grain": grain,
+		"cash_effect": doc.cash_effect or "Outflow",
+		"parent_payment": doc.parent_payment,
 		"balance_as_of": str(doc.balance_as_of) if getattr(doc, "balance_as_of", None) else None,
 		"as_of_used": str(getdate(sync_as_of)) if sync_as_of else str(getdate(today())),
+		"suggest_unfreeze": suggest_unfreeze,
+		"live_today_amount": live_today_amount,
 	}
 
 
@@ -1353,6 +1624,12 @@ def sync_planned_from_books(company: str) -> dict[str, Any]:
 
 	nested = sync_nested_account_plans(company)
 
+	# SPA aggregates nested groups by net effect; pass all frozen+live comparisons.
+	freeze_compare = [
+		r
+		for r in results
+		if r.get("balance_as_of") and r.get("live_today_amount") is not None
+	]
 	summary = {
 		"marked_paid": sum(1 for r in results if r.get("action") == "marked_paid"),
 		"amount_updated": sum(1 for r in results if r.get("action") == "amount_updated"),
@@ -1370,4 +1647,5 @@ def sync_planned_from_books(company: str) -> dict[str, Any]:
 		"synced": len(results),
 		"summary": summary,
 		"results": results,
+		"freeze_compare": freeze_compare,
 	}

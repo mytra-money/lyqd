@@ -1,9 +1,13 @@
 /**
- * Signed cash amount for free-cash math (Setoff reduces).
+ * Signed cash amount for free-cash math (Setoff / Inflow reduce reserve).
  */
+export function signedCashAmount(amount, cashEffect) {
+  const amt = Number(amount || 0)
+  return (cashEffect || 'Outflow') === 'Outflow' ? amt : -amt
+}
+
 function signedAmount(row) {
-  const amt = Number(row.amount || 0)
-  return (row.cash_effect || 'Outflow') === 'Setoff' ? -amt : amt
+  return signedCashAmount(row.amount, row.cash_effect)
 }
 
 /**
@@ -55,4 +59,64 @@ export function groupMembers(row) {
   if (!row) return []
   const kids = row._children || []
   return [row, ...kids]
+}
+
+/**
+ * Nest "From books" suggestion rows using Settings ``parent_account``
+ * (Account-grain only). Voucher rows stay roots.
+ */
+export function nestRecommendationRows(rows) {
+  const list = rows || []
+  const byAccount = new Map()
+  for (const row of list) {
+    if (row.source_doctype === 'Account' && row.source_name) {
+      byAccount.set(row.source_name, row)
+    }
+  }
+
+  const childrenOf = new Map()
+  const roots = []
+
+  for (const row of list) {
+    const parentAcc = row.parent_account
+    if (
+      row.source_doctype === 'Account' &&
+      parentAcc &&
+      byAccount.has(parentAcc) &&
+      parentAcc !== row.source_name
+    ) {
+      if (!childrenOf.has(parentAcc)) childrenOf.set(parentAcc, [])
+      childrenOf.get(parentAcc).push(row)
+    } else {
+      roots.push(row)
+    }
+  }
+
+  return roots.map((root) => {
+    const kids =
+      root.source_doctype === 'Account' ? childrenOf.get(root.source_name) || [] : []
+    const groupNet =
+      kids.length > 0
+        ? signedAmount(root) + kids.reduce((s, c) => s + signedAmount(c), 0)
+        : null
+    return {
+      ...root,
+      _child: false,
+      _childCount: kids.length,
+      _groupNet: groupNet,
+      _children: kids.map((child) => ({
+        ...child,
+        _child: true,
+        _childCount: 0,
+        _groupNet: null,
+        _children: [],
+      })),
+    }
+  })
+}
+
+/** Stable list key for a recommendation / nested child. */
+export function recommendationKey(item) {
+  if (!item) return ''
+  return `${item.source_doctype || ''}:${item.source_name || ''}:${item.source_row || ''}:${item.account || ''}`
 }

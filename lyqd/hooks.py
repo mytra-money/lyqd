@@ -19,8 +19,6 @@ add_to_apps_screen = [
 	}
 ]
 
-app_include_css = "/assets/lyqd/css/lyqd.css"
-
 website_route_rules = [
 	{"from_route": "/lyqd/<path:app_path>", "to_route": "lyqd"},
 	{"from_route": "/lyqd", "to_route": "lyqd"},

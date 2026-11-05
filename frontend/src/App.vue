@@ -11,15 +11,20 @@
       Loading LYQD…
     </div>
     <InstallPrompt v-if="ready" />
-    <ToastHost />
+    <!-- Position host like CRM; Toasts is not re-exported from frappe-ui package root. -->
+    <div
+      class="pointer-events-none fixed bottom-4 right-4 z-[2147483647] flex flex-col items-end gap-2"
+    >
+      <Toasts />
+    </div>
   </div>
 </template>
 
 <script setup>
 import { KeepAlive, onMounted, ref } from 'vue'
+import { Toasts } from 'frappe-ui/toasts'
 import AppLayout from '@/components/AppLayout.vue'
 import InstallPrompt from '@/components/InstallPrompt.vue'
-import ToastHost from '@/components/ToastHost.vue'
 import { useCompanyStore } from '@/stores/company'
 
 const ready = ref(false)

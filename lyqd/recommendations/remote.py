@@ -124,22 +124,6 @@ def probe_remote_connection(
 	}
 
 
-def test_remote_connection(lyqd_company: str | None = None) -> dict[str, Any]:
-	client, company = get_remote_client(lyqd_company)
-	companies = list_remote_companies(client)
-	if company not in companies:
-		frappe.throw(
-			frappe._("Connected, but company {0} was not found on the remote site.").format(company)
-		)
-	client.get_list("Account", filters={"company": company}, fields=["name"], limit_page_length=1)
-	return {
-		"ok": True,
-		"company": company,
-		"companies": companies,
-		"message": frappe._("Connected to remote ERPNext as company {0}.").format(company),
-	}
-
-
 def list_remote_recommendation_accounts(
 	root_types: list[str] | None = None,
 	account_type: str | None = None,
@@ -402,22 +386,42 @@ def _si_voucher_rows(
 def _sum_gl_for_account(
 	client, company: str, account: str, as_of: str, *, as_asset: bool = False
 ) -> float:
-	"""Net GL from remote. Liability = credit−debit; Asset setoff = debit−credit."""
-	total_credit = 0.0
-	total_debit = 0.0
+	"""Net GL from remote for one account (sync / single-row refresh)."""
+	totals = _sum_gl_for_accounts(client, company, [account], as_of)
+	signed = totals.get(account) or 0.0
+	# _sum_gl_for_accounts stores liability-style (credit−debit); flip for assets
+	if as_asset:
+		return flt(-signed)
+	return flt(signed)
+
+
+def _sum_gl_for_accounts(
+	client, company: str, accounts: list[str], as_of: str
+) -> dict[str, float]:
+	"""Net GL (credit−debit) per account in **one** paginated remote GL scan.
+
+	Avoids N HTTP round-trips (one per account) which dominate Other Site latency
+	and explode on large ledgers.
+	"""
+	accounts = [a for a in accounts if a]
+	if not accounts:
+		return {}
+	totals: dict[str, float] = {a: 0.0 for a in accounts}
 	start = 0
-	page = 200
-	while True:
+	page = 500
+	# Hard cap pages so a huge remote ledger cannot hang the SPA forever
+	max_start = 20_000
+	while start <= max_start:
 		rows = (
 			client.get_list(
 				"GL Entry",
 				filters={
 					"company": company,
-					"account": account,
+					"account": ["in", accounts],
 					"is_cancelled": 0,
 					"posting_date": ["<=", as_of],
 				},
-				fields=["debit", "credit"],
+				fields=["account", "debit", "credit"],
 				limit_start=start,
 				limit_page_length=page,
 			)
@@ -426,16 +430,15 @@ def _sum_gl_for_account(
 		if not rows:
 			break
 		for r in rows:
-			total_debit += flt(r.get("debit"))
-			total_credit += flt(r.get("credit"))
+			acc = r.get("account")
+			if acc not in totals:
+				continue
+			# liability-style signed net
+			totals[acc] = flt(totals[acc]) + flt(r.get("credit")) - flt(r.get("debit"))
 		if len(rows) < page:
 			break
 		start += page
-		if start > 5000:
-			break
-	if as_asset:
-		return flt(total_debit - total_credit)
-	return flt(total_credit - total_debit)
+	return totals
 
 
 def _gl_voucher_rows(
@@ -556,16 +559,17 @@ def _account_balance_rows(
 ) -> list[dict[str, Any]]:
 	from lyqd.recommendations.core import interpret_account_gl_balance
 
+	if not accounts:
+		return []
+	# Bulk GL pull — liability-style nets; flip sign for Asset accounts below
+	liability_nets = _sum_gl_for_accounts(client, company, accounts, as_of)
 	out = []
 	for account in accounts:
 		root = (meta.get(account) or {}).get("root_type")
 		acc_name = (meta.get(account) or {}).get("account_name") or account
-		if root == "Asset":
-			signed = _sum_gl_for_account(client, company, account, as_of, as_asset=True)
-			category = "Tax"
-		else:
-			signed = _sum_gl_for_account(client, company, account, as_of)
-			category = "Tax" if root == "Liability" else "Other"
+		liab_signed = flt(liability_nets.get(account))
+		signed = flt(-liab_signed) if root == "Asset" else liab_signed
+		category = "Tax" if root in ("Asset", "Liability") else "Other"
 		interp = interpret_account_gl_balance(root, signed, acc_name)
 		if interp["cleared"] or flt(interp["amount"]) <= 0.01:
 			continue

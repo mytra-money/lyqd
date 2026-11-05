@@ -1,211 +1,161 @@
 <div align="center" markdown="1">
 
 <img src="lyqd/public/images/lyqd.svg" alt="LYQD logo" width="80" />
-<h1>LYQD</h1>
+
+# LYQD
 
 **Know what cash you can invest — and when you’ll need it.**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](license.txt)
 
+[Try it](https://lyqd.mytra.money) · [Product page](https://mytra.money/lyqd) · [Getting started](#getting-started)
+
 </div>
 
-## LYQD
+![Cash position](docs/screenshots/cash-position.jpg)
 
-LYQD is Mytra’s corporate liquidity app for finance teams: forecast upcoming payments, see explainable free cash, and run **Invest** / **Redeem** proposals through to mutual-fund instructions — with holdings and history in one place.
+LYQD helps finance teams see bank cash, upcoming payments, and free cash in one place — then create an **Invest** or **Redeem** proposal when they’re ready.
 
-It runs on [Frappe](https://github.com/frappe/frappe). [ERPNext](https://github.com/frappe/erpnext) is optional and only used when a LYQD Company connects books (this site or another site). Statement balances always stay on the LYQD site.
+It is built for companies that collect money before payroll, vendors, and taxes are due, and want a clear answer to: *“How much can we park in a liquid fund until the next payment?”*
 
-**Live soft-launch:** [lyqd.mytra.money](https://lyqd.mytra.money) · Product: [mytra.money/lyqd](https://mytra.money/lyqd)
+---
 
-<p align="center">
-  <img src="docs/screenshots/cash-position.jpg" alt="LYQD Cash position" width="900" />
-</p>
+## Getting started
 
-### Why this exists
+![Sign in](docs/screenshots/login.jpg)
 
-Service businesses (IT, SaaS, consulting, BPO, professional services) often collect fees and retainers ahead of payroll, vendor bills, and taxes. Large balances then sit in current accounts because the next payment date feels unclear — teams fear a shortfall more than they value idle float.
+1. Open [lyqd.mytra.money](https://lyqd.mytra.money) and sign in (or create an account).
+2. Create your **company** (name is enough to start).
+3. Add or select **bank accounts**, then enter today’s **statement balances**.
+4. Add **upcoming payments** (or connect books later — optional).
+5. Check **Free cash**, then create an **Invest** or **Redeem** proposal when it makes sense.
 
-Typical gaps:
+You can install LYQD on your phone with **Add to Home Screen** for a simple app-like experience.
 
-1. **Large current-account balances** — Collections land before salaries, vendors, GST/TDS, and rent are due.
-2. **Unclear “safe to invest”** — Without a forecast, surplus stays idle.
-3. **Scattered approvals** — Spreadsheets and ad-hoc email make decisions hard to review later.
-4. **Hard to plan redemptions** — Without visible holdings and status, redeeming ahead of a due date feels risky.
+---
 
-LYQD closes that loop: cash position, commitments, free cash, proposals (invest / redeem), and portfolio share one company context and one formula.
-
-### Why liquid mutual funds?
-
-Idle current-account cash typically earns little or nothing between known payment dates. Very short bank deposits, when available, are a different product from mutual funds and often carry lower illustrative rates than longer tenors.
-
-LYQD’s initial scheme focus is a **liquid mutual fund** because that category is commonly considered for **short-term surplus** — money that may be needed again for payroll, taxes, or vendors within days or weeks. Product-fit rationale (not a performance guarantee):
-
-- **Fits the payment calendar** — Parking cash between known obligation dates, not multi-year investing.
-- **Plan redemptions ahead** — Schedule redemption before a due date, subject to scheme cut-offs, business days, and settlement.
-- **Vs idle operating cash** — Operating balances are for day-to-day needs; invested surplus is what remains after dues and a buffer.
-- **What it is not** — Not a bank deposit, not a substitute for operating cash, and not a promise of fixed returns or same-day bank credit.
-
-Human approval before investment instructions — no autonomous trading. Mutual fund investments are subject to market risks; read all scheme-related documents carefully.
-
-### Soft launch — lyqd.mytra.money
-
-Hosted beta for early customers:
-
-| | |
-|--|--|
-| **URL** | [https://lyqd.mytra.money](https://lyqd.mytra.money) |
-| **App** | SPA at `/lyqd` after login |
-| **Signup** | Public signup enabled; default role **LYQD Manager** (SPA only — no Desk) |
-| **Home** | Website home routes to `/lyqd` |
-| **Welcome mail** | System Settings → template **LYQD Welcome** (requires a default Email Account) |
-
-<p align="center">
-  <img src="docs/screenshots/login.jpg" alt="LYQD sign-in on lyqd.mytra.money" width="720" />
-</p>
-
-Ops notes for the soft launch:
-
-- Investment account activation remains **ops-owned** on each **LYQD Company**.
-- Portfolio may show **sample** Mytra positions while live HTTP is not wired — when any active company has investment activated, or `lyqd_demo_portfolio` is set. Turn off with `bench --site <site> set-config lyqd_demo_portfolio 0`.
-
-### The treasury app
-
-Vue 3 + [Frappe UI](https://github.com/frappe/frappe-ui) SPA at `/lyqd`. Desk registration is for System Managers; day-to-day users work only in the SPA.
-
-**PWA / mobile** — Installable on phone (Add to Home Screen). Manifest: `/api/method/lyqd.api.spa.get_pwa_manifest`. Service worker is emitted by `yarn build` in `frontend/`. Narrow screens use a bottom tab bar + slide-out menu (Cash · Plan · Free · Proposal · More).
+## The daily flow
 
 ```
-Cash position  →  Commitments  →  Free cash  →  Proposal (Invest / Redeem)  →  Portfolio
+Cash position  →  Commitments  →  Free cash  →  Proposal  →  Portfolio
 ```
 
-#### Cash position
+### Cash position
 
-Morning view of bank cash, portfolio, commitments in the horizon, free cash / shortfall, and proposal drift alerts (e.g. open Invest while the horizon is short → replace with Redeem).
+Your morning view: bank cash, portfolio, commitments in the next few days, and free cash (or shortfall).
 
-<img src="docs/screenshots/cash-position.jpg" alt="Cash position" width="900" />
+![Cash position](docs/screenshots/cash-position.jpg)
 
-#### Commitments
+Use the day picker (7 / 14 / 30 / 60 days) to change how far ahead you look.
 
-Planned payments that reserve free cash (including overdue). Optional “from books” suggestions can be accepted onto the plan with a due date. Parent/child Account-grain rows nest under GST-style groups; freeze GL as-of for tax period closes.
+### Commitments
 
-<img src="docs/screenshots/commitments.jpg" alt="Commitments plan and from books" width="900" />
+The payment plan that reserves cash — salaries, vendors, taxes, rent, and anything else you expect to pay.
 
-#### Free cash
+![Commitments](docs/screenshots/commitments.jpg)
 
-Explainable waterfall: bank cash − planned commitments − buffer − restricted cash.
+You can:
 
-<img src="docs/screenshots/free-cash.jpg" alt="Free cash waterfall" width="900" />
+- **Add a payment** yourself (amount, due date, category)
+- Mark payments **Paid** when done
+- Set a payment to **repeat** (for example monthly rent)
+- Optionally pull **suggestions from your books** (ERPNext) and add them to the plan
 
-#### Proposal
+Related payments (for example tax groups) can appear nested so the plan stays readable.
 
-One open proposal per company: **Invest** when free cash is positive, or **Redeem** when the horizon shows a shortfall (capped by liquid holdings). Based on a saved **Surplus Run**; creates a Purchase or Redeem instruction once the investment account is activated.
+### Free cash
 
-<img src="docs/screenshots/proposal.jpg" alt="Invest proposal" width="900" />
+A simple explanation of what is left after banks, commitments, and your safety buffer.
 
-#### Portfolio
+![Free cash](docs/screenshots/free-cash.jpg)
 
-Holding balances and transaction history from Mytra (instructions link via Mytra transaction ref).
+In plain words:
 
-<img src="docs/screenshots/portfolio.jpg" alt="Portfolio holdings" width="900" />
+> **Free cash = bank balances − planned payments − liquidity buffer − restricted cash**
 
-#### Bank cash
+If free cash is negative, LYQD shows a **shortfall** — useful when you may need to redeem investments before a due date.
 
-Local statement balances for eligible bank accounts (always on this site — never pulled from remote books).
+### Proposal (Invest / Redeem)
 
-<img src="docs/screenshots/bank-cash.jpg" alt="Bank cash balances" width="900" />
+When free cash looks good, create an **Invest** proposal.  
+When the horizon shows a shortfall, create a **Redeem** proposal (limited by what you hold).
 
-### Free cash formula
+![Proposal](docs/screenshots/proposal.jpg)
 
-```
-free_cash =
-  sum(LYQD Bank Balance for eligible LYQD Bank Accounts)
-  − sum(Planned commitments due on or before today + horizon)
-  − min_liquidity_buffer
-  − restricted_cash
-```
+Only one open proposal is kept at a time. Review it, then send it forward once your investment account is activated.
 
-Overdue Planned commitments are included. Cash masters are **LYQD Company**, **LYQD Bank Account**, and **LYQD Bank Balance** — no Chart of Accounts dependency.
+### Portfolio
 
-**Balances are always local.** Free cash and redeem amounts use **LYQD Bank Balance** on this site only. Other Site books may mirror bank *account* masters; statement balances are never pulled from the remote site (update them on `/lyqd/cash`).
+See holdings and recent investment activity in one place.
 
-### Proposals (Invest & Redeem)
+![Portfolio](docs/screenshots/portfolio.jpg)
 
-- Creating a proposal always persists (or reuses) a **LYQD Surplus Run** with the free-cash waterfall; the Draft Proposal must link to that run.
-- **Invest** — `proposed_amount = free_cash` when free cash is positive; instruction `side = Purchase`.
-- **Redeem** — when free cash is a shortfall: `proposed_amount = min(|shortfall|, liquid holdings)`; instruction `side = Redeem`.
-- Only one open (Draft / Frozen) proposal per company; a new Invest or Redeem supersedes the prior open proposal.
-- If an open **Invest** proposal exists but the selected horizon is a **shortfall**, Cash position prompts to cancel Invest and create a Redeem (not “partially redeem the invest amount”).
-- Identical free-cash math reuses the same Surplus Run and open proposal (no duplicate rows).
+### Bank cash
 
-### Onboarding & multi-company
+Update statement balances for your bank accounts. These balances always live in LYQD (they are not copied from remote books).
 
-On first sign-in, if the user has no LYQD Company yet, the SPA opens a **Create company** dialog (company name + optional Manual / This Site / Other Site books). The same dialog is available anytime from the company dropdown (**+ Add company…**).
+![Bank cash](docs/screenshots/bank-cash.jpg)
 
-Non–System Managers receive a **User Permission** on the new LYQD Company so only their companies appear in the nav. System Managers see all companies and do not need a User Permission. LYQD Users and Managers can create a company from the SPA (User Permission is granted right after insert).
+---
 
-### LYQD Company (one record per cash entity)
+## Settings (company setup)
 
-**LYQD Company** is the cash-management entity. Desk form (System Manager) uses tabs; the SPA **Settings** screen covers the same policy surfaces:
+Open **Settings** from the menu to configure your company.
 
-| Tab | Contents |
-|-----|----------|
-| **Details** | Name, abbr, currency, active, notes |
-| **Books** | Manual / This Site / Other Site; remote URL + API key & secret; books company name |
-| **Policy** | Liquidity buffer, restricted cash, forecast horizon, eligible bank accounts |
-| **Recommendations** | From-books account list (Data names that must match the books COA when connected) |
-| **Investment** | Ops-owned activation stamp (SPA cannot toggle) |
+![Settings](docs/screenshots/settings.jpg)
 
-<img src="docs/screenshots/settings.jpg" alt="Settings — liquidity policy" width="900" />
+| Section | What you set |
+|---------|----------------|
+| **Integrations** | Optional link to ERPNext (this site or another site) for payment suggestions |
+| **Liquidity** | Safety buffer, restricted cash, and default forecast days |
+| **Banks** | Which bank accounts count toward free cash |
+| **Investment account** | Request activation (handled by Mytra) |
 
-Multi-company on one site is supported: each company has its own books connector and investment activation. Site-wide defaults (horizon / buffers when a company is new) live on **LYQD Settings**.
+You can manage more than one company. Switch companies from the top of the app.
 
-### Books integration (optional)
+### Optional: connect books
 
-LYQD does not require ERPNext. Books are opt-in **per LYQD Company** (Books tab / SPA Settings → Integrations):
+Books are optional. Three modes:
 
-- **This site** — local ERPNext must be installed; Payment Ledger + GL recommendations.
-- **Other site** — remote ERPNext via URL + API key & secret (read-only). Bank *accounts* can be mirrored into **LYQD Bank Account**; **balances always stay on this site** (LYQD Bank Balance).
-- **Manual** — enter statement balances in LYQD with no books connector.
+- **Manual** — enter balances and payments in LYQD only  
+- **This site** — use ERPNext on the same site for suggestions  
+- **Other site** — connect a remote ERPNext with URL + API key  
 
-**Sync plan from books** updates Accepted rows from voucher outstanding or GL balances. Purchase Receipt suggestions exclude receipts that already have a Purchase Invoice.
+Bank **balances** are always updated in LYQD, even when account names are mirrored from books.
 
-Asset accounts (for example Input GST) can be added as **Setoff** so they reduce net commitments when paired with Output GST liabilities. An asset **credit** balance is treated as **Outflow** (adds to net payable). When Settings parent/child accounts change, open Account-grain parent plans auto-create missing children and relink (or unlink) nesting.
+---
 
-### Investment account
+## Tips for everyday use
 
-Instructions require an activated investment account **on that LYQD Company**. Activation is **ops-owned** — the SPA only shows status when active; otherwise **Request activation** opens the Mytra WhatsApp chatbot (lead capture is handled by the bot, not by the SPA).
+- Start every morning on **Cash position**, then open **Commitments** if something looks off.
+- Keep the **liquidity buffer** realistic — free cash is only useful if the buffer matches how you operate.
+- Prefer **due dates** on commitments so the horizon view stays honest.
+- If suggestions from books look wrong, fix the account list under **Settings → Integrations**, then retry.
+- Soft launch portfolio may show **sample** holdings until live investment connectivity is fully on for your company.
 
-Schemes and holdings come from **Mytra**. A Ready instruction is submitted to Mytra (creates a transaction); `mytra_transaction_ref` is used to track status and to show the same activity under Portfolio → transaction history. Position cards sync from Mytra balances — there is no manual “Add holding” in the SPA.
+---
 
-**Soft-launch Portfolio demo** — while Mytra HTTP is not wired, `lyqd.mytra.portfolio` can return SAMPLE positions/transactions when any active LYQD Company has **Investment Account Activated** (or `lyqd_demo_portfolio` site config is `1`). Disable with:
+## Roles (who can do what)
 
-```bash
-bench --site <site> set-config lyqd_demo_portfolio 0
-```
+| Role | Typical use |
+|------|-------------|
+| **LYQD User** | Day-to-day: commitments, free cash, view proposals and portfolio |
+| **LYQD Manager** | Company settings, banks, confirm proposals (default on signup) |
+| **System Manager** | Full access including Desk (for administrators) |
 
-Optional instruction bridge rows (matching sample Mytra refs):
+Day-to-day work happens in the LYQD app (`/lyqd`), not in Desk.
 
-```bash
-bench --site <site> execute lyqd.setup.seed_portfolio_demo.seed_portfolio_demo --kwargs "{'company': '<LYQD Company>'}"
-```
+---
 
-### Key features
+## Why liquid funds?
 
-- **Explainable free cash** — Same formula on Cash position and Free cash, with horizon control (7 / 14 / 30 / 60 or custom days).
-- **Company policy** — Eligible banks, liquidity buffer, restricted cash, and recommendation accounts on the company itself.
-- **Commitments plan** — Manual payments plus accept-from-books; Outflow vs Setoff cash effects; nested GST groups; freeze GL as-of.
-- **Proposal workflow** — Surplus Run → Invest or Redeem proposal → instruction (Purchase / Redeem; approve / ready).
-- **Horizon-aware alerts** — Open proposal vs today’s free cash or shortfall (refresh, cancel, or replace Invest with Redeem).
-- **Multi-company onboarding** — Add company from the nav (User Permission for non–System Managers).
-- **Session caching** — Cash position and Commitments keep recent data across navigation; Refresh forces a reload. Book sync is explicit, not on every page open.
+Idle money in a current account often earns little between known payment dates. LYQD is built around **short-term surplus** — cash you may need again for payroll, taxes, or vendors within days or weeks.
 
-### Under the hood
+Human approval always comes before investment instructions. Mutual fund investments are subject to market risks; read all scheme-related documents carefully.
 
-- [Frappe Framework](https://github.com/frappe/frappe) — Full-stack Python web framework.
-- [ERPNext](https://github.com/frappe/erpnext) — Optional books (This Site / Other Site).
-- [Frappe UI](https://github.com/frappe/frappe-ui) — Vue 3 component library for the SPA.
+---
 
-## Install
+## Install (for admins)
 
 On a Frappe bench (ERPNext optional):
 
@@ -216,55 +166,27 @@ bench --site <site> install-app lyqd
 bench --site <site> migrate
 ```
 
-### Frontend build (required)
-
-The Vue SPA is **not** committed. Build it after install or whenever you change `frontend/`:
+Build the app UI after install (or after frontend changes):
 
 ```bash
 cd apps/lyqd/frontend && yarn && yarn build
 bench --site <site> clear-cache
 ```
 
-This writes assets to `lyqd/public/frontend/` and `lyqd/www/lyqd.html` (both gitignored). On Frappe Cloud, root `package.json` `postinstall` / `build` scripts run the same frontend build during deploy.
-
-### Demo data (optional)
+Optional demo data:
 
 ```bash
 bench --site <site> execute lyqd.setup.seed.seed_demo
 ```
 
-## Roles
-
-| Role | Access |
-|------|--------|
-| LYQD User | Commitments, free cash, view proposals and portfolio; can create a LYQD Company from the SPA (SPA only — no Desk) |
-| LYQD Manager | Company (policy / books), banks, confirm proposals (SPA only — no Desk); default on public signup |
-| System Manager | All (Desk + SPA) |
-
-## Tests
-
-```bash
-bench --site <site> run-tests --app lyqd --module lyqd.cash.test_surplus
-```
-
-## Screenshots
-
-Captured at desktop width (~1440×900) from the SPA:
-
-| Screen | File |
-|--------|------|
-| Sign-in (lyqd.mytra.money) | [`docs/screenshots/login.jpg`](docs/screenshots/login.jpg) |
-| Cash position | [`docs/screenshots/cash-position.jpg`](docs/screenshots/cash-position.jpg) |
-| Commitments | [`docs/screenshots/commitments.jpg`](docs/screenshots/commitments.jpg) |
-| Free cash | [`docs/screenshots/free-cash.jpg`](docs/screenshots/free-cash.jpg) |
-| Proposal | [`docs/screenshots/proposal.jpg`](docs/screenshots/proposal.jpg) |
-| Portfolio | [`docs/screenshots/portfolio.jpg`](docs/screenshots/portfolio.jpg) |
-| Bank cash | [`docs/screenshots/bank-cash.jpg`](docs/screenshots/bank-cash.jpg) |
-| Settings (liquidity) | [`docs/screenshots/settings.jpg`](docs/screenshots/settings.jpg) |
+---
 
 ## About Mytra
 
-LYQD is developed by [Mytra](https://mytra.money) for corporate liquidity. Soft launch: [lyqd.mytra.money](https://lyqd.mytra.money). Product page: [mytra.money/lyqd](https://mytra.money/lyqd).
+LYQD is built by [Mytra](https://mytra.money) for corporate liquidity.
+
+- Soft launch: [lyqd.mytra.money](https://lyqd.mytra.money)
+- Product: [mytra.money/lyqd](https://mytra.money/lyqd)
 
 ---
 

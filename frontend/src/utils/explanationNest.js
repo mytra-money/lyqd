@@ -11,7 +11,7 @@ function signedReserved(line) {
  * Prefer already-nested surplus explanation; otherwise rebuild groups from
  * upcoming_payments.parent_payment (covers older frozen runs).
  */
-export function nestExplanationLines(lines, upcomingPayments = []) {
+function nestExplanationLines(lines, upcomingPayments = []) {
   const list = lines || []
   if (!list.length) return []
   if (list.some((l) => l.child_count || (l.children && l.children.length))) {

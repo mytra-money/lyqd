@@ -14,6 +14,8 @@
 
 ![Cash position](docs/screenshots/cash-position.jpg)
 
+*Screenshots below are from the **LYQD Demo Corp** company (full-width desktop).*
+
 LYQD helps finance teams see bank cash, upcoming payments, and free cash in one place — then create an **Invest** or **Redeem** proposal when they’re ready.
 
 It is built for companies that collect money before payroll, vendors, and taxes are due, and want a clear answer to: *“How much can free cash does the business have (to park in a liquid fund) until the next payment?”*

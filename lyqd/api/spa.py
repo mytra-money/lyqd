@@ -1332,36 +1332,42 @@ def get_pwa_manifest():
 		title = "LYQD by Mytra"
 	short = "LYQD" if len(title) > 12 else title
 	route = "/lyqd"
+	# Bump when icons change so installed PWAs / browsers pick up the new mark.
+	icon_v = "4"
+	icon_192 = f"/assets/lyqd/manifest/manifest-icon-192.maskable.png?v={icon_v}"
+	icon_512 = f"/assets/lyqd/manifest/manifest-icon-512.maskable.png?v={icon_v}"
 	manifest = {
 		"id": route,
 		"name": title if "LYQD" in title else "LYQD by Mytra",
 		"short_name": short if "LYQD" in short else "LYQD",
 		"description": "Know what cash you can invest — and when you’ll need it.",
-		"start_url": route,
-		"scope": route,
+		"start_url": f"{route}/",
+		"scope": f"{route}/",
 		"display": "standalone",
-		"orientation": "portrait",
-		"theme_color": "#FFFFFF",
-		"background_color": "#FFFFFF",
+		"orientation": "any",
+		"theme_color": "#61d3a0",
+		"background_color": "#61d3a0",
 		"icons": [
 			{
-				"src": "/assets/lyqd/manifest/manifest-icon-192.maskable.png",
+				"src": icon_192,
 				"sizes": "192x192",
 				"type": "image/png",
 				"purpose": "any",
 			},
 			{
-				"src": "/assets/lyqd/manifest/manifest-icon-512.maskable.png",
+				"src": icon_512,
 				"sizes": "512x512",
 				"type": "image/png",
 				"purpose": "any",
 			},
 			{
-				"src": "/assets/lyqd/manifest/manifest-icon-512.maskable.png",
+				"src": icon_512,
 				"sizes": "512x512",
 				"type": "image/png",
 				"purpose": "maskable",
 			},
 		],
 	}
-	return Response(json.dumps(manifest), status=200, content_type="application/manifest+json")
+	resp = Response(json.dumps(manifest), status=200, content_type="application/manifest+json")
+	resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+	return resp

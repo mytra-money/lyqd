@@ -20,7 +20,8 @@ wheels/
 .installed.cfg
 *.egg
 tags
-MANIFEST
+# setuptools leftover at repo root only — do not match public/manifest/ icons
+/MANIFEST
 
 # Environments
 .env

@@ -99,7 +99,7 @@
       <header
         class="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-gray-200 px-3 pt-[env(safe-area-inset-top)] md:gap-3 md:px-6"
       >
-        <div class="flex min-w-0 items-center gap-1.5 md:hidden">
+        <div class="flex shrink-0 items-center gap-1.5 md:hidden">
           <button
             type="button"
             class="rounded-md p-2 text-gray-600 hover:bg-gray-100 hover:text-gray-900"
@@ -108,24 +108,26 @@
           >
             <FeatherIcon name="menu" class="h-4 w-4" />
           </button>
-          <div class="truncate text-sm font-semibold text-gray-900">LYQD</div>
+          <div class="text-sm font-semibold text-gray-900">LYQD</div>
         </div>
-        <div class="hidden min-w-0 items-center gap-2 text-sm text-gray-600 md:flex">
+        <div class="hidden min-w-0 flex-1 items-center gap-2 text-sm text-gray-600 md:flex">
           <span class="truncate">{{ pageHint }}</span>
         </div>
-        <div class="flex min-w-0 items-center gap-2">
+        <div class="flex shrink-0 items-center gap-1.5 sm:gap-2">
           <span
             v-if="company.inBeta"
             class="shrink-0 rounded-full bg-red-600 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white"
           >
             Beta
           </span>
+          <HorizonPicker v-if="showHorizon" v-model="horizon" />
           <FormControl
             type="select"
             size="sm"
-            class="w-[9.5rem] sm:w-44 md:w-52"
+            class="min-w-[7.5rem] max-w-[11rem] sm:max-w-none sm:w-40 md:w-48"
             :model-value="company.current || ''"
             :options="companyOptions"
+            :title="company.current || ''"
             @update:model-value="onCompanySelect"
           />
         </div>
@@ -184,13 +186,28 @@ import { useStorage } from '@vueuse/core'
 import SidebarLink from '@/components/SidebarLink.vue'
 import UserDropdown from '@/components/UserDropdown.vue'
 import AddCompanyDialog from '@/components/AddCompanyDialog.vue'
+import HorizonPicker from '@/components/HorizonPicker.vue'
 import { mobileNavOpen } from '@/composables/useMobile'
+import { useHorizon } from '@/composables/useHorizon'
 import { useCompanyStore } from '@/stores/company'
 
 const company = useCompanyStore()
 const route = useRoute()
 const router = useRouter()
 const showMore = useStorage('lyqd_show_more_nav', false)
+const { horizon } = useHorizon()
+
+/** Horizon affects Cash position, Free cash, and Proposal. */
+const showHorizon = computed(() => {
+  const p = route.path
+  return (
+    p === '/' ||
+    p === '' ||
+    p === '/surplus' ||
+    p === '/proposal' ||
+    p.startsWith('/runs')
+  )
+})
 
 const primaryNav = [
   { to: '/', label: 'Cash position', icon: 'home', short: 'Cash' },

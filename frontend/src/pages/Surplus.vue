@@ -5,7 +5,6 @@
       subtitle="Cash position minus near-term commitments, liquidity buffer, and restricted cash (liquidity view)."
     >
       <div class="flex flex-wrap items-center gap-2">
-        <HorizonPicker v-model="horizon" />
         <Button variant="outline" :loading="loading" @click="refresh">
           Refresh
         </Button>
@@ -103,7 +102,6 @@ import { useRouter } from 'vue-router'
 import PageHeader from '@/components/PageHeader.vue'
 import MetricCard from '@/components/MetricCard.vue'
 import ExplanationTable from '@/components/ExplanationTable.vue'
-import HorizonPicker from '@/components/HorizonPicker.vue'
 import { useCompanyStore } from '@/stores/company'
 import { useTreasuryCacheStore } from '@/stores/treasuryCache'
 import { useHorizon } from '@/composables/useHorizon'

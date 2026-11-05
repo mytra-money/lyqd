@@ -1,10 +1,13 @@
 <template>
   <div>
-    <PageHeader
-      title="Cash position"
-      :subtitle="`As of ${d?.as_of || '—'} · ${company.current || '—'}`"
-    >
-      <HorizonPicker v-model="horizon" />
+    <PageHeader title="Cash position">
+      <template #subtitle>
+        <span class="inline-flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+          <span class="whitespace-nowrap">As of {{ formatDate(d?.as_of) }}</span>
+          <span class="text-gray-300" aria-hidden="true">·</span>
+          <span class="min-w-0 break-words">{{ company.current || '—' }}</span>
+        </span>
+      </template>
       <Button variant="outline" :loading="loading" @click="refresh">Refresh</Button>
     </PageHeader>
 
@@ -263,140 +266,18 @@
         </EmptyState>
 
         <ul v-else class="divide-y divide-gray-100">
-          <li v-for="u in nestedCommitments" :key="u.name">
-            <div class="flex items-start gap-2 px-3 py-3 sm:px-4">
-              <div class="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center">
-                <button
-                  v-if="u._childCount"
-                  type="button"
-                  class="flex h-6 w-6 items-center justify-center rounded text-gray-500 hover:bg-gray-100 hover:text-gray-800"
-                  :aria-expanded="isGroupExpanded(u.name)"
-                  :aria-label="isGroupExpanded(u.name) ? 'Collapse group' : 'Expand group'"
-                  @click="toggleGroup(u.name)"
-                >
-                  <FeatherIcon
-                    :name="isGroupExpanded(u.name) ? 'chevron-down' : 'chevron-right'"
-                    class="h-3.5 w-3.5"
-                  />
-                </button>
-              </div>
-              <div class="min-w-0 flex-1">
-                <div class="flex items-start justify-between gap-3">
-                  <div class="min-w-0">
-                    <div class="truncate text-sm font-medium text-gray-900">
-                      {{ u.title }}
-                    </div>
-                    <div class="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-gray-500">
-                      <Badge v-if="isOverdue(u)" theme="red" variant="subtle">Overdue</Badge>
-                      <Badge v-else-if="isDueSoon(u)" theme="orange" variant="subtle"
-                        >Due soon</Badge
-                      >
-                      <Badge v-if="u.is_recurring" theme="blue" variant="subtle">
-                        {{ u.frequency || 'Monthly' }}
-                      </Badge>
-                      <Badge v-if="u.cash_effect === 'Inflow'" theme="green" variant="subtle"
-                        >Inflow</Badge
-                      >
-                      <span v-if="u._childCount" class="font-medium text-gray-600"
-                        >Group · {{ u._childCount + 1 }}</span
-                      >
-                      <span>{{ u.category }}</span>
-                      <span>· Due {{ formatDate(u.due_date) }}</span>
-                      <span
-                        v-if="u.is_recurring && u.occurrence_count > 1"
-                        class="tabular-nums text-[11px] text-gray-400"
-                      >
-                        · {{ formatINR(u.period_amount ?? u.amount / u.occurrence_count) }} ×
-                        {{ u.occurrence_count }}
-                      </span>
-                      <span
-                        v-else-if="u._childCount"
-                        class="tabular-nums text-[11px] text-gray-400"
-                      >
-                        · GL {{ formatINR(u.amount) }}
-                      </span>
-                    </div>
-                  </div>
-                  <div class="w-[5.75rem] shrink-0 text-right sm:w-auto sm:min-w-[6.5rem]">
-                    <template v-if="u._childCount && u._groupNet != null">
-                      <div class="tabular-nums text-sm font-semibold text-gray-900">
-                        {{ formatINR(u._groupNet) }}
-                      </div>
-                      <div class="text-[10px] font-medium uppercase tracking-wide text-gray-400">
-                        Net
-                      </div>
-                    </template>
-                    <div
-                      v-else
-                      class="tabular-nums text-sm font-semibold"
-                      :class="
-                        u.cash_effect === 'Inflow' || u.cash_effect === 'Setoff'
-                          ? 'text-emerald-800'
-                          : 'text-gray-900'
-                      "
-                    >
-                      {{
-                        u.cash_effect === 'Inflow' || u.cash_effect === 'Setoff' ? '−' : ''
-                      }}{{ formatINR(u.amount) }}
-                    </div>
-                    <div class="mt-1.5 flex items-center justify-end gap-0.5">
-                      <button
-                        v-if="groupCanMarkPaid(u)"
-                        type="button"
-                        class="inline-flex h-7 items-center gap-1 rounded px-1.5 text-xs font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900 disabled:opacity-50"
-                        :disabled="marking === u.name"
-                        :title="
-                          u.is_recurring
-                            ? `Record ${(u.frequency || 'Monthly').toLowerCase()} · advance next due`
-                            : 'Mark paid'
-                        "
-                        :aria-label="
-                          u.is_recurring
-                            ? `Record ${(u.frequency || 'Monthly').toLowerCase()}`
-                            : 'Mark paid'
-                        "
-                        @click="markPaid(u)"
-                      >
-                        <FeatherIcon name="check" class="h-3.5 w-3.5" />
-                        <span>{{ u.is_recurring ? u.frequency || 'Monthly' : 'Paid' }}</span>
-                      </button>
-                      <button
-                        type="button"
-                        class="inline-flex h-7 w-7 items-center justify-center rounded text-gray-400 hover:bg-gray-100 hover:text-gray-800"
-                        title="Edit"
-                        aria-label="Edit"
-                        @click="openEdit(u)"
-                      >
-                        <FeatherIcon name="edit-2" class="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-            <ul
-              v-if="u._childCount && isGroupExpanded(u.name)"
-              class="border-t border-gray-50 bg-gray-50/50"
-            >
-              <li
-                v-for="child in u._children"
-                :key="child.name"
-                class="border-l-2 border-gray-200 py-2.5 pl-8 pr-3 sm:pl-10 sm:pr-4"
-              >
-                <div class="truncate text-sm text-gray-800">
-                  <span class="mr-1 text-gray-400">↳</span>
-                  {{ child.title }}
-                </div>
-                <div class="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-xs text-gray-500">
-                  <span>Due {{ formatDate(child.due_date) }}</span>
-                  <span class="tabular-nums text-[11px] text-gray-400">
-                    · GL {{ formatINR(child.amount) }}
-                  </span>
-                  <span>· {{ child.category }}</span>
-                </div>
-              </li>
-            </ul>
-          </li>
+          <CommitmentRow
+            v-for="u in nestedCommitments"
+            :key="u.name"
+            :row="u"
+            :as-of="asOfDate"
+            :expanded="isGroupExpanded(u.name)"
+            :marking="marking === u.name"
+            :can-mark-paid="groupCanMarkPaid(u)"
+            @toggle-group="toggleGroup(u.name)"
+            @edit="openEdit(u)"
+            @mark-paid="markPaid(u)"
+          />
         </ul>
       </section>
     </template>
@@ -489,15 +370,16 @@
 <script setup>
 import { computed, onActivated, reactive, ref, watch } from 'vue'
 import { call, toast } from 'frappe-ui'
+import CommitmentRow from '@/components/CommitmentRow.vue'
 import CurrencyControl from '@/components/CurrencyControl.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import MetricCard from '@/components/MetricCard.vue'
-import HorizonPicker from '@/components/HorizonPicker.vue'
 import { useCompanyStore } from '@/stores/company'
 import { useTreasuryCacheStore } from '@/stores/treasuryCache'
 import { useHorizon } from '@/composables/useHorizon'
 import { formatDate, formatINR } from '@/utils/format'
+import { frequencyUnit, isOverdue as isOverdueDue } from '@/utils/commitment'
 import { groupMembers, nestPlanRows } from '@/utils/planNest'
 
 defineOptions({ name: 'Dashboard' })
@@ -554,13 +436,6 @@ const form = reactive(emptyForm())
 const d = computed(() => cache.getMis(company.current, horizon.value))
 const loading = computed(() => cache.misLoading && !d.value)
 const hasBanks = computed(() => (d.value?.banks || []).length > 0)
-
-function frequencyUnit(frequency) {
-  const f = (frequency || 'Monthly').toLowerCase()
-  if (f === 'weekly') return 'week'
-  if (f === 'quarterly') return 'quarter'
-  return 'month'
-}
 
 function onCategoryChange(value) {
   const next = value || form.category
@@ -621,19 +496,16 @@ const staleBanks = computed(() => {
 
 const upcoming = computed(() => d.value?.upcoming || [])
 
-function daysUntil(due) {
-  if (!due) return 999
-  const a = new Date(asOfDate.value)
-  const b = new Date(due)
-  return Math.round((b - a) / 86400000)
-}
-
 function isOverdue(u) {
-  return daysUntil(u.due_date) < 0
+  return isOverdueDue(u.due_date, asOfDate.value)
 }
 
 function isDueSoon(u) {
-  const days = daysUntil(u.due_date)
+  const due = u?.due_date
+  if (!due) return false
+  const a = new Date(asOfDate.value)
+  const b = new Date(due)
+  const days = Math.round((b - a) / 86400000)
   return days >= 0 && days <= 3
 }
 

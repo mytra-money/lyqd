@@ -1,25 +1,32 @@
 <template>
-  <div class="flex flex-wrap items-center gap-1.5">
-    <div class="flex items-center overflow-hidden rounded-md border border-gray-200 bg-white">
+  <div class="flex items-center gap-1">
+    <div
+      class="flex items-center overflow-hidden rounded-md border border-gray-200 bg-white"
+      title="Forecast horizon in days"
+    >
       <input
         :value="modelValue"
         type="number"
         min="1"
         max="365"
         step="1"
-        class="w-14 border-0 bg-transparent px-2 py-1.5 text-sm tabular-nums text-gray-900 focus:outline-none focus:ring-0"
+        inputmode="numeric"
+        class="horizon-days w-11 border-0 bg-transparent px-1.5 py-1.5 text-center text-sm tabular-nums text-gray-900 focus:outline-none focus:ring-0 sm:w-12 sm:px-2"
         aria-label="Forecast horizon in days"
         @input="onInput"
         @blur="normalize"
       />
-      <span class="border-l border-gray-200 px-2 py-1.5 text-xs text-gray-500">days</span>
+      <span class="border-l border-gray-200 px-1.5 py-1.5 text-[10px] text-gray-500 sm:px-2 sm:text-xs">
+        days
+      </span>
     </div>
-    <div class="flex flex-wrap gap-1">
+    <!-- Quick picks: desktop / tablet only — PWA keeps a compact input -->
+    <div v-if="!isMobileView" class="flex items-center gap-0.5">
       <button
         v-for="d in presets"
         :key="d"
         type="button"
-        class="rounded px-1.5 py-1 text-xs font-medium transition-colors"
+        class="rounded px-1.5 py-1 text-xs font-medium tabular-nums transition-colors"
         :class="
           Number(modelValue) === d
             ? 'bg-gray-900 text-white'
@@ -35,6 +42,8 @@
 </template>
 
 <script setup>
+import { isMobileView } from '@/composables/useMobile'
+
 const props = defineProps({
   modelValue: { type: Number, default: 7 },
   presets: {
@@ -62,3 +71,16 @@ function normalize() {
   emit('update:modelValue', clamp(props.modelValue || 7))
 }
 </script>
+
+<style scoped>
+/* Hide browser up/down steppers — they clip the day value on narrow PWA headers. */
+.horizon-days {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+.horizon-days::-webkit-outer-spin-button,
+.horizon-days::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+</style>

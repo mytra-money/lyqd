@@ -1,9 +1,6 @@
 <template>
   <div>
-    <PageHeader
-      title="Commitments"
-      subtitle="Plan on the left reserves free cash. From books on the right is optional until you add to plan."
-    >
+    <PageHeader title="Commitments" :subtitle="commitmentsSubtitle">
       <Button
         variant="outline"
         :loading="syncing"
@@ -18,15 +15,60 @@
       <Button variant="solid" @click="openNew">Add payment</Button>
     </PageHeader>
 
+    <!-- PWA / narrow: tabs instead of stacking both columns into one long scroll -->
+    <div
+      v-if="isNarrowLayout"
+      class="mb-3 flex w-full rounded-md border border-gray-200 bg-white p-0.5"
+      role="tablist"
+      aria-label="Commitments columns"
+    >
+      <button
+        type="button"
+        role="tab"
+        class="min-w-0 flex-1 rounded px-3 py-2 text-sm font-medium transition-colors"
+        :class="
+          columnTab === 'plan'
+            ? 'bg-gray-900 text-white'
+            : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+        "
+        :aria-selected="columnTab === 'plan'"
+        @click="columnTab = 'plan'"
+      >
+        On the plan
+        <span class="tabular-nums opacity-70">{{ activePlanCount }}</span>
+      </button>
+      <button
+        type="button"
+        role="tab"
+        class="min-w-0 flex-1 rounded px-3 py-2 text-sm font-medium transition-colors"
+        :class="
+          columnTab === 'books'
+            ? 'bg-gray-900 text-white'
+            : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+        "
+        :aria-selected="columnTab === 'books'"
+        @click="columnTab = 'books'"
+      >
+        From books
+        <span v-if="recsEnabled" class="tabular-nums opacity-70">{{ allRecs.length }}</span>
+      </button>
+    </div>
+
     <div class="grid gap-4 lg:grid-cols-2 lg:items-start">
     <!-- ── On the plan ── -->
-    <section class="min-w-0 rounded-lg border border-gray-200 bg-white">
+    <section
+      v-show="!isNarrowLayout || columnTab === 'plan'"
+      class="min-w-0 rounded-lg border border-gray-200 bg-white"
+      role="tabpanel"
+    >
       <header class="border-b border-gray-100 px-4 py-3">
-        <div class="flex items-baseline justify-between gap-2">
+        <div v-if="!isNarrowLayout" class="flex items-baseline justify-between gap-2">
           <h2 class="text-base font-semibold text-gray-900">On the plan</h2>
           <span class="text-xs tabular-nums text-gray-500">{{ activePlanCount }} active</span>
         </div>
-        <p class="mt-0.5 text-xs text-gray-500">These amounts reduce free cash when Planned.</p>
+        <p v-if="!isNarrowLayout" class="mt-0.5 text-xs text-gray-500">
+          These amounts reduce free cash when Planned.
+        </p>
         <div class="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
           <div
             class="inline-flex w-fit max-w-full overflow-x-auto rounded-md border border-gray-200 p-0.5"
@@ -85,292 +127,38 @@
       </EmptyState>
 
       <ul v-else class="max-h-[70vh] divide-y divide-gray-100 overflow-y-auto">
-        <li v-for="row in nestedFilteredList" :key="row.name" class="px-0">
-          <div class="flex items-center gap-3 px-4 py-3 hover:bg-gray-50/80">
-            <div class="flex h-6 w-6 shrink-0 items-center justify-center">
-              <button
-                v-if="row._childCount"
-                type="button"
-                class="flex h-6 w-6 items-center justify-center rounded text-gray-500 hover:bg-gray-100 hover:text-gray-800"
-                :aria-expanded="isGroupExpanded(row.name)"
-                :aria-label="isGroupExpanded(row.name) ? 'Collapse group' : 'Expand group'"
-                @click="toggleGroup(row.name)"
-              >
-                <FeatherIcon
-                  :name="isGroupExpanded(row.name) ? 'chevron-down' : 'chevron-right'"
-                  class="h-3.5 w-3.5"
-                />
-              </button>
-            </div>
-            <div class="min-w-0 flex-1">
-              <div class="flex flex-wrap items-center gap-2 truncate text-sm font-medium text-gray-900">
-                {{ row.title }}
-                <span
-                  v-if="row._childCount"
-                  class="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-gray-600"
-                >
-                  Group · {{ row._childCount + 1 }}
-                </span>
-              </div>
-              <div class="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-gray-500">
-                <span
-                  :class="
-                    row.status === 'Planned' && isOverdue(row.due_date)
-                      ? 'font-medium text-red-600'
-                      : ''
-                  "
-                >
-                  {{ dueLabel(row.due_date) }}
-                </span>
-                <span
-                  v-if="row.is_recurring"
-                  class="rounded bg-blue-50 px-1 font-medium text-blue-800"
-                >
-                  {{ row.frequency || 'Monthly' }}
-                </span>
-                <span
-                  v-if="row._childCount"
-                  class="tabular-nums text-[11px] text-gray-400"
-                  :class="
-                    row.cash_effect === 'Setoff' || row.cash_effect === 'Inflow'
-                      ? 'text-emerald-700/80'
-                      : ''
-                  "
-                >
-                  · GL
-                  {{
-                    row.cash_effect === 'Setoff' || row.cash_effect === 'Inflow' ? '−' : ''
-                  }}{{ formatINR(row.amount) }}
-                </span>
-                <span
-                  v-else-if="row.is_recurring && row.occurrence_count > 1"
-                  class="tabular-nums text-[11px] text-gray-400"
-                >
-                  ·
-                  {{ formatINR(row.period_amount ?? row.amount / row.occurrence_count) }} ×
-                  {{ row.occurrence_count }}
-                </span>
-                <span
-                  v-else-if="row.is_recurring && !(row.occurrence_count > 0)"
-                  class="rounded bg-gray-100 px-1 font-medium text-gray-600"
-                  title="Next due is outside the forecast horizon — nothing reserved yet"
-                >
-                  Outside horizon
-                </span>
-                <span>· {{ row.category }}</span>
-                <span
-                  v-if="row.cash_effect === 'Setoff'"
-                  class="rounded bg-emerald-50 px-1 font-medium text-emerald-800"
-                >
-                  Setoff
-                </span>
-                <span
-                  v-else-if="row.cash_effect === 'Inflow'"
-                  class="rounded bg-emerald-50 px-1 font-medium text-emerald-800"
-                >
-                  Inflow
-                </span>
-                <span v-if="row.status !== 'Planned'" class="text-gray-400">· {{ row.status }}</span>
-                <span
-                  v-if="row.balance_as_of"
-                  class="rounded bg-amber-50 px-1 font-medium text-amber-900"
-                  :title="'GL frozen as of ' + formatDate(row.balance_as_of)"
-                >
-                  As of {{ formatDate(row.balance_as_of) }}
-                </span>
-              </div>
-              <div v-if="row.source_doctype" class="mt-0.5 truncate text-xs text-gray-400">
-                Ref {{ row.source_doctype }} {{ row.source_name }}
-                <span v-if="row.source_account"> · {{ shortAccount(row.source_account) }}</span>
-              </div>
-            </div>
-            <div class="shrink-0 text-right">
-              <div
-                v-if="row._childCount && row._groupNet != null"
-                class="tabular-nums text-base font-semibold text-gray-900"
-              >
-                {{ formatINR(row._groupNet) }}
-                <div class="text-[10px] font-medium uppercase tracking-wide text-gray-400">Net</div>
-              </div>
-              <div
-                v-else
-                class="tabular-nums text-sm font-semibold"
-                :class="
-                  row.cash_effect === 'Setoff' || row.cash_effect === 'Inflow'
-                    ? 'text-emerald-800'
-                    : 'text-gray-900'
-                "
-              >
-                {{
-                  row.cash_effect === 'Setoff' || row.cash_effect === 'Inflow' ? '−' : ''
-                }}{{ formatINR(displayPlanAmount(row)) }}
-                <div
-                  v-if="row.is_recurring && !(row.occurrence_count > 0)"
-                  class="text-[10px] font-medium uppercase tracking-wide text-gray-400"
-                >
-                  / {{ frequencyUnit(row.frequency) }}
-                </div>
-                <div
-                  v-else-if="row.is_recurring && row.occurrence_count > 1"
-                  class="text-[10px] font-medium uppercase tracking-wide text-gray-400"
-                >
-                  in horizon
-                </div>
-              </div>
-              <div class="mt-1 flex flex-wrap items-center justify-end gap-0.5">
-                <button
-                  v-if="groupCanRefresh(row)"
-                  type="button"
-                  class="inline-flex h-7 w-7 items-center justify-center rounded text-gray-500 hover:bg-gray-100 hover:text-gray-900 disabled:opacity-50"
-                  :disabled="refreshing === row.name"
-                  :title="
-                    row.balance_as_of
-                      ? 'Refresh GL as of ' + formatDate(row.balance_as_of)
-                      : 'Refresh from live books'
-                  "
-                  :aria-label="
-                    row.balance_as_of
-                      ? 'Refresh GL as of ' + formatDate(row.balance_as_of)
-                      : 'Refresh from live books'
-                  "
-                  @click="refreshRow(row)"
-                >
-                  <FeatherIcon
-                    name="refresh-cw"
-                    class="h-3.5 w-3.5"
-                    :class="refreshing === row.name ? 'animate-spin' : ''"
-                  />
-                </button>
-                <Button
-                  v-if="groupCanFreeze(row)"
-                  size="sm"
-                  variant="ghost"
-                  class="!h-auto !px-1.5 !py-0.5 !text-xs !font-normal !text-amber-800 hover:!bg-amber-50"
-                  :loading="freezing === row.name"
-                  :title="row.balance_as_of ? 'Unfreeze · use live GL' : 'Freeze GL as of a date'"
-                  @click="row.balance_as_of ? clearFreeze(row) : openFreeze(row)"
-                >
-                  {{
-                    freezing === row.name
-                      ? freezeAction === 'clear'
-                        ? 'Unfreezing…'
-                        : 'Freezing…'
-                      : row.balance_as_of
-                        ? 'Unfreeze'
-                        : 'Freeze as of…'
-                  }}
-                </Button>
-                <button
-                  v-if="groupCanMarkPaid(row)"
-                  type="button"
-                  class="inline-flex h-7 items-center gap-1 rounded px-1.5 text-xs font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900 disabled:opacity-50"
-                  :disabled="marking === row.name"
-                  :title="
-                    row.is_recurring
-                      ? `Record ${(row.frequency || 'Monthly').toLowerCase()} · advance next due`
-                      : 'Mark paid'
-                  "
-                  :aria-label="
-                    row.is_recurring
-                      ? `Record ${(row.frequency || 'Monthly').toLowerCase()}`
-                      : 'Mark paid'
-                  "
-                  @click="markPaid(row)"
-                >
-                  <FeatherIcon name="check" class="h-3.5 w-3.5" />
-                  <span>{{ row.is_recurring ? row.frequency || 'Monthly' : 'Paid' }}</span>
-                </button>
-                <button
-                  type="button"
-                  class="inline-flex h-7 w-7 items-center justify-center rounded text-gray-400 hover:bg-gray-100 hover:text-gray-800"
-                  title="Edit"
-                  aria-label="Edit"
-                  @click="edit(row)"
-                >
-                  <FeatherIcon name="edit-2" class="h-3.5 w-3.5" />
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <ul
-            v-if="row._childCount && isGroupExpanded(row.name)"
-            class="border-t border-gray-50 bg-gray-50/40"
-          >
-            <li
-              v-for="child in row._children"
-              :key="child.name"
-              class="flex items-center gap-3 border-l-2 border-gray-200 py-2.5 pl-10 pr-4 hover:bg-gray-50/80"
-            >
-              <div class="min-w-0 flex-1">
-                <div class="truncate text-sm text-gray-800">
-                  <span class="mr-1 text-gray-400">↳</span>
-                  {{ child.title }}
-                </div>
-                <div class="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-gray-500">
-                  <span
-                    :class="
-                      child.status === 'Planned' && isOverdue(child.due_date)
-                        ? 'font-medium text-red-600'
-                        : ''
-                    "
-                  >
-                    {{ dueLabel(child.due_date) }}
-                  </span>
-                  <span
-                    class="tabular-nums text-[11px]"
-                    :class="
-                      child.cash_effect === 'Setoff' || child.cash_effect === 'Inflow'
-                        ? 'text-emerald-700/80'
-                        : 'text-gray-400'
-                    "
-                  >
-                    · GL
-                    {{
-                      child.cash_effect === 'Setoff' || child.cash_effect === 'Inflow' ? '−' : ''
-                    }}{{ formatINR(child.amount) }}
-                  </span>
-                  <span>· {{ child.category }}</span>
-                  <span
-                    v-if="child.cash_effect === 'Setoff'"
-                    class="rounded bg-emerald-50 px-1 font-medium text-emerald-800"
-                  >
-                    Setoff
-                  </span>
-                  <span
-                    v-else-if="child.cash_effect === 'Inflow'"
-                    class="rounded bg-emerald-50 px-1 font-medium text-emerald-800"
-                  >
-                    Inflow
-                  </span>
-                  <span v-if="child.status !== 'Planned'" class="text-gray-400"
-                    >· {{ child.status }}</span
-                  >
-                  <span
-                    v-if="child.balance_as_of"
-                    class="rounded bg-amber-50 px-1 font-medium text-amber-900"
-                  >
-                    As of {{ formatDate(child.balance_as_of) }}
-                  </span>
-                </div>
-                <div v-if="child.source_doctype" class="mt-0.5 truncate text-xs text-gray-400">
-                  Ref {{ child.source_doctype }} {{ child.source_name }}
-                  <span v-if="child.source_account">
-                    · {{ shortAccount(child.source_account) }}</span
-                  >
-                </div>
-              </div>
-            </li>
-          </ul>
-        </li>
+        <CommitmentRow
+          v-for="row in nestedFilteredList"
+          :key="row.name"
+          hoverable
+          :row="row"
+          :as-of="todayStr()"
+          :expanded="isGroupExpanded(row.name)"
+          :marking="marking === row.name"
+          :can-mark-paid="groupCanMarkPaid(row)"
+          :can-refresh="groupCanRefresh(row)"
+          :can-freeze="groupCanFreeze(row)"
+          :refreshing="refreshing === row.name"
+          :freezing="freezing === row.name"
+          @toggle-group="toggleGroup(row.name)"
+          @edit="edit(row)"
+          @mark-paid="markPaid(row)"
+          @refresh="refreshRow(row)"
+          @freeze="openFreeze(row)"
+          @clear-freeze="clearFreeze(row)"
+        />
       </ul>
     </section>
 
     <!-- ── From books ── -->
-    <section class="min-w-0 rounded-lg border border-gray-200 bg-white">
+    <section
+      v-show="!isNarrowLayout || columnTab === 'books'"
+      class="min-w-0 rounded-lg border border-gray-200 bg-white"
+      role="tabpanel"
+    >
       <header class="border-b border-gray-100 px-4 py-3">
         <div class="flex flex-wrap items-start justify-between gap-2">
-          <div>
+          <div v-if="!isNarrowLayout">
             <h2 class="text-base font-semibold text-gray-900">From books</h2>
             <p class="mt-0.5 text-xs text-gray-500">
               Optional intake — not reserved until you add to plan.
@@ -380,6 +168,7 @@
             v-if="recsEnabled"
             type="button"
             class="text-xs text-gray-500 hover:text-gray-800"
+            :class="isNarrowLayout ? 'ml-auto' : ''"
             @click="$router.push('/settings?tab=integrations')"
           >
             Configure accounts
@@ -790,13 +579,22 @@
 
 <script setup>
 import { computed, nextTick, onActivated, reactive, ref, watch } from 'vue'
+import { useMediaQuery } from '@vueuse/core'
 import { Button, call, toast } from 'frappe-ui'
+import CommitmentRow from '@/components/CommitmentRow.vue'
 import CurrencyControl from '@/components/CurrencyControl.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import { useCompanyStore } from '@/stores/company'
 import { useTreasuryCacheStore } from '@/stores/treasuryCache'
 import { formatDate, formatINR } from '@/utils/format'
+import {
+  daysUntil,
+  dueLabel,
+  frequencyUnit,
+  isOverdue,
+  shortAccount,
+} from '@/utils/commitment'
 import {
   groupMembers,
   nestPlanRows,
@@ -842,6 +640,17 @@ const expandedRecGroups = ref({})
 const suggestionView = ref('all')
 const recAccount = ref('all')
 const recQuery = ref('')
+
+/** Match Tailwind `lg` — below this the two columns stack; use tabs instead. */
+const isNarrowLayout = useMediaQuery('(max-width: 1023px)')
+/** Mobile / PWA column: plan vs books */
+const columnTab = ref('plan')
+
+const commitmentsSubtitle = computed(() =>
+  isNarrowLayout.value
+    ? 'Switch tabs for the plan and optional books suggestions.'
+    : 'Plan on the left reserves free cash. From books on the right is optional until you add to plan.',
+)
 
 const categoryOptions = [
   'Salary',
@@ -949,52 +758,6 @@ function scheduleRecs(force = false) {
 async function reloadAll() {
   await loadPlan(true)
   scheduleRecs(true)
-}
-
-function daysUntil(due) {
-  if (!due) return null
-  const a = new Date(todayStr())
-  const b = new Date(due)
-  return Math.round((b - a) / 86400000)
-}
-
-function isOverdue(due) {
-  const d = daysUntil(due)
-  return d !== null && d < 0
-}
-
-/** Recurring outside the forecast horizon expands to ₹0 reserved — still show per period. */
-function displayPlanAmount(row) {
-  if (row?.is_recurring && !(row.occurrence_count > 0) && row.period_amount != null) {
-    return row.period_amount
-  }
-  return row?.amount
-}
-
-function frequencyUnit(frequency) {
-  const f = (frequency || 'Monthly').toLowerCase()
-  if (f === 'weekly') return 'week'
-  if (f === 'quarterly') return 'quarter'
-  return 'month'
-}
-
-function dueLabel(due) {
-  if (!due) return 'No due date'
-  const d = daysUntil(due)
-  if (d === null) return formatDate(due)
-  if (d < 0) return `Overdue · ${formatDate(due)}`
-  if (d === 0) return 'Due today'
-  if (d === 1) return 'Due tomorrow'
-  if (d <= 7) return `Due in ${d}d · ${formatDate(due)}`
-  return formatDate(due)
-}
-
-function shortAccount(account) {
-  // ERPNext leaf accounts are "{Account Name} - {Company Abbr}" — show the name, not the abbr.
-  if (!account) return ''
-  const parts = String(account).split(' - ')
-  if (parts.length < 2) return String(account)
-  return parts.slice(0, -1).join(' - ')
 }
 
 const allRows = computed(() => cache.getPlan(company.current) || [])

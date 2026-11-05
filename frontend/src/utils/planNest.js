@@ -10,9 +10,18 @@ function signedAmount(row) {
   return signedCashAmount(row.amount, row.cash_effect)
 }
 
+/** Near-zero Account (GL) balances are omitted — same as non-nested books suggestions. */
+function isVisibleNestedChild(row) {
+  if ((row?.source_doctype || '') === 'Account' && Math.abs(Number(row.amount || 0)) <= 0.01) {
+    return false
+  }
+  return true
+}
+
 /**
  * Nest plan rows under parents. Roots get `_childCount`, `_groupNet`, `_children`.
  * Children stay on the parent (not flattened) so the UI can collapse them.
+ * Zero-balance child GLs are hidden (kept off the nested list).
  */
 export function nestPlanRows(rows) {
   const list = rows || []
@@ -31,7 +40,7 @@ export function nestPlanRows(rows) {
   }
 
   return roots.map((root) => {
-    const kids = childrenOf.get(root.name) || []
+    const kids = (childrenOf.get(root.name) || []).filter(isVisibleNestedChild)
     const groupNet =
       kids.length > 0
         ? signedAmount(root) + kids.reduce((s, c) => s + signedAmount(c), 0)

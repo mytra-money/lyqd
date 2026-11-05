@@ -4,7 +4,6 @@
       title="Proposal"
       subtitle="Draft an invest or redeem proposal from free cash. One open proposal at a time."
     >
-      <HorizonPicker v-model="horizon" />
       <Button variant="outline" @click="$router.push('/surplus')">Free cash</Button>
       <Button
         variant="solid"
@@ -366,7 +365,6 @@ import { call, createListResource, createResource, toast } from 'frappe-ui'
 import { useRoute, useRouter } from 'vue-router'
 import EmptyState from '@/components/EmptyState.vue'
 import PageHeader from '@/components/PageHeader.vue'
-import HorizonPicker from '@/components/HorizonPicker.vue'
 import MetricCard from '@/components/MetricCard.vue'
 import ExplanationTable from '@/components/ExplanationTable.vue'
 import { useCompanyStore } from '@/stores/company'

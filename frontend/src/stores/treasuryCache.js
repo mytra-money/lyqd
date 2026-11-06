@@ -205,48 +205,82 @@ export const useTreasuryCacheStore = defineStore('treasuryCache', () => {
     return promise
   }
 
-  async function ensureRecommendations({ company, force = false } = {}) {
+  async function ensureRecommendations({ company, force = false, silent = null } = {}) {
     if (!company) return null
     const key = cacheKey([company])
     const entry = recommendations[key]
     if (!force && isFresh(entry)) return entry.data
-    const silent = !!(entry?.data && !force)
+    // Keep existing list on screen when refreshing after accept/ignore (no flash).
+    const useSilent =
+      silent != null ? !!silent && !!entry?.data : !!(entry?.data && !force)
     const promise = _fetch(
       'recs',
       key,
       () => call('lyqd.api.spa.get_upcoming_recommendations', { company }),
       recsLoading,
-      { silent },
+      { silent: useSilent },
     )
-    if (silent) {
+    if (useSilent) {
       promise.catch(() => {})
       return entry.data
     }
     return promise
   }
 
-  /** After mutations that change cash / plan / free cash. */
-  function invalidateCashRelated(company = null) {
-    const clearMatching = (bucket) => {
-      for (const k of Object.keys(bucket)) {
-        if (!company || k === company || k.startsWith(`${company}::`)) {
-          delete bucket[k]
-        }
-      }
+  /**
+   * Drop a books source from the cached From-books list (accept / ignore)
+   * without clearing the whole payload — avoids a Loading suggestions flash.
+   */
+  function removeRecommendationSource(company, sourceDoctype, sourceName) {
+    if (!company || !sourceDoctype || !sourceName) return
+    const key = cacheKey([company])
+    const entry = recommendations[key]
+    if (!entry?.data?.items) return
+    const dt = String(sourceDoctype)
+    const nm = String(sourceName)
+    const items = entry.data.items.filter(
+      (i) => !(String(i.source_doctype) === dt && String(i.source_name) === nm),
+    )
+    if (items.length === entry.data.items.length) return
+    recommendations[key] = {
+      ...entry,
+      data: { ...entry.data, items },
+      error: null,
     }
-    clearMatching(mis)
-    clearMatching(cash)
-    clearMatching(surplus)
   }
 
-  function invalidatePlanRelated(company = null) {
+  function _clearCompanyBucket(bucket, company = null) {
+    for (const k of Object.keys(bucket)) {
+      if (!company || k === company || k.startsWith(`${company}::`)) {
+        delete bucket[k]
+      }
+    }
+  }
+
+  /** After mutations that change cash / free cash only. */
+  function invalidateCashRelated(company = null) {
+    _clearCompanyBucket(mis, company)
+    _clearCompanyBucket(cash, company)
+    _clearCompanyBucket(surplus, company)
+  }
+
+  /**
+   * After plan edits that do not change which books sources are accepted
+   * (amount / due / probability / mark paid / freeze / split). Keeps From-books
+   * suggestions cached so Commitments does not flash-reload them.
+   */
+  function invalidatePlanOnly(company = null) {
     invalidateCashRelated(company)
-    for (const k of Object.keys(plan)) {
-      if (!company || k === company || k.startsWith(`${company}::`)) delete plan[k]
-    }
-    for (const k of Object.keys(recommendations)) {
-      if (!company || k === company || k.startsWith(`${company}::`)) delete recommendations[k]
-    }
+    _clearCompanyBucket(plan, company)
+  }
+
+  /**
+   * After mutations that can change the accepted set (accept / cancel / books
+   * sync that cancels rows). Clears plan + From-books recommendations.
+   */
+  function invalidatePlanRelated(company = null) {
+    invalidatePlanOnly(company)
+    _clearCompanyBucket(recommendations, company)
   }
 
   function invalidateAll() {
@@ -273,7 +307,9 @@ export const useTreasuryCacheStore = defineStore('treasuryCache', () => {
     ensureSurplus,
     ensurePlan,
     ensureRecommendations,
+    removeRecommendationSource,
     invalidateCashRelated,
+    invalidatePlanOnly,
     invalidatePlanRelated,
     invalidateAll,
   }

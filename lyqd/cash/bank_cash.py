@@ -5,7 +5,12 @@ from __future__ import annotations
 from typing import Any
 
 import frappe
-from frappe.utils import flt, getdate, today
+from frappe.utils import add_days, flt, getdate, today
+
+
+def default_bank_statement_as_of() -> str:
+	"""Morning liquidity planning uses T-1 statement balances (prior calendar day)."""
+	return str(getdate(add_days(today(), -1)))
 
 
 def get_policy_selected_bank_accounts(company: str) -> list[str] | None:
@@ -60,8 +65,8 @@ def get_company_bank_accounts(
 
 
 def get_statement_balance(bank_account: str, as_of: str | None = None) -> dict[str, Any]:
-	"""Latest LYQD Bank Balance on or before as_of."""
-	as_of = str(getdate(as_of or today()))
+	"""Latest LYQD Bank Balance on or before as_of (defaults to T-1)."""
+	as_of = str(getdate(as_of or default_bank_statement_as_of()))
 	rows = frappe.get_all(
 		"LYQD Bank Balance",
 		filters={"bank_account": bank_account, "date": ("<=", as_of)},
@@ -85,8 +90,8 @@ def get_latest_bank_account_balance(bank_account: str, as_of: str | None = None)
 def set_statement_balance(
 	bank_account: str, balance: float, as_of: str | None = None
 ) -> dict[str, Any]:
-	"""Upsert LYQD Bank Balance for a bank account."""
-	as_of_d = getdate(as_of or today())
+	"""Upsert LYQD Bank Balance for a bank account (default date = T-1)."""
+	as_of_d = getdate(as_of or default_bank_statement_as_of())
 	existing = frappe.db.exists(
 		"LYQD Bank Balance", {"bank_account": bank_account, "date": as_of_d}
 	)
@@ -155,13 +160,13 @@ def resolve_bank_account_cash(
 def get_eligible_bank_cash(company: str, as_of: str | None = None) -> dict[str, Any]:
 	"""Sum eligible company bank cash from local LYQD Bank Account + LYQD Bank Balance only.
 
-	Never reads balances from Other Site / remote ERPNext. Remote mirror (account list)
-	is a separate reconnect action and must not gate free-cash math.
+	Defaults to T-1 (prior calendar day) — morning planning is based on yesterday's
+	statement. Never reads balances from Other Site / remote ERPNext.
 	"""
 	from lyqd.recommendations.settings import get_integration_settings
 
 	selected = get_policy_selected_bank_accounts(company)
-	as_of_s = str(getdate(as_of or today()))
+	as_of_s = str(getdate(as_of or default_bank_statement_as_of()))
 	settings = get_integration_settings(company)
 	books_source = settings.get("books_source") or "Manual"
 	books_company = settings.get("remote_company") or company
@@ -178,6 +183,7 @@ def get_eligible_bank_cash(company: str, as_of: str | None = None) -> dict[str, 
 		"company": company,
 		"books_company": books_company,
 		"books_source": books_source,
+		"remote_site_url": settings.get("remote_site_url") or "",
 		"as_of": as_of_s,
 		"total": flt(total),
 		"accounts": rows,
@@ -278,6 +284,123 @@ def create_company_bank_account(
 		"created_gl_account": False,
 		"created_bank_account": created,
 	}
+
+
+def suggest_remote_bank_balance(
+	bank_account: str,
+	as_of: str | None = None,
+) -> dict[str, Any]:
+	"""Suggest a statement balance from remote ERPNext for the Cash page dialog.
+
+	Never writes remote. Returns a local-only suggestion the user can apply, or a
+	hint to maintain Bank Account Balance on ERPNext when missing.
+	"""
+	from lyqd.cash.remote_banks import get_remote_statement_balance, remote_has_doctype
+	from lyqd.recommendations.remote import get_remote_client
+	from lyqd.recommendations.settings import get_integration_settings, is_remote_source
+
+	if not bank_account or not frappe.db.exists("LYQD Bank Account", bank_account):
+		frappe.throw(frappe._("Bank account not found"))
+
+	ba = frappe.db.get_value(
+		"LYQD Bank Account",
+		bank_account,
+		["name", "company", "account_name", "books_bank_account"],
+		as_dict=True,
+	)
+	company = ba.company
+	as_of_s = str(getdate(as_of or default_bank_statement_as_of()))
+	local = get_statement_balance(bank_account, as_of_s)
+	settings = get_integration_settings(company)
+	books_source = settings.get("books_source") or "Manual"
+	remote_url = settings.get("remote_site_url") or ""
+
+	base = {
+		"bank_account": bank_account,
+		"account_name": ba.account_name,
+		"company": company,
+		"as_of": as_of_s,
+		"books_source": books_source,
+		"remote_site_url": remote_url,
+		"remote_bank_account": ba.books_bank_account,
+		"local_balance": flt(local.get("balance")),
+		"local_balance_date": local.get("balance_date"),
+		"available": False,
+		"doctype_exists": None,
+		"found": False,
+		"balance": None,
+		"balance_date": None,
+		"differs": False,
+		"message": None,
+		"action_hint": None,
+	}
+
+	if not is_remote_source(company):
+		base["message"] = frappe._(
+			"Books are not linked to a remote ERPNext site. Enter the statement balance here."
+		)
+		return base
+
+	if not ba.books_bank_account:
+		base["message"] = frappe._(
+			"This LYQD bank account is not linked to a remote Bank Account. Remirror banks from Settings, then try again."
+		)
+		base["action_hint"] = "relink"
+		return base
+
+	try:
+		client, _books = get_remote_client(company)
+	except Exception as e:
+		base["message"] = frappe._("Could not reach remote books: {0}").format(str(e))
+		base["action_hint"] = "reconnect"
+		return base
+
+	if not remote_has_doctype(client, "Bank Account Balance"):
+		base["doctype_exists"] = False
+		base["message"] = frappe._(
+			"Remote ERPNext does not expose Bank Account Balance (Banking). "
+			"Install/enable Banking there, or enter the closing balance in LYQD manually."
+		)
+		base["action_hint"] = "update_erpnext"
+		return base
+
+	base["doctype_exists"] = True
+	try:
+		remote = get_remote_statement_balance(client, ba.books_bank_account, as_of_s)
+	except Exception as e:
+		base["message"] = frappe._("Could not read remote Bank Account Balance: {0}").format(
+			str(e)
+		)
+		base["action_hint"] = "update_erpnext"
+		return base
+
+	if not remote.get("found"):
+		base["found"] = False
+		base["message"] = frappe._(
+			"No Bank Account Balance on or before {0} for {1} on ERPNext. "
+			"Add/update the statement closing there, then apply it here."
+		).format(as_of_s, ba.books_bank_account)
+		base["action_hint"] = "update_erpnext"
+		return base
+
+	remote_bal = flt(remote.get("balance"))
+	base.update(
+		{
+			"available": True,
+			"found": True,
+			"balance": remote_bal,
+			"balance_date": remote.get("balance_date"),
+			"differs": abs(remote_bal - flt(local.get("balance"))) > 0.01,
+			"message": frappe._(
+				"Books closing on {0}: {1}. Apply to update LYQD’s local statement (remote is not changed)."
+			).format(
+				remote.get("balance_date") or as_of_s,
+				frappe.format_value(remote_bal, {"fieldtype": "Currency"}),
+			),
+			"action_hint": "apply",
+		}
+	)
+	return base
 
 
 def _default_lyqd_company() -> str | None:

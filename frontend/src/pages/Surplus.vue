@@ -36,7 +36,12 @@
     <div v-if="loading && !r" class="text-sm text-gray-500">Computing…</div>
     <template v-else-if="r">
       <div class="mb-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <MetricCard label="Cash position" :value="r.bank_cash" hint="Bank statement balances" />
+        <MetricCard
+          label="Cash position"
+          :value="r.bank_cash"
+          hint="T-1 statements"
+          info="Morning free cash uses yesterday's bank statement balances."
+        />
         <MetricCard
           :label="`Commitments (${r.horizon_days}d)`"
           :value="r.upcoming_total"

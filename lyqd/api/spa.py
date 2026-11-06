@@ -202,24 +202,59 @@ def set_daily_bank_balance(
 
 
 @frappe.whitelist()
+def suggest_remote_bank_balance(
+	bank_account: str,
+	as_of: str | None = None,
+) -> dict:
+	"""Read-only remote Bank Account Balance suggestion for the Cash update dialog."""
+	from lyqd.cash.bank_cash import suggest_remote_bank_balance as _suggest
+
+	frappe.only_for(("System Manager", "LYQD Manager", "LYQD User"))
+	return _suggest(bank_account, as_of)
+
+
+@frappe.whitelist()
 def get_morning_mis(company: str | None = None, horizon_days: int | str = 7) -> dict:
 	"""Morning MIS: bank balances (BAB), liquid holdings, upcoming, redemption need."""
 	from frappe.utils import today
 
-	from lyqd.cash.bank_cash import get_eligible_bank_cash
+	from lyqd.cash.bank_cash import default_bank_statement_as_of, get_eligible_bank_cash
 	from lyqd.cash.surplus import compute_surplus, get_planned_upcoming_payments, get_policy
 
 	company = company or _default_company()
 	horizon_days = parse_horizon_days(horizon_days)
 	as_of = today()
+	# Morning planning uses yesterday's statement balances (T-1)
+	bank_as_of = default_bank_statement_as_of()
 
 	# Read-only morning view — do not sync plan from books here (slow, especially Other Site).
 	# Sync stays explicit on Commitments → "Sync plan from books".
 
-	cash = get_eligible_bank_cash(company, as_of=as_of)
-	surplus = compute_surplus(company, as_of=as_of, horizon_days=horizon_days)
+	cash = get_eligible_bank_cash(company, as_of=bank_as_of)
+	surplus = compute_surplus(
+		company,
+		as_of=as_of,
+		horizon_days=horizon_days,
+		bank_cash=flt(cash.get("total")),
+	)
 	policy = get_policy(company)
 	upcoming = get_planned_upcoming_payments(company, as_of, horizon_days)
+
+	# Free cash = bank − commitments − policy. Incoming (Inflow/Setoff) is separate.
+	def _effect(r):
+		return r.get("cash_effect") or "Outflow"
+
+	commitments = [r for r in upcoming if _effect(r) == "Outflow"]
+	incoming = [r for r in upcoming if _effect(r) in ("Inflow", "Setoff")]
+	commitments_total = flt(sum(flt(r.get("amount")) for r in commitments))
+	incoming_total = flt(sum(flt(r.get("amount")) for r in incoming))
+	incoming_expected = 0.0
+	for r in incoming:
+		prob = r.get("probability")
+		if prob is None or prob == "":
+			prob = 100
+		incoming_expected += flt(r.get("amount")) * min(max(flt(prob), 0), 100) / 100.0
+	incoming_expected = flt(incoming_expected)
 
 	from lyqd.mytra.portfolio import get_portfolio
 
@@ -254,10 +289,14 @@ def get_morning_mis(company: str | None = None, horizon_days: int | str = 7) -> 
 		planned_status = proposal[0].status
 		planned_request_type = proposal[0].request_type or "Invest"
 
-	# Signed free cash (negative = shortfall). Do not zero — UI shows magnitude + tone.
+	# Actual free cash = position − commitments − policy (incoming excluded).
+	# Expected free cash = actual + expected incoming (probability-weighted).
 	signed_investable = flt(surplus.investable_surplus)
 	is_shortfall = bool(surplus.is_shortfall)
 	deployable = signed_investable if not is_shortfall else 0.0
+	expected_free_cash = flt(signed_investable + incoming_expected)
+	expected_is_shortfall = expected_free_cash < -0.01
+	incoming_covers_shortfall = bool(is_shortfall and not expected_is_shortfall)
 
 	# Drift vs open request for *this* horizon (Invest deploy vs Redeem need).
 	over_allocated = 0.0
@@ -290,18 +329,28 @@ def get_morning_mis(company: str | None = None, horizon_days: int | str = 7) -> 
 	return {
 		"company": company,
 		"as_of": as_of,
+		"bank_as_of": bank_as_of,
 		"horizon_days": horizon_days,
 		"bank_cash": bank_cash,
 		"banks": cash.get("accounts") or [],
 		"liquid_fund_total": liquid_total,
 		"liquid_holdings": liquid_rows,
+		# Free-cash reserve (outflows − setoffs); never includes inflows
 		"upcoming_total": flt(surplus.upcoming_total),
-		"upcoming": upcoming,
+		# Home-page cards: commitments (outflows ≥ 0) and incoming (separate)
+		"commitments_total": commitments_total,
+		"incoming_total": incoming_total,
+		"incoming_expected": incoming_expected,
+		"upcoming": commitments,
+		"incoming": incoming,
 		"min_liquidity_buffer": flt(policy.get("min_liquidity_buffer")),
 		"restricted_cash": flt(policy.get("restricted_cash")),
 		"required_cash": required,
 		"investable_surplus": signed_investable,
 		"is_shortfall": is_shortfall,
+		"expected_free_cash": expected_free_cash,
+		"expected_is_shortfall": expected_is_shortfall,
+		"incoming_covers_shortfall": incoming_covers_shortfall,
 		"cash_gap": cash_gap,
 		"redemption_need": redemption_need,
 		"planned_investment": planned_investment,
@@ -603,10 +652,42 @@ def accept_upcoming_recommendation(
 	account: str | None = None,
 	cash_effect: str | None = None,
 	source_row: str | None = None,
+	probability: float | int | None = None,
 ) -> dict:
 	from lyqd.recommendations import accept_recommendation
 
 	return accept_recommendation(
+		company=company or _default_company(),
+		source_doctype=source_doctype,
+		source_name=source_name,
+		amount=flt(amount) if amount is not None else None,
+		title=title,
+		category=category,
+		due_date=due_date,
+		account=account,
+		cash_effect=cash_effect,
+		source_row=source_row,
+		probability=probability,
+	)
+
+
+@frappe.whitelist()
+def ignore_upcoming_recommendation(
+	company: str | None = None,
+	source_doctype: str | None = None,
+	source_name: str | None = None,
+	amount: float | None = None,
+	title: str | None = None,
+	category: str | None = None,
+	due_date: str | None = None,
+	account: str | None = None,
+	cash_effect: str | None = None,
+	source_row: str | None = None,
+) -> dict:
+	"""Store an Ignored Upcoming Payment so the voucher/account leaves From-books."""
+	from lyqd.recommendations import ignore_recommendation
+
+	return ignore_recommendation(
 		company=company or _default_company(),
 		source_doctype=source_doctype,
 		source_name=source_name,
@@ -645,6 +726,33 @@ def refresh_upcoming_from_books(name: str) -> dict:
 	from lyqd.recommendations import sync_upcoming_payment_from_books
 
 	return sync_upcoming_payment_from_books(name)
+
+
+@frappe.whitelist()
+def preview_split_upcoming_payment(name: str) -> dict:
+	"""Suggested Split rows (Payment Schedule when available, else current row + blank)."""
+	from lyqd.recommendations import preview_split_upcoming_payment as _preview
+
+	frappe.only_for(("System Manager", "LYQD Manager", "LYQD User"))
+	return _preview(name)
+
+
+@frappe.whitelist()
+def split_upcoming_payment(name: str, rows: str | list | None = None) -> dict:
+	"""Replace one Planned payment with N dated plan rows (generic Split)."""
+	from lyqd.recommendations import split_upcoming_payment as _split
+
+	frappe.only_for(("System Manager", "LYQD Manager", "LYQD User"))
+	return _split(name, rows)
+
+
+@frappe.whitelist()
+def mark_upcoming_split_paid(parent: str, split_row_name: str) -> dict:
+	"""Mark one GL schedule (child table) line as Paid."""
+	from lyqd.recommendations.core import mark_upcoming_split_paid as _mark
+
+	frappe.only_for(("System Manager", "LYQD Manager", "LYQD User"))
+	return _mark(parent, split_row_name)
 
 
 @frappe.whitelist()
@@ -701,7 +809,9 @@ def list_upcoming_payments(company: str | None = None) -> list[dict]:
 			"category",
 			"due_date",
 			"amount",
+			"group_net",
 			"cash_effect",
+			"probability",
 			"status",
 			"notes",
 			"company",
@@ -719,6 +829,21 @@ def list_upcoming_payments(company: str | None = None) -> list[dict]:
 		order_by="due_date asc",
 		limit_page_length=500,
 	)
+	names = [r.name for r in rows]
+	splits_by_parent: dict[str, list] = {}
+	if names and frappe.db.exists("DocType", "LYQD Upcoming Split"):
+		for s in frappe.get_all(
+			"LYQD Upcoming Split",
+			filters={"parent": ("in", names)},
+			fields=["name", "parent", "due_date", "amount", "title", "status", "probability", "idx"],
+			order_by="due_date asc, idx asc",
+		):
+			splits_by_parent.setdefault(s.parent, []).append(s)
+
+	def _signed(amount, effect):
+		amt = flt(amount)
+		return amt if (effect or "Outflow") == "Outflow" else -amt
+
 	for row in rows:
 		if row.get("status") == "Planned":
 			expand_recurring_row(row, as_of, horizon_days)
@@ -726,6 +851,48 @@ def list_upcoming_payments(company: str | None = None) -> list[dict]:
 			row["period_amount"] = flt(row.get("amount"))
 			row["occurrence_count"] = 1
 			row["occurrence_dates"] = [str(row["due_date"])] if row.get("due_date") else []
+
+		kids = splits_by_parent.get(row.name) or []
+		if kids:
+			row["_has_splits"] = 1
+			row["_children"] = [
+				{
+					"name": f"{row.name}::split::{s.name}",
+					"split_name": s.name,
+					"title": s.title or row.title,
+					"due_date": s.due_date,
+					"amount": flt(s.amount),
+					"status": s.status or "Planned",
+					"probability": (
+						flt(s.probability)
+						if s.probability is not None and s.probability != ""
+						else (
+							flt(row.probability)
+							if row.probability is not None and row.probability != ""
+							else 100
+						)
+					),
+					"cash_effect": row.cash_effect,
+					"category": row.category,
+					"parent_payment": row.name,
+					"source_doctype": row.source_doctype,
+					"source_name": row.source_name,
+					"_schedule": 1,
+					"_child": 1,
+					"_childCount": 0,
+					"_children": [],
+				}
+				for s in kids
+			]
+			row["_childCount"] = len(kids)
+			# Header amount already = sum of Planned lines; group net is that signed total
+			row["_groupNet"] = sum(
+				_signed(c["amount"], row.cash_effect)
+				for c in row["_children"]
+				if (c.get("status") or "Planned") == "Planned"
+			)
+		else:
+			row["_has_splits"] = 0
 	return rows
 
 
@@ -752,14 +919,17 @@ def save_upcoming_payment(doc: str | dict | None = None) -> dict:
 			pass
 		payment.title = (doc.get("title") or payment.title or "").strip()
 		payment.category = doc.get("category") or payment.category or "Other"
-		# Child due dates follow parent — ignore SPA edits on nested rows
-		if not payment.parent_payment:
-			payment.due_date = doc.get("due_date") or payment.due_date
-		# Prefer period_amount when SPA sends horizon-expanded amount by mistake
-		if doc.get("period_amount") is not None:
-			payment.amount = flt(doc.get("period_amount"))
-		else:
-			payment.amount = flt(doc.get("amount"))
+		has_schedule = bool(payment.get("splits"))
+		# Child due dates follow parent — ignore SPA edits on nested rows.
+		# Split schedules own amount / due via _sync_from_splits — ignore SPA amount.
+		if not has_schedule:
+			if not payment.parent_payment:
+				payment.due_date = doc.get("due_date") or payment.due_date
+			# Prefer period_amount when SPA sends horizon-expanded amount by mistake
+			if doc.get("period_amount") is not None:
+				payment.amount = flt(doc.get("period_amount"))
+			else:
+				payment.amount = flt(doc.get("amount"))
 		# Manual rows may set Outflow/Inflow; books-sourced Setoff stays unless SPA sends effect
 		if not payment.source_doctype and doc.get("cash_effect") in allowed_effects:
 			payment.cash_effect = doc.get("cash_effect")
@@ -772,14 +942,50 @@ def save_upcoming_payment(doc: str | dict | None = None) -> dict:
 		elif "is_recurring" in doc:
 			payment.frequency = None
 			payment.recurrence_end = None
-		if doc.get("status") in ("Planned", "Paid", "Cancelled"):
+		if doc.get("status") in ("Planned", "Paid", "Cancelled", "Ignored"):
 			want = doc.get("status")
 			# Recurring series: "Paid" advances next due and stays Planned (like GL grain)
 			if want == "Paid" and cint(payment.is_recurring):
 				advance_recurring_after_paid(payment)
-			else:
+			elif want == "Paid" and payment.get("splits"):
+				# Header Paid with a GL schedule → mark every Planned maturity Paid.
+				# (status alone is overwritten by _sync_from_splits while lines stay Planned.)
+				for split in payment.get("splits") or []:
+					if (split.status or "Planned") == "Planned":
+						split.status = "Paid"
+			elif want == "Ignored" and payment.get("splits"):
+				frappe.throw(
+					_("Cannot ignore a payment that has a split schedule. Merge first.")
+				)
+			elif not has_schedule:
 				payment.status = want
+				# Ignored rows are not nested / do not reserve free cash
+				if want == "Ignored":
+					payment.parent_payment = None
 		payment.notes = doc.get("notes")
+		# Prefer SPA-sent effect for probability when books rows keep Setoff in DB
+		# but the form remaps Setoff → Inflow for editing.
+		effect_for_prob = payment.cash_effect
+		if doc.get("cash_effect") in ("Inflow", "Setoff"):
+			effect_for_prob = doc.get("cash_effect")
+		if effect_for_prob in ("Inflow", "Setoff"):
+			if "probability" in doc and not has_schedule:
+				payment.probability = min(max(flt(doc.get("probability")), 0), 100)
+		else:
+			payment.probability = 100
+		# Per-installment probability / status on the GL split schedule
+		if has_schedule and isinstance(doc.get("splits"), (list, tuple)):
+			by_name = {s.name: s for s in (payment.get("splits") or [])}
+			for row in doc.get("splits") or []:
+				child = by_name.get(row.get("name") or row.get("split_name"))
+				if not child:
+					continue
+				if effect_for_prob in ("Inflow", "Setoff") and "probability" in row:
+					child.probability = min(max(flt(row.get("probability")), 0), 100)
+				elif effect_for_prob not in ("Inflow", "Setoff"):
+					child.probability = 100
+				if row.get("status") in ("Planned", "Paid"):
+					child.status = row.get("status")
 		if not payment.title:
 			frappe.throw(_("Title is required"))
 		payment.save()
@@ -789,6 +995,9 @@ def save_upcoming_payment(doc: str | dict | None = None) -> dict:
 	is_recurring = 1 if cint(doc.get("is_recurring")) else 0
 	if is_recurring:
 		cash_effect = "Outflow"
+	probability = 100
+	if cash_effect in ("Inflow", "Setoff"):
+		probability = min(max(flt(doc.get("probability") if doc.get("probability") is not None else 100), 0), 100)
 	payment = frappe.get_doc(
 		{
 			"doctype": "LYQD Upcoming Payment",
@@ -798,10 +1007,13 @@ def save_upcoming_payment(doc: str | dict | None = None) -> dict:
 			"due_date": doc.get("due_date") or today(),
 			"amount": flt(doc.get("period_amount") if doc.get("period_amount") is not None else doc.get("amount")),
 			"cash_effect": cash_effect,
+			"probability": probability,
 			"is_recurring": is_recurring,
 			"frequency": (doc.get("frequency") or "Monthly") if is_recurring else None,
 			"recurrence_end": doc.get("recurrence_end") if is_recurring else None,
-			"status": doc.get("status") if doc.get("status") in ("Planned", "Paid", "Cancelled") else "Planned",
+			"status": doc.get("status")
+			if doc.get("status") in ("Planned", "Paid", "Cancelled", "Ignored")
+			else "Planned",
 			"notes": doc.get("notes"),
 		}
 	)

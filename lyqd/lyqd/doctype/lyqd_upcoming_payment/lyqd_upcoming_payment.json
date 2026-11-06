@@ -17,7 +17,9 @@
   "column_break_details",
   "due_date",
   "amount",
+  "group_net",
   "cash_effect",
+  "probability",
   "recurring_section",
   "is_recurring",
   "frequency",
@@ -32,7 +34,9 @@
   "source_account",
   "parent_payment",
   "balance_as_of",
-  "last_synced_on"
+  "last_synced_on",
+  "splits_section",
+  "splits"
  ],
  "fields": [
   {
@@ -64,7 +68,7 @@
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Status",
-   "options": "Planned\nPaid\nCancelled",
+   "options": "Planned\nPaid\nCancelled\nIgnored",
    "reqd": 1
   },
   {
@@ -110,14 +114,31 @@
    "reqd": 1
   },
   {
+   "default": "0",
+   "description": "Signed nest total on Account-group roots: Outflow +, Inflow/Setoff −. Own Amount stays the parent grain; this field is parent + nested children. 0 when not a nest root.",
+   "fieldname": "group_net",
+   "fieldtype": "Currency",
+   "label": "Group Net",
+   "read_only": 1
+  },
+  {
    "default": "Outflow",
-   "description": "Outflow reserves cash. Setoff (books assets) and Inflow (FD / loan proceeds) increase free cash. Books sync may overwrite Setoff/Outflow.",
+   "description": "Outflow reserves cash. Setoff (books assets) reduces required cash. Inflow (FD / loan proceeds) is tracked separately and does not change free cash today.",
    "fieldname": "cash_effect",
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Cash Effect",
    "options": "Outflow\nSetoff\nInflow",
    "reqd": 1
+  },
+  {
+   "default": "100",
+   "depends_on": "eval:doc.cash_effect=='Inflow'",
+   "description": "Likelihood this inflow lands in the horizon (0–100). Expected = Amount × Probability.",
+   "fieldname": "probability",
+   "fieldtype": "Percent",
+   "label": "Probability",
+   "non_negative": 1
   },
   {
    "fieldname": "recurring_section",
@@ -182,9 +203,10 @@
    "read_only": 1
   },
   {
-   "description": "Payment Schedule child row name when this plan line is one installment of a Purchase/Sales Invoice.",
+   "description": "Internal: Payment Schedule child name for SI/PI installments. GL splits use the Splits table — leave empty.",
    "fieldname": "source_row",
    "fieldtype": "Data",
+   "hidden": 1,
    "label": "Source Row",
    "read_only": 1
   },
@@ -215,6 +237,19 @@
    "fieldtype": "Datetime",
    "label": "Last Synced From Books",
    "read_only": 1
+  },
+  {
+   "collapsible": 1,
+   "description": "For Account (GL) balances such as FD / loan: dated maturity or repayment ladder on this one plan row. Free cash uses each line’s due date. Prefer this over multiple Upcoming Payment documents.",
+   "fieldname": "splits_section",
+   "fieldtype": "Section Break",
+   "label": "Split schedule"
+  },
+  {
+   "fieldname": "splits",
+   "fieldtype": "Table",
+   "label": "Splits",
+   "options": "LYQD Upcoming Split"
   }
  ],
  "links": [],

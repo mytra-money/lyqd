@@ -109,13 +109,21 @@ def get_remote_statement_balance(client, bank_account: str, as_of: str | None = 
 		or []
 	)
 	if not rows:
-		return {"balance": 0.0, "balance_date": None, "as_of": as_of, "source": "remote_bab"}
+		return {
+			"balance": None,
+			"balance_date": None,
+			"as_of": as_of,
+			"source": "remote_bab",
+			"found": False,
+		}
 	row = rows[0]
 	return {
 		"balance": flt(row.get("balance")),
 		"balance_date": row.get("date"),
 		"as_of": as_of,
 		"source": "remote_bab",
+		"found": True,
+		"remote_name": row.get("name"),
 	}
 
 

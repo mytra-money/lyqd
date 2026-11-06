@@ -17,7 +17,7 @@
 
 LYQD helps finance teams see bank cash, upcoming payments, and free cash in one place — then create an **Invest** or **Redeem** proposal when they’re ready.
 
-It is built for companies that collect money before payroll, vendors, and taxes are due, and want a clear answer to: *“How much can free cash does the business have (to park in a liquid fund) until the next payment?”*
+It is built for companies that collect money before payroll, vendors, and taxes are due, and want a clear answer to: *“How much free cash does the business have (to park in a liquid fund) until the next payment?”*
 
 ---
 
@@ -61,8 +61,8 @@ You can:
 - **Add a payment** yourself (amount, due date, category)
 - Mark payments **Paid** when done
 - Set a payment to **repeat** (for example monthly rent)
-- Related payments (for example tax groups) can appear nested so the plan stays readable.
-- Optionally pull **suggestions from your books** (ERPNext) and add them to the plan
+- Related payments (for example tax groups) can appear nested so the plan stays readable
+- With books connected: review **From books** suggestions, **Add to plan**, or **Ignore** (see [ERPNext integration](#erpnext-integration) below)
 
 ![Add a manual payment](docs/screenshots/add-payment.jpg)
 
@@ -104,7 +104,7 @@ See holdings and recent investment activity in one place.
 
 ### Bank cash
 
-Update statement balances for your bank accounts. These balances always live in LYQD (they are not copied from remote books).
+Update statement balances for your bank accounts. Free cash always uses **LYQD** statement balances (typically as of yesterday). When books are connected, LYQD can **suggest** the latest ERPNext Bank Account Balance — you apply it locally; nothing is written back to ERPNext.
 
 ![Bank cash](docs/screenshots/bank-cash.jpg)
 
@@ -116,25 +116,62 @@ Open **Settings** from the menu to configure your company.
 
 | Section | What you set |
 |---------|----------------|
-| **Integrations** | Optional link to ERPNext (this site or another site) for payment suggestions |
+| **Integrations** | Optional link to ERPNext (this site or another site) for payment suggestions and bank account names |
 | **Liquidity** | Safety buffer, restricted cash, and default forecast days |
 | **Banks** | Which bank accounts count toward free cash |
 | **Investment account** | Request activation (handled by Mytra) |
 
 You can manage more than one company. Switch companies from the top of the app.
 
-### Optional: connect books (ERPNext)
-
-Books are optional. Three modes:
-
-- **Manual** — enter balances and payments in LYQD only  
-- **This site** — use ERPNext on the same site for suggestions  
-- **Other site** — connect a remote ERPNext with URL + API key
-
 ![Settings](docs/screenshots/settings.jpg)
 
+---
 
-Bank **balances** are always updated in LYQD, even when account names are mirrored from books.
+## ERPNext integration
+
+Books are **optional**. Free cash still works with manual bank balances and commitments. Connecting ERPNext adds suggestions and sync — it does not replace LYQD as the system of record for statement balances or the payment plan.
+
+### Connection modes
+
+| Mode | What it does |
+|------|----------------|
+| **Manual** | Enter balances and payments in LYQD only |
+| **This site** | Use ERPNext on the same Frappe site for suggestions |
+| **Other site** | Connect a remote ERPNext with URL + API key / secret |
+
+On Other site (and when settings save/probe succeeds), company **Bank Account** masters can be **mirrored** into LYQD. Statement balances stay in LYQD.
+
+### What LYQD reads from books
+
+| Source | How it shows up |
+|--------|-----------------|
+| **Purchase Invoice** / **Sales Invoice** | Open outstanding (nets payment entries and similar clearances) with due dates where available |
+| **Accounts** (refs on/off) | Net GL balances — e.g. GST / TDS / payroll payable style grains; nested groups when parent accounts are configured |
+| **Bank Account** masters | Names linked on LYQD Bank Account (`books_bank_account`) |
+| **Bank Account Balance** | Optional **suggestion** on Bank cash (apply locally) |
+
+Payment Entry and Journal Entry are not listed as separate suggestions — they reduce invoice / GL outstanding instead.
+
+### Plan actions (Commitments)
+
+Once suggestions appear under **From books**:
+
+- **Add to plan** — creates a Planned upcoming payment with a link back to the ERPNext document
+- **Ignore** — stores the row as **Ignored** so it leaves suggestions and does not reserve free cash (review under status *Ignored*)
+- **Sync plan from books** / per-row **Refresh** — updates amounts, marks cleared vouchers **Paid**, cancels missing/cancelled sources
+- **Freeze** — pin an Account-grain amount to GL as of a chosen date (GST / TDS style)
+- **Split / Re-split** — break a books-linked amount into a dated schedule (e.g. loan / FD ladders); refresh compares live books to the schedule and can prompt Adjust split
+- Nested tax / liability groups stay readable; **group net** is used for nest totals and split basis
+
+Only **Planned** outflows in the forecast horizon reserve free cash. Inflows are shown as expected incoming (with optional probability) and do **not** increase investable free cash.
+
+### What stays manual
+
+- Daily / T-1 **statement balances** in LYQD (remote balance is a tip, not auto-applied)
+- Choosing which suggestions to **Add** or **Ignore**
+- **Sync** when books change (morning cash position does not sync the plan by itself)
+- Recurring rows such as rent or payroll when not driven from an Account grain
+- Invest / Redeem **proposals** and instructions (Mytra handoff is soft-launch gated)
 
 ---
 
@@ -143,7 +180,8 @@ Bank **balances** are always updated in LYQD, even when account names are mirror
 - Start every morning on **Cash position**, then open **Commitments** if something looks off.
 - Keep the **liquidity buffer** realistic — free cash is only useful if the buffer matches how you operate.
 - Prefer **due dates** on commitments so the horizon view stays honest.
-- If suggestions from books look wrong, fix the account list under **Settings → Integrations**, then retry.
+- After books change (payments, cancellations), use **Sync plan from books** so free cash stays honest.
+- If suggestions look wrong, fix the account list under **Settings → Integrations**, then retry.
 - Soft launch portfolio may show **sample** holdings until live investment connectivity is fully on for your company.
 
 ---

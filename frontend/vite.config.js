@@ -47,10 +47,14 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, 'src'),
-      // frappe-ui 0.1.x exports `toast` from the package root but not the host.
+      // frappe-ui 0.1.x: toast API is root-exported; host + ToastProvider are not.
       'frappe-ui/toasts': path.resolve(
         __dirname,
         'node_modules/frappe-ui/src/components/Toast/index.ts',
+      ),
+      'frappe-ui/ToastProvider': path.resolve(
+        __dirname,
+        'node_modules/frappe-ui/src/components/Toast/ToastProvider.vue',
       ),
     },
   },

@@ -196,27 +196,26 @@ class TestLYQDSurplusFormula(UnitTestCase):
 					"amount": 2_000,
 					"due_date": as_of,
 					"category": "Tax",
-					"cash_effect": "Setoff",
+					"cash_effect": "Inflow",
 					"parent_payment": "P-IGST",
 				},
 			],
 			min_liquidity_buffer=0,
 			restricted_cash=0,
 		)
-		# Net reserved = 10000 + 5000 - 2000 = 13000
-		self.assertEqual(result.upcoming_total, 13_000)
+		# Free cash commitments = outflows only (ITC/incoming excluded)
+		self.assertEqual(result.upcoming_total, 15_000)
 		upcoming_lines = [e for e in result.explanation if e.kind == "upcoming"]
 		self.assertEqual(len(upcoming_lines), 1)
 		parent = upcoming_lines[0]
 		self.assertEqual(parent.ref_name, "P-IGST")
-		self.assertEqual(parent.child_count, 2)
-		self.assertEqual(flt(parent.amount), 13_000)
+		# Incoming child omitted from free-cash explanation nest
+		self.assertEqual(parent.child_count, 1)
+		self.assertEqual(flt(parent.amount), 15_000)
 		self.assertEqual(parent.sign, "-")
 		self.assertEqual(flt(parent.gl_amount), 10_000)
-		self.assertEqual(len(parent.children), 2)
+		self.assertEqual(len(parent.children), 1)
 		self.assertEqual(parent.children[0].ref_name, "C-CGST")
-		self.assertEqual(parent.children[1].ref_name, "C-ITC")
-		self.assertEqual(parent.children[1].sign, "+")
 
 
 	def test_overdue_planned_still_reserves(self):

@@ -40,9 +40,74 @@
             type="select"
             label="Bank account"
             :options="bankSelectOptions"
+            @update:model-value="loadRemoteSuggestion"
           />
-          <FormControl v-model="form.as_on" type="date" label="Date" />
+          <FormControl
+            v-model="form.as_on"
+            type="date"
+            label="Date"
+            @update:model-value="loadRemoteSuggestion"
+          />
           <CurrencyControl v-model="form.balance" label="Balance" />
+
+          <div
+            v-if="suggestionLoading"
+            class="rounded-md border border-gray-100 bg-gray-50 px-3 py-2 text-xs text-gray-500"
+          >
+            Checking books for a closing balance…
+          </div>
+          <div
+            v-else-if="suggestion?.available"
+            class="rounded-md border px-3 py-2 text-xs"
+            :class="
+              suggestion.differs
+                ? 'border-amber-200 bg-amber-50 text-amber-950'
+                : 'border-emerald-100 bg-emerald-50 text-emerald-900'
+            "
+          >
+            <p>{{ suggestion.message }}</p>
+            <div class="mt-2 flex flex-wrap items-center gap-2">
+              <Button
+                size="sm"
+                :variant="suggestion.differs ? 'solid' : 'outline'"
+                @click="applyRemoteSuggestion"
+              >
+                Use books balance
+                <span class="tabular-nums">{{ formatINRCompact(suggestion.balance) }}</span>
+              </Button>
+              <span v-if="!suggestion.differs" class="text-[11px] text-emerald-800">
+                Matches LYQD already
+              </span>
+            </div>
+          </div>
+          <div
+            v-else-if="suggestion?.action_hint === 'update_erpnext'"
+            class="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950"
+          >
+            <p class="font-medium">Update ERPNext</p>
+            <p class="mt-1">{{ suggestion.message }}</p>
+            <p v-if="suggestion.remote_site_url" class="mt-2 text-[11px] text-amber-800">
+              Remote:
+              <a
+                class="underline"
+                :href="suggestion.remote_site_url"
+                target="_blank"
+                rel="noopener"
+              >
+                {{ suggestion.remote_site_url }}
+              </a>
+            </p>
+          </div>
+          <div
+            v-else-if="suggestion?.message && booksIsRemote"
+            class="rounded-md border border-gray-100 bg-gray-50 px-3 py-2 text-xs text-gray-600"
+          >
+            {{ suggestion.message }}
+          </div>
+          <p class="text-[11px] text-gray-400">
+            LYQD keeps its own statement balance for planning. Books are only a suggestion —
+            nothing is written back to ERPNext.
+          </p>
         </div>
       </template>
       <template #actions>
@@ -99,6 +164,9 @@ const show = ref(false)
 const showAdd = ref(false)
 const saving = ref(false)
 const adding = ref(false)
+const suggestionLoading = ref(false)
+const suggestion = ref(null)
+let suggestionSeq = 0
 const form = reactive({ bank_account: '', as_on: '', balance: 0 })
 const addBank = reactive({
   account_name: '',
@@ -120,7 +188,16 @@ const canAddBanks = computed(() => {
   return (cash.value.data?.books_source || 'Manual') !== 'Other Site'
 })
 
-const cashSubtitle = computed(() => 'Statement balances for this company')
+const booksIsRemote = computed(
+  () => (cash.value.data?.books_source || 'Manual') === 'Other Site',
+)
+
+const cashSubtitle = computed(() => {
+  const asOf = cash.value.data?.as_of
+  return asOf
+    ? `T-1 statements for morning planning · as of ${asOf}`
+    : 'T-1 statement balances for morning planning'
+})
 
 const emptyHint = computed(
   () =>
@@ -181,8 +258,49 @@ function openBalanceFor(ba) {
   const name = ba?.name || ba?.bank_account || ''
   form.bank_account = name || bankSelectOptions.value[0]?.value || ''
   form.as_on = cash.value.data?.as_of || new Date().toISOString().slice(0, 10)
-  form.balance = ba?.balance != null ? ba.balance : cashCards.value.find((c) => c.name === name)?.balance || 0
+  form.balance =
+    ba?.balance != null
+      ? ba.balance
+      : cashCards.value.find((c) => c.name === name)?.balance || 0
+  suggestion.value = null
   show.value = true
+  loadRemoteSuggestion()
+}
+
+async function loadRemoteSuggestion() {
+  if (!show.value || !form.bank_account || !booksIsRemote.value) {
+    suggestion.value = null
+    suggestionLoading.value = false
+    return
+  }
+  const seq = ++suggestionSeq
+  suggestionLoading.value = true
+  try {
+    const res = await call('lyqd.api.spa.suggest_remote_bank_balance', {
+      bank_account: form.bank_account,
+      as_of: form.as_on || null,
+    })
+    if (seq !== suggestionSeq) return
+    suggestion.value = res || null
+  } catch (e) {
+    if (seq !== suggestionSeq) return
+    suggestion.value = {
+      available: false,
+      action_hint: 'reconnect',
+      message: e.messages?.[0] || e.message || 'Could not check books balance',
+      remote_site_url: cash.value.data?.remote_site_url || '',
+    }
+  } finally {
+    if (seq === suggestionSeq) suggestionLoading.value = false
+  }
+}
+
+function applyRemoteSuggestion() {
+  if (suggestion.value?.balance == null) return
+  form.balance = Number(suggestion.value.balance) || 0
+  if (suggestion.value.balance_date) {
+    form.as_on = String(suggestion.value.balance_date).slice(0, 10)
+  }
 }
 
 function openAddBank() {

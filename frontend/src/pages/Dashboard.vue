@@ -14,31 +14,44 @@
     <div v-if="loading && !d" class="text-sm text-gray-500">Loading morning view…</div>
     <template v-else-if="d">
       <!-- Hero metrics — drill into detail pages -->
-      <div class="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div class="mb-5 grid grid-cols-[repeat(auto-fit,minmax(11.5rem,1fr))] gap-3">
         <MetricCard
           label="Bank cash"
           :value="d.bank_cash"
-          hint="Update statement balances"
+          :hint="bankCashHint"
+          :info="bankCashInfo"
           to="/cash"
         />
         <MetricCard
-          label="Portfolio"
-          :value="d.liquid_fund_total"
-          hint="Liquid fund holdings"
-          to="/holdings"
-        />
-        <MetricCard
-          :label="`Commitments (${d.horizon_days}d)`"
-          :value="d.upcoming_total"
-          hint="Planned + overdue — open Commitments"
+          :label="`Incoming (${d.horizon_days}d)`"
+          :value="d.incoming_expected != null ? d.incoming_expected : d.incoming_total || 0"
+          hint="Expected"
+          :info="incomingInfo"
           to="/upcoming"
         />
         <MetricCard
-          :label="d.is_shortfall ? 'Liquidity shortfall' : 'Free cash today'"
+          :label="`Commitments (${d.horizon_days}d)`"
+          :value="d.commitments_total != null ? d.commitments_total : Math.max(0, d.upcoming_total || 0)"
+          hint="Outflows"
+          info="Outflows reserved this horizon. Open Commitments to review."
+          to="/upcoming"
+        />
+        <MetricCard
+          label="Free cash"
           :value="Math.abs(d.investable_surplus || 0)"
           :tone="d.is_shortfall ? 'danger' : 'success'"
-          :hint="d.is_shortfall ? 'Shortfall — review redeem' : 'Tap to explain · Proposal from Free cash'"
+          :hint="d.is_shortfall ? 'Shortfall' : 'Surplus'"
+          info="Bank − commitments − policy. Does not include expected incoming."
           to="/surplus"
+        />
+        <MetricCard
+          v-if="showExpectedLiquidity"
+          :label="expectedLiquidityLabel"
+          :value="Math.abs(d.expected_free_cash || 0)"
+          :tone="d.expected_is_shortfall ? 'danger' : 'success'"
+          :hint="expectedLiquidityHint"
+          :info="expectedLiquidityInfo"
+          to="/upcoming"
         />
       </div>
 
@@ -47,7 +60,7 @@
         class="mb-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
       >
         <span class="font-medium">{{ staleBanks.length }} bank balance(s)</span>
-        not updated for {{ d.as_of }}.
+        not updated for {{ formatDate(bankAsOf) }}.
         <Button class="ml-2" size="sm" variant="outline" @click="$router.push('/cash')">
           Update on Bank balances
         </Button>
@@ -139,21 +152,20 @@
       </div>
 
       <div
-        v-if="d.cash_gap > 0"
+        v-if="d.cash_gap > 0 && !d.incoming_covers_shortfall"
         class="mb-5 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900"
       >
         <div class="font-medium">Liquidity shortfall — redeem from portfolio</div>
         <p class="mt-1 text-p-base">
-          Required {{ formatINR(d.required_cash) }} (commitments + policy reserves) vs bank cash
-          {{ formatINR(d.bank_cash) }}. Gap {{ formatINR(d.cash_gap) }}
+          Actual free cash is short
+          {{ formatINR(d.cash_gap) }} (bank − commitments − policy).
           <span v-if="d.liquid_fund_total">
-            — suggest redeem {{ formatINR(d.redemption_need) }} from liquid funds (available
+            Suggest redeem {{ formatINR(d.redemption_need) }} from liquid funds (available
             {{ formatINR(d.liquid_fund_total) }}).
           </span>
-          <span v-else>. No portfolio holdings on file to redeem.</span>
+          <span v-else>No portfolio holdings on file to redeem.</span>
         </p>
         <div class="mt-2 flex flex-wrap gap-2">
-          <!-- Replace / open CTAs live on the proposal-drift card when a proposal exists -->
           <Button
             v-if="!d.has_open_request && d.liquid_fund_total"
             size="sm"
@@ -168,22 +180,22 @@
         </div>
       </div>
 
-      <!-- Commitments work surface -->
+      <!-- Plan work surface: commitments + incoming in horizon -->
       <section id="commitments" class="rounded-md border border-gray-200 bg-white">
-        <header class="border-b border-gray-100 px-3 py-3 sm:px-4">
+        <header class="border-b border-gray-100 px-4 py-3">
           <div class="flex items-start justify-between gap-2">
             <div class="min-w-0">
               <h2 class="text-base font-semibold text-gray-900">
-                Commitments
+                Plan
                 <span class="font-normal text-gray-500">({{ d.horizon_days }}d)</span>
               </h2>
               <p class="mt-0.5 text-xs text-gray-500">
-                Planned payments that reduce free cash.
+                Outflows reserve free cash; incoming is expected separately (not in free cash).
               </p>
             </div>
-            <div class="flex shrink-0 flex-col items-end gap-1.5 sm:flex-row sm:items-center">
+            <div class="flex shrink-0 items-center gap-2">
               <Button
-                v-if="filteredCommitments.length && !hasBanks"
+                v-if="planRows.length && !hasBanks"
                 size="sm"
                 variant="solid"
                 @click="$router.push({ path: '/cash', query: { add: '1' } })"
@@ -191,54 +203,53 @@
                 Add bank account
               </Button>
               <Button
-                v-if="filteredCommitments.length"
+                v-if="planRows.length"
                 size="sm"
                 variant="solid"
                 @click="openNew"
               >
                 Add payment
               </Button>
-              <button
-                type="button"
-                class="text-xs text-gray-500 hover:text-gray-800"
-                @click="$router.push('/upcoming')"
-              >
-                Full list
-              </button>
             </div>
           </div>
 
-          <div class="mt-3 flex gap-1 overflow-x-auto pb-0.5">
-            <button
-              v-for="f in filters"
-              :key="f.id"
-              type="button"
-              class="shrink-0 rounded-md px-2.5 py-1 text-xs font-medium"
-              :class="
-                commitmentFilter === f.id
-                  ? 'bg-gray-900 text-white'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-              "
-              @click="commitmentFilter = f.id"
-            >
-              {{ f.label }}
-              <span class="tabular-nums opacity-80">{{ f.count }}</span>
-            </button>
+          <div class="mt-2.5 flex gap-2">
+            <FormControl
+              v-model="statusFilter"
+              class="min-w-0 flex-1 sm:max-w-[9.5rem] [&_button]:w-full"
+              type="select"
+              size="sm"
+              :options="planStatusOptions"
+            />
+            <FormControl
+              v-model="effectFilter"
+              class="min-w-0 flex-1 sm:max-w-[9.5rem] [&_button]:w-full"
+              type="select"
+              size="sm"
+              :options="planEffectOptions"
+            />
+            <FormControl
+              v-model="categoryFilter"
+              class="min-w-0 flex-1 sm:max-w-[9.5rem] [&_button]:w-full"
+              type="select"
+              size="sm"
+              :options="planCategoryOptions"
+            />
           </div>
         </header>
 
         <EmptyState
-          v-if="!filteredCommitments.length && commitmentFilter !== 'all'"
+          v-if="!nestedCommitments.length && planFiltersActive"
           variant="filter"
           title="No commitments in this filter"
-          description="Switch filter or add a payment for this window."
+          description="Try another status, direction, or category."
         >
           <template #actions>
             <Button size="sm" variant="solid" @click="openNew">Add payment</Button>
           </template>
         </EmptyState>
         <EmptyState
-          v-else-if="!filteredCommitments.length && !hasBanks"
+          v-else-if="!nestedCommitments.length && !hasBanks"
           variant="bank"
           title="Add a bank account first"
           description="Statement balances unlock free cash. Then add planned payments for the horizon."
@@ -255,7 +266,7 @@
           </template>
         </EmptyState>
         <EmptyState
-          v-else-if="!filteredCommitments.length"
+          v-else-if="!nestedCommitments.length"
           variant="plan"
           title="No payments planned yet"
           description="Add a planned payment to reserve free cash for the next few days."
@@ -265,18 +276,19 @@
           </template>
         </EmptyState>
 
-        <ul v-else class="divide-y divide-gray-100">
+        <ul v-else class="max-h-[70vh] divide-y divide-gray-100 overflow-y-auto">
           <CommitmentRow
             v-for="u in nestedCommitments"
             :key="u.name"
+            hoverable
             :row="u"
             :as-of="asOfDate"
             :expanded="isGroupExpanded(u.name)"
             :marking="marking === u.name"
             :can-mark-paid="groupCanMarkPaid(u)"
             @toggle-group="toggleGroup(u.name)"
-            @edit="openEdit(u)"
-            @mark-paid="markPaid(u)"
+            @edit="(payload) => openEdit(payload?._schedule ? payload : u)"
+            @mark-paid="(payload) => markPaid(payload?._schedule ? payload : u)"
           />
         </ul>
       </section>
@@ -284,77 +296,160 @@
 
     <Dialog
       v-model="showNew"
-      :options="{ title: form.name ? 'Edit payment' : 'New upcoming payment' }"
+      :options="{
+        title: form.edit_mode === 'split_line'
+          ? 'Edit split installment'
+          : form.edit_mode === 'split_schedule'
+            ? 'Edit split payment'
+            : form.name
+              ? 'Edit payment'
+              : 'New upcoming payment',
+      }"
     >
       <template #body-content>
         <div class="space-y-3">
-          <FormControl
-            v-model="form.category"
-            type="select"
-            label="Category"
-            :options="categoryOptions"
-            @update:model-value="onCategoryChange"
-          />
-          <FormControl v-model="form.title" label="Title" />
-          <FormControl
-            v-model="form.cash_effect"
-            type="select"
-            label="Cash effect"
-            :options="cashEffectOptions"
-            :disabled="!!form.parent_payment || !!form.is_recurring"
-            @update:model-value="onCashEffectChange"
-          />
-          <FormControl
-            v-model="form.due_date"
-            type="date"
-            :label="form.is_recurring ? 'Next due' : 'Due date'"
-            :disabled="!!form.parent_payment"
-          />
-          <p
-            v-if="form.parent_payment"
-            class="rounded-md border border-amber-100 bg-amber-50 px-3 py-2 text-xs text-amber-950"
-          >
-            Due date follows the parent plan row.
-          </p>
-          <CurrencyControl
-            v-model="form.amount"
-            :label="
-              form.is_recurring
-                ? `Amount each ${frequencyUnit(form.frequency)}`
-                : 'Amount'
-            "
-          />
-          <Checkbox
-            v-if="
-              !form.source_doctype &&
-              !form.parent_payment &&
-              (form.cash_effect === 'Outflow' || form.is_recurring)
-            "
-            v-model="form.is_recurring"
-            label="Repeats (outgoing)"
-            @update:model-value="onRecurringToggle"
-          />
-          <FormControl
-            v-if="form.is_recurring"
-            v-model="form.frequency"
-            type="select"
-            label="Frequency"
-            :options="frequencyOptions"
-          />
-          <FormControl
-            v-if="form.is_recurring"
-            v-model="form.recurrence_end"
-            type="date"
-            label="Repeat until (optional)"
-          />
-          <FormControl
-            v-if="form.name && !form.is_recurring"
-            v-model="form.status"
-            type="select"
-            label="Status"
-            :options="statusOptions"
-          />
-          <FormControl v-model="form.notes" type="textarea" label="Notes" />
+          <template v-if="form.edit_mode === 'split_line'">
+            <p class="text-sm text-gray-600">{{ form.title }}</p>
+            <div class="rounded-md border border-gray-100 bg-gray-50 px-3 py-2 text-sm">
+              <div class="flex justify-between gap-3">
+                <span class="text-gray-500">Due</span>
+                <span class="font-medium tabular-nums">{{ form.due_date || '—' }}</span>
+              </div>
+              <div class="mt-1 flex justify-between gap-3">
+                <span class="text-gray-500">Amount</span>
+                <span class="font-medium tabular-nums">{{ formatINR(form.amount) }}</span>
+              </div>
+            </div>
+            <FormControl
+              v-if="form.cash_effect === 'Inflow' || form.cash_effect === 'Setoff'"
+              v-model="form.probability"
+              type="number"
+              label="Probability (%)"
+              :min="0"
+              :max="100"
+            />
+            <p class="text-xs text-gray-500">
+              Amount and due date come from the split schedule. Open Plan to re-split.
+            </p>
+          </template>
+          <template v-else-if="form.edit_mode === 'split_schedule'">
+            <FormControl v-model="form.title" label="Title" />
+            <div class="rounded-md border border-gray-100 bg-gray-50 px-3 py-2 text-sm">
+              <div class="flex justify-between gap-3">
+                <span class="text-gray-500">Total (planned)</span>
+                <span class="font-medium tabular-nums">{{ formatINR(form.amount) }}</span>
+              </div>
+            </div>
+            <ul class="divide-y divide-gray-100 overflow-hidden rounded-md border border-gray-200">
+              <li
+                v-for="(line, idx) in form.splits"
+                :key="line.name || idx"
+                class="space-y-2 bg-white px-3 py-2.5"
+              >
+                <div class="text-sm font-medium text-gray-900">
+                  Due {{ line.due_date || '—' }} ·
+                  <span class="tabular-nums">{{ formatINR(line.amount) }}</span>
+                  <span
+                    v-if="line.status === 'Paid'"
+                    class="ml-1 text-[10px] font-medium text-gray-500"
+                    >Paid</span
+                  >
+                </div>
+                <FormControl
+                  v-if="
+                    (form.cash_effect === 'Inflow' || form.cash_effect === 'Setoff') &&
+                    line.status !== 'Paid'
+                  "
+                  v-model="line.probability"
+                  type="number"
+                  label="Probability (%)"
+                  :min="0"
+                  :max="100"
+                />
+              </li>
+            </ul>
+            <p class="text-xs text-gray-500">
+              Amounts are set by the split schedule. Open Plan → Re-split to remap.
+            </p>
+            <FormControl v-model="form.notes" type="textarea" label="Notes" />
+          </template>
+          <template v-else>
+            <FormControl
+              v-model="form.category"
+              type="select"
+              label="Category"
+              :options="categoryOptions"
+              @update:model-value="onCategoryChange"
+            />
+            <FormControl v-model="form.title" label="Title" />
+            <FormControl
+              v-model="form.cash_effect"
+              type="select"
+              label="Cash effect"
+              :options="cashEffectOptions"
+              :disabled="!!form.parent_payment || !!form.is_recurring"
+              @update:model-value="onCashEffectChange"
+            />
+            <FormControl
+              v-model="form.due_date"
+              type="date"
+              :label="form.is_recurring ? 'Next due' : 'Due date'"
+              :disabled="!!form.parent_payment"
+            />
+            <p
+              v-if="form.parent_payment"
+              class="rounded-md border border-amber-100 bg-amber-50 px-3 py-2 text-xs text-amber-950"
+            >
+              Due date follows the parent plan row.
+            </p>
+            <CurrencyControl
+              v-model="form.amount"
+              :label="
+                form.is_recurring
+                  ? `Amount each ${frequencyUnit(form.frequency)}`
+                  : 'Amount'
+              "
+            />
+            <FormControl
+              v-if="form.cash_effect === 'Inflow' || form.cash_effect === 'Setoff'"
+              v-model="form.probability"
+              type="number"
+              label="Probability (%)"
+              :min="0"
+              :max="100"
+            />
+            <Checkbox
+              v-if="
+                !form.source_doctype &&
+                !form.parent_payment &&
+                (form.cash_effect === 'Outflow' || form.is_recurring)
+              "
+              v-model="form.is_recurring"
+              label="Repeats (outgoing)"
+              @update:model-value="onRecurringToggle"
+            />
+            <FormControl
+              v-if="form.is_recurring"
+              v-model="form.frequency"
+              type="select"
+              label="Frequency"
+              :options="frequencyOptions"
+            />
+            <FormControl
+              v-if="form.is_recurring"
+              v-model="form.recurrence_end"
+              type="date"
+              label="Repeat until (optional)"
+            />
+            <FormControl
+              v-if="form.name && !form.is_recurring"
+              v-model="form.status"
+              type="select"
+              label="Status"
+              :options="statusOptions"
+            />
+            <FormControl v-model="form.notes" type="textarea" label="Notes" />
+          </template>
         </div>
       </template>
       <template #actions>
@@ -380,14 +475,16 @@ import { useTreasuryCacheStore } from '@/stores/treasuryCache'
 import { useHorizon } from '@/composables/useHorizon'
 import { formatDate, formatINR } from '@/utils/format'
 import { frequencyUnit, isOverdue as isOverdueDue } from '@/utils/commitment'
-import { groupMembers, nestPlanRows } from '@/utils/planNest'
+import { groupMembers, nestPlanRows, planSignedNet } from '@/utils/planNest'
 
 defineOptions({ name: 'Dashboard' })
 
 const company = useCompanyStore()
 const cache = useTreasuryCacheStore()
 const { horizon } = useHorizon()
-const commitmentFilter = ref('all')
+const statusFilter = ref('all')
+const effectFilter = ref('all')
+const categoryFilter = ref('all')
 /** Group parents expanded by name; default collapsed. */
 const expandedGroups = ref({})
 const showNew = ref(false)
@@ -421,6 +518,7 @@ const emptyForm = () => ({
   title: 'Other',
   category: 'Other',
   cash_effect: 'Outflow',
+  probability: 100,
   due_date: '',
   amount: 0,
   status: 'Planned',
@@ -430,12 +528,57 @@ const emptyForm = () => ({
   is_recurring: false,
   frequency: 'Monthly',
   recurrence_end: '',
+  edit_mode: 'payment',
+  has_splits: false,
+  split_name: '',
+  splits: [],
 })
 const form = reactive(emptyForm())
 
 const d = computed(() => cache.getMis(company.current, horizon.value))
 const loading = computed(() => cache.misLoading && !d.value)
 const hasBanks = computed(() => (d.value?.banks || []).length > 0)
+const incomingInfo = computed(() => {
+  const face = Number(d.value?.incoming_total || 0)
+  const expected = Number(d.value?.incoming_expected ?? face)
+  if (face > 0.01 && Math.abs(face - expected) > 0.01) {
+    return `Expected receipts (probability-weighted). Face ${formatINR(face)}. Not in free cash.`
+  }
+  return 'Expected receipts this horizon. Not included in free cash.'
+})
+
+/** Show expected liquidity when there is incoming, or actual is short. */
+const showExpectedLiquidity = computed(() => {
+  const data = d.value
+  if (!data) return false
+  if (data.is_shortfall) return true
+  return Number(data.incoming_expected || 0) > 0.01
+})
+
+const expectedLiquidityLabel = computed(() => {
+  const days = d.value?.horizon_days
+  return days != null ? `Expected (${days}d)` : 'Expected'
+})
+
+const expectedLiquidityHint = computed(() => {
+  const data = d.value
+  if (!data) return 'With incoming'
+  if (data.incoming_covers_shortfall) return 'Covers shortfall'
+  if (data.expected_is_shortfall) return 'Still short'
+  return 'With incoming'
+})
+
+const expectedLiquidityInfo = computed(() => {
+  const data = d.value
+  if (!data) return ''
+  if (data.incoming_covers_shortfall) {
+    return 'Bank − commitments + expected incoming − policy. Receipts this horizon cover the gap if they land.'
+  }
+  if (data.expected_is_shortfall) {
+    return 'Bank − commitments + expected incoming − policy. Still short after expected incoming.'
+  }
+  return 'Bank − commitments + expected incoming − policy.'
+})
 
 function onCategoryChange(value) {
   const next = value || form.category
@@ -488,13 +631,27 @@ onActivated(() => {
 })
 
 const asOfDate = computed(() => d.value?.as_of || new Date().toISOString().slice(0, 10))
+/** Morning bank cash uses T-1 statement date (falls back to planning as_of). */
+const bankAsOf = computed(() => d.value?.bank_as_of || d.value?.as_of || asOfDate.value)
+
+const bankCashHint = computed(() =>
+  bankAsOf.value ? `As of ${formatDate(bankAsOf.value)}` : 'T-1 statements',
+)
+const bankCashInfo = computed(
+  () =>
+    `Morning planning uses T-1 statement balances (as of ${formatDate(bankAsOf.value)}). Update on Bank balances.`,
+)
 
 const staleBanks = computed(() => {
-  const asOf = d.value?.as_of
+  const asOf = bankAsOf.value
   return (d.value?.banks || []).filter((ba) => !ba.balance_date || ba.balance_date !== asOf)
 })
 
-const upcoming = computed(() => d.value?.upcoming || [])
+const planRows = computed(() => {
+  const out = d.value?.upcoming || []
+  const incoming = d.value?.incoming || []
+  return [...out, ...incoming]
+})
 
 function isOverdue(u) {
   return isOverdueDue(u.due_date, asOfDate.value)
@@ -509,23 +666,60 @@ function isDueSoon(u) {
   return days >= 0 && days <= 3
 }
 
-const filters = computed(() => {
-  const rows = upcoming.value
+const planStatusOptions = computed(() => {
+  const rows = planRows.value
   return [
-    { id: 'all', label: 'All planned', count: rows.length },
-    { id: 'overdue', label: 'Overdue', count: rows.filter(isOverdue).length },
-    { id: 'soon', label: 'Due in 3 days', count: rows.filter(isDueSoon).length },
+    { label: `All (${rows.length})`, value: 'all' },
+    { label: `Overdue (${rows.filter(isOverdue).length})`, value: 'overdue' },
+    { label: `Due in 3 days (${rows.filter(isDueSoon).length})`, value: 'soon' },
   ]
 })
 
-const filteredCommitments = computed(() => {
-  const rows = upcoming.value
-  if (commitmentFilter.value === 'overdue') return rows.filter(isOverdue)
-  if (commitmentFilter.value === 'soon') return rows.filter(isDueSoon)
-  return rows
+const planCategories = computed(() => {
+  const set = new Set(planRows.value.map((r) => r.category).filter(Boolean))
+  return [...set].sort()
 })
 
-const nestedCommitments = computed(() => nestPlanRows(filteredCommitments.value))
+const planCategoryOptions = computed(() => [
+  { label: 'Category', value: 'all' },
+  ...planCategories.value.map((c) => ({ label: c, value: c })),
+])
+
+const planEffectOptions = computed(() => {
+  const nested = nestPlanRows(planRows.value)
+  const outgoing = nested.filter((r) => planSignedNet(r) > 0.01).length
+  const incoming = nested.filter((r) => planSignedNet(r) < -0.01).length
+  return [
+    { label: 'Direction', value: 'all' },
+    { label: `Outgoing (${outgoing})`, value: 'outflow' },
+    { label: `Incoming (${incoming})`, value: 'inflow' },
+  ]
+})
+
+const planFiltersActive = computed(
+  () =>
+    statusFilter.value !== 'all' ||
+    effectFilter.value !== 'all' ||
+    categoryFilter.value !== 'all',
+)
+
+const nestedCommitments = computed(() => {
+  let nested = nestPlanRows(planRows.value)
+  if (statusFilter.value === 'overdue') nested = nested.filter(isOverdue)
+  else if (statusFilter.value === 'soon') nested = nested.filter(isDueSoon)
+  if (categoryFilter.value !== 'all') {
+    nested = nested.filter((r) => r.category === categoryFilter.value)
+  }
+  // Nest / split roots: use signed group net, not the parent row's cash_effect alone
+  if (effectFilter.value === 'outflow') {
+    nested = nested.filter((r) => planSignedNet(r) > 0.01)
+  } else if (effectFilter.value === 'inflow') {
+    nested = nested.filter((r) => planSignedNet(r) < -0.01)
+  }
+  return nested
+    .slice()
+    .sort((a, b) => String(a.due_date || '').localeCompare(String(b.due_date || '')))
+})
 
 function isGroupExpanded(name) {
   return !!expandedGroups.value[name]
@@ -548,20 +742,67 @@ function openNew() {
 }
 
 function openEdit(u) {
-  Object.assign(form, {
+  if (u?._schedule && u.split_name && u.parent_payment) {
+    Object.assign(form, emptyForm(), {
+      name: u.parent_payment,
+      title: u.title || '',
+      category: u.category || 'Other',
+      cash_effect: u.cash_effect === 'Setoff' ? 'Inflow' : u.cash_effect || 'Outflow',
+      probability: u.probability != null ? Number(u.probability) : 100,
+      due_date: u.due_date,
+      amount: Number(u.amount) || 0,
+      status: u.status || 'Planned',
+      source_doctype: u.source_doctype || '',
+      edit_mode: 'split_line',
+      has_splits: true,
+      split_name: u.split_name,
+      splits: [
+        {
+          name: u.split_name,
+          amount: Number(u.amount) || 0,
+          due_date: u.due_date,
+          status: u.status || 'Planned',
+          probability: u.probability != null ? Number(u.probability) : 100,
+        },
+      ],
+    })
+    showNew.value = true
+    return
+  }
+  const splits = (u._children || [])
+    .filter((c) => c._schedule)
+    .map((c) => ({
+      name: c.split_name || c.name,
+      amount: Number(c.amount) || 0,
+      due_date: c.due_date,
+      status: c.status || 'Planned',
+      probability: c.probability != null ? Number(c.probability) : 100,
+    }))
+  const hasSplits = Boolean(u._has_splits && splits.length)
+  Object.assign(form, emptyForm(), {
     name: u.name,
     title: u.title,
     category: u.category || 'Other',
-    cash_effect: u.cash_effect || 'Outflow',
+    cash_effect: u.cash_effect === 'Setoff' ? 'Inflow' : u.cash_effect || 'Outflow',
+    probability: u.probability != null ? Number(u.probability) : 100,
     parent_payment: u.parent_payment || '',
     source_doctype: u.source_doctype || '',
     due_date: u.due_date,
-    amount: u.period_amount != null ? u.period_amount : u.amount,
+    amount: hasSplits
+      ? splits
+          .filter((s) => s.status === 'Planned')
+          .reduce((sum, s) => sum + (Number(s.amount) || 0), 0)
+      : u.period_amount != null
+        ? u.period_amount
+        : u.amount,
     status: u.status || 'Planned',
     notes: u.notes || '',
     is_recurring: !!u.is_recurring,
     frequency: u.frequency || 'Monthly',
     recurrence_end: u.recurrence_end || '',
+    edit_mode: hasSplits ? 'split_schedule' : 'payment',
+    has_splits: hasSplits,
+    splits,
   })
   showNew.value = true
 }
@@ -569,7 +810,37 @@ function openEdit(u) {
 async function markPaid(u) {
   marking.value = u.name
   try {
-    const targets = groupMembers(u).filter((m) => m.status === 'Planned')
+    // GL schedule line from Cash position (expanded) or nested child
+    if (u._schedule && u.split_name && u.parent_payment) {
+      await call('lyqd.api.spa.mark_upcoming_split_paid', {
+        parent: u.parent_payment,
+        split_row_name: u.split_name,
+      })
+      toast.success('Marked schedule line paid')
+      cache.invalidatePlanOnly(company.current)
+      await loadMis(true)
+      return
+    }
+    const scheduleKids = (u._children || []).filter(
+      (m) => m._schedule && m.status === 'Planned' && m.split_name,
+    )
+    if (scheduleKids.length) {
+      for (const m of scheduleKids) {
+        await call('lyqd.api.spa.mark_upcoming_split_paid', {
+          parent: u.name,
+          split_row_name: m.split_name,
+        })
+      }
+      toast.success(
+        scheduleKids.length > 1
+          ? `Marked ${scheduleKids.length} schedule lines paid`
+          : 'Marked schedule line paid',
+      )
+      cache.invalidatePlanOnly(company.current)
+      await loadMis(true)
+      return
+    }
+    const targets = groupMembers(u).filter((m) => m.status === 'Planned' && !m._schedule)
     let advanced = 0
     for (const m of targets) {
       await call('lyqd.api.spa.save_upcoming_payment', {
@@ -598,7 +869,7 @@ async function markPaid(u) {
           ? `Marked ${targets.length} paid`
           : `Marked ${u.title} as paid`,
     )
-    cache.invalidatePlanRelated(company.current)
+    cache.invalidatePlanOnly(company.current)
     await loadMis(true)
   } catch (e) {
     toast.error(e.messages?.[0] || e.message || 'Could not mark paid')
@@ -610,6 +881,24 @@ async function markPaid(u) {
 async function savePayment() {
   saving.value = true
   try {
+    const isSplitEdit =
+      form.edit_mode === 'split_line' || form.edit_mode === 'split_schedule'
+    const splitsPayload =
+      form.edit_mode === 'split_line'
+        ? [
+            {
+              name: form.split_name,
+              probability: Number(form.probability ?? 100),
+              status: form.status || 'Planned',
+            },
+          ]
+        : form.edit_mode === 'split_schedule'
+          ? (form.splits || []).map((s) => ({
+              name: s.name,
+              probability: Number(s.probability ?? 100),
+              status: s.status || 'Planned',
+            }))
+          : undefined
     await call('lyqd.api.spa.save_upcoming_payment', {
       doc: {
         name: form.name,
@@ -617,22 +906,46 @@ async function savePayment() {
         title: form.title,
         category: form.category,
         cash_effect: form.is_recurring ? 'Outflow' : form.cash_effect || 'Outflow',
+        probability:
+          !isSplitEdit &&
+          !form.is_recurring &&
+          (form.cash_effect === 'Inflow' || form.cash_effect === 'Setoff')
+            ? Number(form.probability ?? 100)
+            : undefined,
         due_date: form.due_date,
         amount: form.amount,
         period_amount: form.amount,
         is_recurring: form.is_recurring ? 1 : 0,
         frequency: form.is_recurring ? form.frequency || 'Monthly' : null,
         recurrence_end: form.is_recurring ? form.recurrence_end || null : null,
-        status: form.name && !form.is_recurring ? form.status : 'Planned',
+        status: isSplitEdit
+          ? undefined
+          : form.name && !form.is_recurring
+            ? form.status
+            : 'Planned',
         notes: form.notes,
+        splits: splitsPayload,
       },
     })
-    toast.success(form.name ? 'Payment updated' : 'Payment added to plan')
     showNew.value = false
-    cache.invalidatePlanRelated(company.current)
+    try {
+      toast.success(form.name ? 'Payment updated' : 'Payment added to plan')
+    } catch (_) {
+      /* toast host is best-effort */
+    }
+    // Cancelled books rows reappear in From-books on Commitments.
+    if (!isSplitEdit && form.status === 'Cancelled') {
+      cache.invalidatePlanRelated(company.current)
+    } else {
+      cache.invalidatePlanOnly(company.current)
+    }
     await loadMis(true)
   } catch (e) {
-    toast.error(e.messages?.[0] || e.message || 'Save failed')
+    try {
+      toast.error(e.messages?.[0] || e.message || 'Save failed')
+    } catch (_) {
+      /* ignore */
+    }
   } finally {
     saving.value = false
   }

@@ -373,7 +373,7 @@ def _si_voucher_rows(
 				"category": "Customer",
 				"due_date": str(row["due_date"]) if row.get("due_date") else None,
 				"amount": amount,
-				"cash_effect": "Setoff",
+				"cash_effect": "Inflow",
 				"party_type": "Customer",
 				"party": row.get("customer"),
 				"party_name": party_label,
@@ -512,7 +512,7 @@ def _gl_voucher_rows(
 		root = (meta.get(account) or {}).get("root_type") or "Liability"
 		if root == "Asset":
 			amount = -flt(raw_amt)
-			cash_effect = "Setoff"
+			cash_effect = "Inflow"
 		else:
 			amount = flt(raw_amt)
 			cash_effect = "Outflow"

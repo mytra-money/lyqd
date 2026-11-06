@@ -30,6 +30,11 @@ export function nestPlanRows(rows) {
   const roots = []
 
   for (const row of list) {
+    // GL schedule children are already attached on the parent from the API
+    if (row._has_splits && Array.isArray(row._children)) {
+      roots.push(row)
+      continue
+    }
     const parent = row.parent_payment
     if (parent && byName.has(parent) && parent !== row.name) {
       if (!childrenOf.has(parent)) childrenOf.set(parent, [])
@@ -39,11 +44,45 @@ export function nestPlanRows(rows) {
     }
   }
 
-  return roots.map((root) => {
-    const kids = (childrenOf.get(root.name) || []).filter(isVisibleNestedChild)
+  function byDue(a, b) {
+    const da = String(a?.due_date || '9999-99-99')
+    const db = String(b?.due_date || '9999-99-99')
+    if (da !== db) return da < db ? -1 : 1
+    return Number(b?.amount || 0) - Number(a?.amount || 0)
+  }
+
+  const nested = roots.map((root) => {
+    if (root._has_splits && Array.isArray(root._children)) {
+      const kids = (root._children || []).filter(isVisibleNestedChild).slice().sort(byDue)
+      const groupNet =
+        root._groupNet != null
+          ? root._groupNet
+          : kids
+              .filter((c) => (c.status || 'Planned') === 'Planned')
+              .reduce((s, c) => s + signedAmount(c), 0)
+      return {
+        ...root,
+        _child: false,
+        _childCount: kids.length,
+        _groupNet: groupNet,
+        _children: kids.map((child) => ({
+          ...child,
+          _child: true,
+          _childCount: 0,
+          _groupNet: null,
+          _children: [],
+        })),
+      }
+    }
+    const kids = (childrenOf.get(root.name) || []).filter(isVisibleNestedChild).slice().sort(byDue)
+    // Prefer stored parent.group_net on nest roots (0 means non-nest / cleared).
+    const storedNet =
+      root.group_net != null && root.group_net !== '' ? Number(root.group_net) : null
     const groupNet =
       kids.length > 0
-        ? signedAmount(root) + kids.reduce((s, c) => s + signedAmount(c), 0)
+        ? Number.isFinite(storedNet)
+          ? storedNet
+          : signedAmount(root) + kids.reduce((s, c) => s + signedAmount(c), 0)
         : null
     return {
       ...root,
@@ -59,6 +98,8 @@ export function nestPlanRows(rows) {
       })),
     }
   })
+
+  return nested.slice().sort(byDue)
 }
 
 /**
@@ -68,6 +109,17 @@ export function groupMembers(row) {
   if (!row) return []
   const kids = row._children || []
   return [row, ...kids]
+}
+
+/**
+ * Signed reserve for filters: nest/split ``_groupNet`` when present, else row amount.
+ * Outflow net &gt; 0; Inflow/Setoff net &lt; 0.
+ */
+export function planSignedNet(row) {
+  if (!row) return 0
+  const group = Number(row._groupNet)
+  if (row._childCount && Number.isFinite(group)) return group
+  return signedCashAmount(row.amount, row.cash_effect)
 }
 
 /**

@@ -155,6 +155,7 @@ def get_planned_upcoming_payments(
 			"due_date",
 			"amount",
 			"cash_effect",
+			"probability",
 			"category",
 			"status",
 			"notes",
@@ -169,13 +170,79 @@ def get_planned_upcoming_payments(
 		],
 		order_by="due_date asc, amount desc",
 	)
+	# GL / voucher split schedules (child table) — expand Planned lines by due date
+	split_parents = [r.name for r in rows]
+	splits_by_parent: dict[str, list] = {}
+	# Nest children of any split root are detail-only (schedule owns group net)
+	split_root_names: set[str] = set()
+	if frappe.db.exists("DocType", "LYQD Upcoming Split"):
+		parents_with_splits = frappe.get_all(
+			"LYQD Upcoming Split",
+			filters={"parenttype": "LYQD Upcoming Payment"},
+			pluck="parent",
+			distinct=True,
+		)
+		if parents_with_splits:
+			split_root_names = set(
+				frappe.get_all(
+					"LYQD Upcoming Payment",
+					filters={
+						"company": company,
+						"name": ("in", parents_with_splits),
+						"status": ("in", ["Planned", "Paid"]),
+					},
+					pluck="name",
+				)
+			)
+		if split_parents:
+			for s in frappe.get_all(
+				"LYQD Upcoming Split",
+				filters={"parent": ("in", split_parents), "status": "Planned"},
+				fields=["name", "parent", "due_date", "amount", "title", "status", "probability"],
+				order_by="due_date asc, idx asc",
+			):
+				splits_by_parent.setdefault(s.parent, []).append(s)
+
 	out: list[dict[str, Any]] = []
 	for row in rows:
+		parent = row.get("parent_payment")
+		if parent and parent in split_root_names:
+			continue
 		expand_recurring_row(row, as_of, horizon_days)
 		# Drop recurring series with nothing left in this horizon (e.g. past end)
 		if cint(row.get("is_recurring")) and flt(row.get("amount")) <= 0.01:
 			continue
+		schedule = splits_by_parent.get(row.name) or []
+		if schedule:
+			for s in schedule:
+				if getdate(s.due_date) > end:
+					continue
+				line = dict(row)
+				# Unique identity so Cash position can mark one maturity Paid
+				# (parent doc name alone is shared across the ladder).
+				line["name"] = f"{row.name}::split::{s.name}"
+				line["amount"] = flt(s.amount)
+				line["due_date"] = s.due_date
+				line["title"] = s.title or row.get("title")
+				line["split_name"] = s.name
+				line["split_row"] = s.name
+				line["parent_payment"] = row.name
+				line["_schedule"] = 1
+				line["is_recurring"] = 0
+				# Per-installment probability; fall back to parent header.
+				if s.probability is not None and s.probability != "":
+					line["probability"] = flt(s.probability)
+				out.append(line)
+			continue
 		out.append(row)
+	# Chronological across parents + expanded GL schedule lines (Cash position list)
+	out.sort(
+		key=lambda r: (
+			str(r.get("due_date") or "9999-99-99"),
+			-flt(r.get("amount")),
+			str(r.get("name") or ""),
+		)
+	)
 	return out
 
 
@@ -220,7 +287,10 @@ def compute_surplus(
 
 	cash_accounts: list[dict[str, Any]] = []
 	if bank_cash is None:
-		cash_info = get_eligible_bank_cash(company, as_of)
+		# Bank statements use T-1; planning as_of (commitments horizon) stays separate
+		from lyqd.cash.bank_cash import default_bank_statement_as_of
+
+		cash_info = get_eligible_bank_cash(company, default_bank_statement_as_of())
 		bank_cash = flt(cash_info["total"])
 		cash_accounts = cash_info["accounts"]
 	else:
@@ -230,15 +300,21 @@ def compute_surplus(
 		upcoming_payments = get_planned_upcoming_payments(company, as_of, horizon_days)
 
 	def _signed_commitment(p: dict[str, Any]) -> float:
+		"""Free cash = position − commitments − policy.
+
+		Only Outflow reserves cash. Inflow / Setoff are tracked as Incoming and
+		do not change free cash today.
+		"""
 		amt = flt(p.get("amount"))
 		effect = p.get("cash_effect") or "Outflow"
-		# Setoff (asset ITC) and Inflow (FD / loan proceeds) increase free cash
-		if effect in ("Setoff", "Inflow"):
-			return -amt
+		if effect in ("Inflow", "Setoff"):
+			return 0.0
 		return amt
 
+	# Commitments for free cash = outflows only (matches home Commitments card)
 	upcoming_total = flt(sum(_signed_commitment(p) for p in upcoming_payments))
 
+	# Free cash = bank position − commitments − policy reserves
 	investable = flt(bank_cash) - upcoming_total - min_liquidity_buffer - restricted_cash
 
 	explanation: list[ExplanationLine] = []
@@ -271,15 +347,9 @@ def compute_surplus(
 		title = p.get("title") or p.get("name") or "Upcoming payment"
 		overdue = bool(due and getdate(due) < getdate(as_of))
 		effect = p.get("cash_effect") or "Outflow"
-		is_credit = effect in ("Setoff", "Inflow")
 		own_amt = flt(p.get("amount"))
-		own_sign = "+" if is_credit else "-"
-		if effect == "Inflow":
-			kind_label = "Inflow"
-		elif effect == "Setoff":
-			kind_label = "Setoff"
-		else:
-			kind_label = "Reserve"
+		own_sign = "-"
+		kind_label = "Reserve"
 		if signed_net is None:
 			disp_amt, disp_sign = own_amt, own_sign
 			gl_amount = gl_sign = None
@@ -292,6 +362,12 @@ def compute_surplus(
 		recurring_note = ""
 		if cint(p.get("is_recurring")) and occ > 1:
 			recurring_note = f"; recurring ×{occ}"
+		# Expanded GL schedule lines use a synthetic name; link back to the parent doc
+		ref_name = (
+			p.get("parent_payment")
+			if p.get("_schedule") and p.get("parent_payment")
+			else p.get("name")
+		)
 		return ExplanationLine(
 			kind="upcoming",
 			label=(
@@ -301,7 +377,7 @@ def compute_surplus(
 			amount=disp_amt,
 			sign=disp_sign,
 			ref_doctype="LYQD Upcoming Payment",
-			ref_name=p.get("name"),
+			ref_name=ref_name,
 			due_date=due_s,
 			category=p.get("category"),
 			notes=(p.get("notes") or "")
@@ -325,7 +401,14 @@ def compute_surplus(
 			roots.append(p)
 
 	for root in roots:
-		kids = children_of.get(root.get("name") or "", [])
+		# Incoming (Inflow / Setoff) shown on Cash position separately — not in free cash
+		if (root.get("cash_effect") or "Outflow") in ("Inflow", "Setoff"):
+			continue
+		kids = [
+			c
+			for c in children_of.get(root.get("name") or "", [])
+			if (c.get("cash_effect") or "Outflow") not in ("Inflow", "Setoff")
+		]
 		if kids:
 			signed_net = _signed_commitment(root) + sum(_signed_commitment(c) for c in kids)
 			line = _upcoming_line(root, signed_net=signed_net)

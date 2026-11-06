@@ -92,7 +92,7 @@ class TestLYQDRecurring(UnitTestCase):
 
 
 class TestLYQDInflowSurplus(UnitTestCase):
-	def test_inflow_increases_free_cash(self):
+	def test_inflow_excluded_from_free_cash(self):
 		from lyqd.cash.surplus import compute_surplus
 
 		as_of = today()
@@ -122,9 +122,9 @@ class TestLYQDInflowSurplus(UnitTestCase):
 			min_liquidity_buffer=0,
 			restricted_cash=0,
 		)
-		# 100k - 40k + 25k = 85k
-		self.assertEqual(result.upcoming_total, 15_000)
-		self.assertEqual(result.investable_surplus, 85_000)
+		# Inflows do not change free cash: 100k - 40k = 60k
+		self.assertEqual(result.upcoming_total, 40_000)
+		self.assertEqual(result.investable_surplus, 60_000)
 
 
 if __name__ == "__main__":

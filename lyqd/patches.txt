@@ -11,3 +11,4 @@ lyqd.patches.v1_0.fold_policy_into_lyqd_company
 lyqd.patches.v1_0.backfill_request_type_and_side
 lyqd.patches.v1_0.delete_lyqd_cash_snapshot
 lyqd.patches.v1_0.seed_in_beta_default
+lyqd.patches.v1_0.backfill_upcoming_group_net

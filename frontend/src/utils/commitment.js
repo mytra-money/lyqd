@@ -1,5 +1,23 @@
 import { formatDate, formatINR } from '@/utils/format'
 
+/** Trailing `` · 1/3`` / `` · 2/4`` style installment markers (may be stacked). */
+const SPLIT_INDEX_SUFFIX_RE = /(?:\s*·\s*\d+\s*\/\s*\d+)+\s*$/u
+
+/** Strip split-index suffixes so re-split keeps a clean stored title. */
+export function stripSplitIndexSuffix(title) {
+  return String(title || '')
+    .replace(SPLIT_INDEX_SUFFIX_RE, '')
+    .trim()
+}
+
+/** Display-only installment label (e.g. ``1/2``). */
+export function splitPartLabel(index, total) {
+  const i = Number(index)
+  const n = Number(total)
+  if (!n || n < 2 || !i) return ''
+  return `${i}/${n}`
+}
+
 export function daysUntil(due, asOf) {
   if (!due) return null
   const a = new Date(asOf || new Date().toISOString().slice(0, 10))
@@ -55,6 +73,18 @@ export function commitmentDetailLines(row, asOf) {
   if (row.category) lines.push({ label: 'Category', value: row.category })
   if (row.status) lines.push({ label: 'Status', value: row.status })
   if (row.cash_effect) lines.push({ label: 'Effect', value: row.cash_effect })
+  if (
+    (row.cash_effect === 'Inflow' || row.cash_effect === 'Setoff') &&
+    row.probability != null
+  ) {
+    lines.push({
+      label: row._schedule ? 'Installment probability' : 'Probability',
+      value: `${Number(row.probability)}%`,
+    })
+  }
+  if (row._schedule && row.amount != null) {
+    lines.push({ label: 'Installment', value: formatINR(row.amount) })
+  }
   if (row.is_recurring) {
     lines.push({
       label: 'Repeats',
@@ -72,14 +102,29 @@ export function commitmentDetailLines(row, asOf) {
     }
   }
   if (row._childCount) {
+    const nestNet =
+      row._groupNet != null && Number.isFinite(Number(row._groupNet))
+        ? Number(row._groupNet)
+        : row.group_net != null && row.group_net !== ''
+          ? Number(row.group_net)
+          : null
+    if (nestNet != null && Number.isFinite(nestNet)) {
+      lines.push({
+        label: 'Group net',
+        value: formatINR(nestNet),
+      })
+    }
     lines.push({
-      label: 'GL total',
+      label: 'Parent grain',
       value:
         (isInflowEffect(row.cash_effect) ? '−' : '') + formatINR(row.amount),
     })
   }
   if (row.balance_as_of) {
-    lines.push({ label: 'Frozen as of', value: formatDate(row.balance_as_of) })
+    lines.push({
+      label: row._has_splits ? 'Split as of' : 'Frozen as of',
+      value: formatDate(row.balance_as_of),
+    })
   }
   if (row.source_doctype) {
     lines.push({

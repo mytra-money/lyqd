@@ -11,3 +11,10 @@ body {
   background-color: theme('colors.white');
   color: theme('colors.gray.900');
 }
+
+/* frappe-ui Dialog leave anim lacks `forwards`; if Presence is delayed, keep closed state invisible */
+.dialog-overlay[data-state='closed'],
+.dialog-content[data-state='closed'] {
+  opacity: 0 !important;
+  pointer-events: none !important;
+}

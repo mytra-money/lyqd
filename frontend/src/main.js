@@ -19,6 +19,9 @@ import {
 
 import App from './App.vue'
 import router from './router'
+import { installToastAutoDismiss } from '@/utils/toast'
+
+installToastAutoDismiss()
 
 let app = createApp(App)
 let pinia = createPinia()

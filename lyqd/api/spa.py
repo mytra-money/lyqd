@@ -973,7 +973,7 @@ def save_upcoming_payment(doc: str | dict | None = None) -> dict:
 				payment.probability = min(max(flt(doc.get("probability")), 0), 100)
 		else:
 			payment.probability = 100
-		# Per-installment probability / status on the GL split schedule
+		# Per-installment fields on the GL split schedule (prob / status / due)
 		if has_schedule and isinstance(doc.get("splits"), (list, tuple)):
 			by_name = {s.name: s for s in (payment.get("splits") or [])}
 			for row in doc.get("splits") or []:
@@ -986,6 +986,9 @@ def save_upcoming_payment(doc: str | dict | None = None) -> dict:
 					child.probability = 100
 				if row.get("status") in ("Planned", "Paid"):
 					child.status = row.get("status")
+				# Calendar drag-reschedule / edit due on one installment
+				if row.get("due_date"):
+					child.due_date = getdate(row.get("due_date"))
 		if not payment.title:
 			frappe.throw(_("Title is required"))
 		payment.save()

@@ -121,6 +121,16 @@
             Beta
           </span>
           <HorizonPicker v-if="showHorizon" v-model="horizon" />
+          <button
+            v-if="showHorizon"
+            type="button"
+            class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+            title="Plan calendar"
+            aria-label="Open plan calendar"
+            @click="openPlanCalendar"
+          >
+            <FeatherIcon name="calendar" class="h-4 w-4" />
+          </button>
           <FormControl
             type="select"
             size="sm"
@@ -208,6 +218,10 @@ const showHorizon = computed(() => {
     p.startsWith('/runs')
   )
 })
+
+function openPlanCalendar() {
+  router.push({ path: '/', query: { view: 'calendar' } })
+}
 
 const primaryNav = [
   { to: '/', label: 'Cash position', icon: 'home', short: 'Cash' },

@@ -195,6 +195,14 @@
             </div>
             <div class="flex shrink-0 items-center gap-2">
               <Button
+                v-if="planRows.length"
+                size="sm"
+                variant="outline"
+                @click="openPlanCalendar"
+              >
+                Calendar
+              </Button>
+              <Button
                 v-if="planRows.length && !hasBanks"
                 size="sm"
                 variant="solid"
@@ -276,7 +284,10 @@
           </template>
         </EmptyState>
 
-        <ul v-else class="max-h-[70vh] divide-y divide-gray-100 overflow-y-auto">
+        <ul
+          v-else
+          class="max-h-[70vh] divide-y divide-gray-100 overflow-y-auto"
+        >
           <CommitmentRow
             v-for="u in nestedCommitments"
             :key="u.name"
@@ -293,6 +304,86 @@
         </ul>
       </section>
     </template>
+
+    <Dialog
+      :model-value="showPlanCalendar"
+      :options="{
+        title: 'Plan calendar',
+        size: '5xl',
+      }"
+      disable-outside-click-to-close
+      @update:model-value="onPlanCalendarOpenChange"
+    >
+      <template #body-content>
+        <p class="mb-2 text-xs text-gray-500">
+          Use ‹ › to change month. Drag events to reschedule.
+        </p>
+        <div class="h-[min(70vh,36rem)] min-h-[24rem] overflow-hidden">
+          <Calendar
+            v-if="showPlanCalendar"
+            :key="`home-cal-${company.current}`"
+            :events="calendarEvents"
+            :config="calendarConfig"
+            :on-click="onCalendarEventClick"
+            :on-cell-click="onCalendarCellClick"
+            @update="onCalendarEventUpdate"
+            @delete="onCalendarEventDelete"
+          >
+            <!-- Avoid frappe-ui DatePicker inside Dialog — portal clicks don't update month. -->
+            <template
+              #header="{
+                currentMonthYear,
+                decrement,
+                increment,
+                setCalendarDate,
+              }"
+            >
+              <div class="mb-2 flex items-center justify-between gap-2">
+                <div class="text-base font-medium text-gray-900">
+                  {{ currentMonthYear }}
+                </div>
+                <div class="flex shrink-0 items-center gap-1">
+                  <Button
+                    variant="ghost"
+                    icon="chevron-left"
+                    aria-label="Previous month"
+                    @click="decrement"
+                  />
+                  <Button
+                    variant="ghost"
+                    label="Today"
+                    @click="setCalendarDate()"
+                  />
+                  <Button
+                    variant="ghost"
+                    icon="chevron-right"
+                    aria-label="Next month"
+                    @click="increment"
+                  />
+                </div>
+              </div>
+            </template>
+            <template #event-popover-content="{ event }">
+              <div class="space-y-1 p-1 text-sm text-gray-800">
+                <div class="font-medium">{{ event.title }}</div>
+                <div class="text-xs text-gray-500">
+                  {{ formatINR(event._amount) }}
+                  · {{ event._cashEffect || 'Outflow' }}
+                  <span v-if="event._category"> · {{ event._category }}</span>
+                </div>
+                <div class="text-xs text-gray-500">
+                  Due {{ formatDate(event.fromDate) }}
+                  <span v-if="event._status"> · {{ event._status }}</span>
+                </div>
+                <p class="pt-1 text-[11px] text-gray-400">
+                  Click to edit · drag to change due date
+                </p>
+              </div>
+            </template>
+          </Calendar>
+        </div>
+      </template>
+    </Dialog>
 
     <Dialog
       v-model="showNew"
@@ -464,7 +555,8 @@
 
 <script setup>
 import { computed, onActivated, reactive, ref, watch } from 'vue'
-import { call, toast } from 'frappe-ui'
+import { useRoute, useRouter } from 'vue-router'
+import { Calendar, call, toast } from 'frappe-ui'
 import CommitmentRow from '@/components/CommitmentRow.vue'
 import CurrencyControl from '@/components/CurrencyControl.vue'
 import EmptyState from '@/components/EmptyState.vue'
@@ -476,20 +568,36 @@ import { useHorizon } from '@/composables/useHorizon'
 import { formatDate, formatINR } from '@/utils/format'
 import { frequencyUnit, isOverdue as isOverdueDue } from '@/utils/commitment'
 import { groupMembers, nestPlanRows, planSignedNet } from '@/utils/planNest'
+import {
+  findPlanRowForEvent,
+  planRowsToCalendarEvents,
+} from '@/utils/planCalendar'
 
 defineOptions({ name: 'Dashboard' })
 
 const company = useCompanyStore()
 const cache = useTreasuryCacheStore()
+const route = useRoute()
+const router = useRouter()
 const { horizon } = useHorizon()
 const statusFilter = ref('all')
 const effectFilter = ref('all')
 const categoryFilter = ref('all')
+/** Plan calendar opens in a dialog — list stays as the page. */
+const showPlanCalendar = ref(false)
 /** Group parents expanded by name; default collapsed. */
 const expandedGroups = ref({})
 const showNew = ref(false)
 const saving = ref(false)
 const marking = ref(null)
+
+const calendarConfig = {
+  defaultMode: 'Month',
+  disableModes: ['Day', 'Week'],
+  isEditMode: true,
+  enableShortcuts: false,
+  showIcon: false,
+}
 const categoryOptions = [
   'Salary',
   'Import-LC',
@@ -626,8 +734,15 @@ watch(
   { immediate: true },
 )
 
+watch(
+  () => route.query.view,
+  () => syncCalendarFromRoute(),
+  { immediate: true },
+)
+
 onActivated(() => {
   loadMis(false)
+  syncCalendarFromRoute()
 })
 
 const asOfDate = computed(() => d.value?.as_of || new Date().toISOString().slice(0, 10))
@@ -720,6 +835,113 @@ const nestedCommitments = computed(() => {
     .slice()
     .sort((a, b) => String(a.due_date || '').localeCompare(String(b.due_date || '')))
 })
+
+const calendarEvents = computed(() => planRowsToCalendarEvents(nestedCommitments.value))
+
+function syncCalendarQuery(open) {
+  const q = { ...route.query }
+  if (open) q.view = 'calendar'
+  else delete q.view
+  router.replace({ path: '/', query: q })
+}
+
+function openPlanCalendar() {
+  showPlanCalendar.value = true
+  syncCalendarQuery(true)
+}
+
+function onPlanCalendarOpenChange(open) {
+  showPlanCalendar.value = !!open
+  syncCalendarQuery(showPlanCalendar.value)
+}
+
+function syncCalendarFromRoute() {
+  if (route.query.view === 'calendar') showPlanCalendar.value = true
+}
+
+function onCalendarCellClick() {
+  // Block create-from-empty-cell; use Add payment.
+}
+
+function onCalendarEventClick(event) {
+  const row = findPlanRowForEvent(nestedCommitments.value, event?.id)
+  if (!row) return
+  showPlanCalendar.value = false
+  syncCalendarQuery(false)
+  openEdit(row)
+}
+
+function onCalendarEventDelete() {
+  toast.info('Use Edit on the payment to cancel it')
+  loadMis(true)
+}
+
+function findDashboardPlanRow(name) {
+  if (!name) return null
+  return (planRows.value || []).find((p) => p.name === name) || null
+}
+
+async function onCalendarEventUpdate(event) {
+  const newDue = String(event?.fromDate || '').slice(0, 10)
+  if (!newDue) return
+  const row = findPlanRowForEvent(nestedCommitments.value, event.id)
+  if (!row) {
+    await loadMis(true)
+    return
+  }
+  if (row.parent_payment && !row._schedule) {
+    toast.error('Due date follows the parent — drag the parent event instead')
+    await loadMis(true)
+    return
+  }
+  if (String(row.due_date || '').slice(0, 10) === newDue) return
+
+  try {
+    if (row._schedule && row.split_name && row.parent_payment) {
+      const parent = findDashboardPlanRow(row.parent_payment)
+      await call('lyqd.api.spa.save_upcoming_payment', {
+        doc: {
+          name: row.parent_payment,
+          company: company.current,
+          title: parent?.title || row.title,
+          category: parent?.category || row.category || 'Other',
+          splits: [
+            {
+              name: row.split_name,
+              due_date: newDue,
+              status: row.status || 'Planned',
+              probability: row.probability != null ? Number(row.probability) : 100,
+            },
+          ],
+        },
+      })
+    } else {
+      await call('lyqd.api.spa.save_upcoming_payment', {
+        doc: {
+          name: row.name,
+          company: company.current,
+          title: row.title,
+          category: row.category || 'Other',
+          due_date: newDue,
+          amount: row.period_amount != null ? row.period_amount : row.amount,
+          period_amount: row.period_amount != null ? row.period_amount : row.amount,
+          cash_effect: row.cash_effect || 'Outflow',
+          is_recurring: row.is_recurring ? 1 : 0,
+          frequency: row.frequency,
+          recurrence_end: row.recurrence_end,
+          status: row.status || 'Planned',
+          notes: row.notes,
+        },
+      })
+    }
+    toast.success(`Due date → ${formatDate(newDue)}`)
+    cache.invalidatePlanOnly(company.current)
+    await loadMis(true)
+  } catch (e) {
+    toast.error(e.messages?.[0] || e.message || 'Could not reschedule')
+    await loadMis(true)
+  }
+}
 
 function isGroupExpanded(name) {
   return !!expandedGroups.value[name]

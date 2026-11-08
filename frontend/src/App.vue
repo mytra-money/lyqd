@@ -1,5 +1,5 @@
 <template>
-  <ToastProvider>
+  <LyqdToastProvider>
     <div class="h-full min-h-[100dvh]">
       <AppLayout v-if="ready">
         <router-view v-slot="{ Component }">
@@ -13,12 +13,12 @@
       </div>
       <InstallPrompt v-if="ready" />
     </div>
-  </ToastProvider>
+  </LyqdToastProvider>
 </template>
 
 <script setup>
 import { KeepAlive, onMounted, ref } from 'vue'
-import ToastProvider from 'frappe-ui/ToastProvider'
+import LyqdToastProvider from '@/components/LyqdToastProvider.vue'
 import AppLayout from '@/components/AppLayout.vue'
 import InstallPrompt from '@/components/InstallPrompt.vue'
 import { useCompanyStore } from '@/stores/company'

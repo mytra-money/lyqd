@@ -361,7 +361,8 @@
 
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
-import { call, createListResource, createResource, toast } from 'frappe-ui'
+import { call, createListResource, createResource } from 'frappe-ui'
+import { toast } from '@/utils/toast'
 import { useRoute, useRouter } from 'vue-router'
 import EmptyState from '@/components/EmptyState.vue'
 import PageHeader from '@/components/PageHeader.vue'

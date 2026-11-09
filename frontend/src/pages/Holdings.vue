@@ -127,7 +127,8 @@
 
 <script setup>
 import { computed, onActivated, ref, watch } from 'vue'
-import { call, toast } from 'frappe-ui'
+import { call } from 'frappe-ui'
+import { toast } from '@/utils/toast'
 import EmptyState from '@/components/EmptyState.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import { useCompanyStore } from '@/stores/company'

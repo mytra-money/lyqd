@@ -70,7 +70,8 @@
 
 <script setup>
 import { watch } from 'vue'
-import { call, createListResource, toast } from 'frappe-ui'
+import { call, createListResource } from 'frappe-ui'
+import { toast } from '@/utils/toast'
 import EmptyState from '@/components/EmptyState.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import { useCompanyStore } from '@/stores/company'

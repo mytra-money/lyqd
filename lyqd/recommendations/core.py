@@ -2554,16 +2554,66 @@ def sync_voucher_family_from_books(
 		}
 
 	planned = [r for r in family if r.status == "Planned"]
-	# Touch Paid rows' last_synced
-	for row in family:
-		if row.status == "Paid":
+	paid = [r for r in family if r.status == "Paid"]
+	live_amount = flt(live.get("amount"))
+
+	# Marked Paid on plan while books still show outstanding → reopen earliest Paid
+	if not planned and paid and live_amount > 0.01:
+		paid_sorted = sorted(
+			paid,
+			key=lambda r: (str(r.due_date or "9999-99-99"), r.name),
+		)
+		target = paid_sorted[0]
+		doc = frappe.get_doc("LYQD Upcoming Payment", target.name)
+		prev_status = doc.status
+		prev_amount = flt(doc.amount)
+		doc.status = "Planned"
+		doc.amount = live_amount
+		doc.last_synced_on = frappe.utils.now_datetime()
+		doc.save(ignore_permissions=True)
+		now = frappe.utils.now_datetime()
+		for row in paid_sorted[1:]:
 			frappe.db.set_value(
 				"LYQD Upcoming Payment",
 				row.name,
 				"last_synced_on",
-				frappe.utils.now_datetime(),
+				now,
 				update_modified=False,
 			)
+		member = {
+			"name": doc.name,
+			"title": doc.title,
+			"action": "reopened",
+			"status": doc.status,
+			"amount": flt(doc.amount),
+			"previous_amount": prev_amount,
+			"previous_status": prev_status,
+		}
+		return {
+			"name": trigger_name or sample.name,
+			"title": sample.title,
+			"action": "reopened",
+			"grain": "voucher",
+			"live_amount": live_amount,
+			"plan_total": flt(doc.amount),
+			"difference": 0.0,
+			"family": [member],
+			"family_size": len(family),
+			"cash_effect": doc.cash_effect or "Outflow",
+			"status": "Planned",
+			"amount": flt(doc.amount),
+			"as_of_used": str(getdate(today())),
+		}
+
+	# Touch Paid rows' last_synced (still awaiting books or books cleared)
+	for row in paid:
+		frappe.db.set_value(
+			"LYQD Upcoming Payment",
+			row.name,
+			"last_synced_on",
+			frappe.utils.now_datetime(),
+			update_modified=False,
+		)
 
 	if not planned:
 		return {
@@ -2571,20 +2621,14 @@ def sync_voucher_family_from_books(
 			"title": sample.title,
 			"action": "unchanged",
 			"grain": "voucher",
-			"live_amount": flt(live.get("amount")),
+			"live_amount": live_amount,
 			"plan_total": 0.0,
 			"family": [],
 			"family_size": len(family),
 			"status": "Paid",
 		}
 
-	# Reopen if books have outstanding but everything was Paid — put on earliest paid
-	# (only when no Planned left — handled above). If all Paid and OS > 0:
-	if not planned and flt(live.get("amount")) > 0.01:
-		# reopen earliest Paid into Planned with full OS on that one row — rare
-		pass
-
-	member_results = _allocate_voucher_family_outstanding(planned, flt(live.get("amount")))
+	member_results = _allocate_voucher_family_outstanding(planned, live_amount)
 	actions = {r["action"] for r in member_results}
 	if "marked_paid" in actions and len(actions) == 1:
 		action = "marked_paid"
@@ -2945,7 +2989,8 @@ def sync_upcoming_payment_from_books(name: str, as_of: str | None = None) -> dic
 		ce_changed = new_ce in ("Outflow", "Inflow") and doc.cash_effect != new_ce
 		if ce_changed:
 			doc.cash_effect = new_ce
-		if live.get("title") and live.get("signed_net") is not None:
+		# Keep the plan title the user (or accept) set — never reset from books defaults
+		if not (doc.title or "").strip() and live.get("title"):
 			doc.title = str(live["title"])[:140]
 		if doc.status != "Planned":
 			doc.status = "Planned"

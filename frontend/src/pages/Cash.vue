@@ -147,7 +147,8 @@
 <script setup>
 import { computed, onActivated, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { call, toast } from 'frappe-ui'
+import { call } from 'frappe-ui'
+import { toast } from '@/utils/toast'
 import CurrencyControl from '@/components/CurrencyControl.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import BankAccountCards from '@/components/BankAccountCards.vue'
@@ -349,8 +350,9 @@ async function save() {
       balance: form.balance,
       as_of: form.as_on,
     })
-    toast.success('Statement balance saved')
+    // Close first so a toast glitch cannot leave the dialog stuck open.
     show.value = false
+    toast.success('Statement balance saved')
     cache.invalidateCashRelated(company.current)
     await loadCash(true)
   } catch (e) {

@@ -61,8 +61,11 @@ You can:
 - **Add a payment** yourself (amount, due date, category)
 - Mark payments **Paid** when done
 - Set a payment to **repeat** (for example monthly rent)
+- Open the **Plan calendar** from the header on Cash position or Commitments (hover an event for details; drag the next due to reschedule)
 - Related payments (for example tax groups) can appear nested so the plan stays readable
 - With books connected: review **From books** suggestions, **Add to plan**, or **Ignore** (see [ERPNext integration](#erpnext-integration) below)
+
+![Plan calendar](docs/screenshots/plan-calendar.jpg)
 
 ![Add a manual payment](docs/screenshots/add-payment.jpg)
 
@@ -178,9 +181,10 @@ Only **Planned** outflows in the forecast horizon reserve free cash. Inflows are
 ## Tips for everyday use
 
 - Start every morning on **Cash position**, then open **Commitments** if something looks off.
+- Use the header **calendar** for the full plan across months (repeating payments show each due).
 - Keep the **liquidity buffer** realistic — free cash is only useful if the buffer matches how you operate.
 - Prefer **due dates** on commitments so the horizon view stays honest.
-- After books change (payments, cancellations), use **Sync plan from books** so free cash stays honest.
+- After books change (payments, cancellations), use **Sync plan from books** so free cash stays honest — custom titles you set on plan rows stay put.
 - If suggestions look wrong, fix the account list under **Settings → Integrations**, then retry.
 - Soft launch portfolio may show **sample** holdings until live investment connectivity is fully on for your company.
 

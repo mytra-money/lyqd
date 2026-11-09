@@ -1,8 +1,7 @@
 <template>
   <!--
     Thin host around reka-ui + frappe-ui Toasts.
-    Explicit duration so auto-dismiss is not left to provider defaults alone;
-    App also installs a backup remove timer in utils/toast.js.
+    Toasts must come from @/utils/toast so it shares state with toast.create.
   -->
   <ToastProvider :duration="5000" swipe-direction="down">
     <slot />
@@ -15,5 +14,5 @@
 
 <script setup>
 import { ToastProvider, ToastViewport } from 'reka-ui'
-import { Toasts } from 'frappe-ui/toasts'
+import { Toasts } from '@/utils/toast'
 </script>

@@ -131,7 +131,8 @@
 
 <script setup>
 import { computed, reactive, ref, watch } from 'vue'
-import { call, toast } from 'frappe-ui'
+import { call } from 'frappe-ui'
+import { toast } from '@/utils/toast'
 import { useCompanyStore } from '@/stores/company'
 
 const props = defineProps({

@@ -64,15 +64,7 @@
       <header class="border-b border-gray-100 px-4 py-3">
         <div class="flex items-baseline justify-between gap-2">
           <h2 class="text-base font-semibold text-gray-900">On the plan</h2>
-          <div class="flex items-center gap-2">
-            <span class="text-xs tabular-nums text-gray-500">{{ activePlanCount }} active</span>
-            <RouterLink
-              :to="{ path: '/', query: { view: 'calendar' } }"
-              class="text-xs font-medium text-gray-600 underline-offset-2 hover:text-gray-900 hover:underline"
-            >
-              Calendar
-            </RouterLink>
-          </div>
+          <span class="text-xs tabular-nums text-gray-500">{{ activePlanCount }} active</span>
         </div>
         <p v-if="!isNarrowLayout" class="mt-0.5 text-xs text-gray-500">
           These amounts reduce free cash when Planned.
@@ -411,6 +403,13 @@
       </ul>
     </section>
     </div>
+
+    <PlanCalendarDialog
+      :model-value="showPlanCalendar"
+      @update:model-value="onPlanCalendarOpenChange"
+      @edit="edit"
+      @changed="loadPlan(true)"
+    />
 
     <Dialog
       v-model="show"
@@ -856,13 +855,16 @@
 import { computed, nextTick, onActivated, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useMediaQuery } from '@vueuse/core'
-import { Button, call, toast } from 'frappe-ui'
+import { Button, call } from 'frappe-ui'
+import { toast } from '@/utils/toast'
 import CommitmentRow from '@/components/CommitmentRow.vue'
 import CurrencyControl from '@/components/CurrencyControl.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import PageHeader from '@/components/PageHeader.vue'
+import PlanCalendarDialog from '@/components/PlanCalendarDialog.vue'
 import { useCompanyStore } from '@/stores/company'
 import { useTreasuryCacheStore } from '@/stores/treasuryCache'
+import { usePlanCalendar } from '@/composables/usePlanCalendar'
 import { formatDate, formatINR } from '@/utils/format'
 import {
   daysUntil,
@@ -883,6 +885,8 @@ import {
 } from '@/utils/planNest'
 
 defineOptions({ name: 'Upcoming' })
+
+const { showPlanCalendar, onPlanCalendarOpenChange } = usePlanCalendar('/upcoming')
 
 const company = useCompanyStore()
 const cache = useTreasuryCacheStore()
@@ -1254,23 +1258,9 @@ watch(
 
 onActivated(() => {
   if (!company.current) return
-  // Old Commitments calendar deep-link → home Plan calendar
-  if (route.query.view === 'calendar') {
-    router.replace({ path: '/', query: { view: 'calendar' } })
-    return
-  }
   loadPlan(false)
   scheduleRecs(false)
 })
-
-watch(
-  () => route.query.view,
-  (view) => {
-    if (view === 'calendar') {
-      router.replace({ path: '/', query: { view: 'calendar' } })
-    }
-  },
-)
 
 function resetPlannedFilters() {
   plannedView.value = 'active'

@@ -102,7 +102,8 @@
 
 <script setup>
 import { computed, onActivated, ref, watch } from 'vue'
-import { call, toast } from 'frappe-ui'
+import { call } from 'frappe-ui'
+import { toast } from '@/utils/toast'
 import { useRouter } from 'vue-router'
 import PageHeader from '@/components/PageHeader.vue'
 import MetricCard from '@/components/MetricCard.vue'

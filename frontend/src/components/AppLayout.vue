@@ -122,7 +122,7 @@
           </span>
           <HorizonPicker v-if="showHorizon" v-model="horizon" />
           <button
-            v-if="showHorizon"
+            v-if="showPlanCalendarNav"
             type="button"
             class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 hover:text-gray-900"
             title="Plan calendar"
@@ -199,6 +199,10 @@ import AddCompanyDialog from '@/components/AddCompanyDialog.vue'
 import HorizonPicker from '@/components/HorizonPicker.vue'
 import { mobileNavOpen } from '@/composables/useMobile'
 import { useHorizon } from '@/composables/useHorizon'
+import {
+  isPlanCalendarHostPath,
+  planCalendarPathFor,
+} from '@/composables/usePlanCalendar'
 import { useCompanyStore } from '@/stores/company'
 
 const company = useCompanyStore()
@@ -219,13 +223,17 @@ const showHorizon = computed(() => {
   )
 })
 
+/** Plan calendar on home and Commitments (not tied to horizon picker). */
+const showPlanCalendarNav = computed(() => isPlanCalendarHostPath(route.path))
+
 function openPlanCalendar() {
-  router.push({ path: '/', query: { view: 'calendar' } })
+  const path = planCalendarPathFor(route.path)
+  router.push({ path, query: { view: 'calendar' } })
 }
 
 const primaryNav = [
   { to: '/', label: 'Cash position', icon: 'home', short: 'Cash' },
-  { to: '/upcoming', label: 'Commitments', icon: 'calendar', short: 'Plan' },
+  { to: '/upcoming', label: 'Commitments', icon: 'list', short: 'Plan' },
   { to: '/surplus', label: 'Free cash', icon: 'pie-chart', short: 'Free' },
   { to: '/proposal', label: 'Proposal', icon: 'file-text', short: 'Proposal' },
   { to: '/holdings', label: 'Portfolio', icon: 'briefcase', short: 'Portfolio' },

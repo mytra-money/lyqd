@@ -354,7 +354,8 @@
 <script setup>
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { call, createResource, toast } from 'frappe-ui'
+import { call, createResource } from 'frappe-ui'
+import { toast } from '@/utils/toast'
 import PageHeader from '@/components/PageHeader.vue'
 import BankAccountCards from '@/components/BankAccountCards.vue'
 import { useCompanyStore } from '@/stores/company'

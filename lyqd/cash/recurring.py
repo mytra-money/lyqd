@@ -1,4 +1,7 @@
-"""Recurring Outflow series on LYQD Upcoming Payment (single row, live horizon expand)."""
+"""Recurring Outflow series on LYQD Upcoming Payment (single row, live horizon expand).
+
+JS mirror (keep in sync): ``apps/lyqd/frontend/src/utils/recurrence.js``.
+"""
 
 from __future__ import annotations
 

@@ -185,6 +185,7 @@ Only **Planned** outflows in the forecast horizon reserve free cash. Inflows are
 - After books change (payments, cancellations), use **Sync plan from books** so free cash stays honest — custom titles you set on plan rows stay put.
 - If suggestions look wrong, fix the account list under **Settings → Integrations**, then retry.
 - Soft launch portfolio may show **sample** holdings until live investment connectivity is fully on for your company.
+- Cash credit / overdraft: enter the **drawn** balance as negative on Bank cash. Unused limit is not free cash; unselect the facility under Settings → Banks if you manage it outside free cash.
 
 ---
 

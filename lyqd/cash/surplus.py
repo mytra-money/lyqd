@@ -126,6 +126,24 @@ def get_policy(company: str) -> frappe._dict:
 	)
 
 
+def _is_credit_facility(account_type: str | None) -> bool:
+	"""Cash Credit / Overdraft — drawn balances reduce free cash; unused limit does not."""
+	t = (account_type or "").strip().lower()
+	return t in {"cash credit", "overdraft", "cc", "od"}
+
+
+def _bank_cash_explanation_label(row: dict[str, Any], *, drawn: bool) -> str:
+	name = row.get("account_name") or row.get("bank_account") or "Bank account"
+	acct_type = (row.get("account_type") or "").strip()
+	if _is_credit_facility(acct_type):
+		if drawn:
+			return f"Bank cash — {name} (CC drawn)"
+		return f"Bank cash — {name} ({acct_type})"
+	if drawn:
+		return f"Bank cash — {name} (drawn)"
+	return f"Bank cash — {name}"
+
+
 def get_planned_upcoming_payments(
 	company: str,
 	as_of: str,
@@ -252,6 +270,7 @@ def compute_surplus(
 	as_of: str | None = None,
 	*,
 	bank_cash: float | None = None,
+	cash_accounts: list[dict[str, Any]] | None = None,
 	upcoming_payments: list[dict[str, Any]] | None = None,
 	min_liquidity_buffer: float | None = None,
 	restricted_cash: float | None = None,
@@ -259,8 +278,11 @@ def compute_surplus(
 	"""
 	Compute investable surplus with a readable explanation.
 
-	Pure overrides (bank_cash, upcoming_payments, buffers) support unit tests
-	without DocType fixtures. When omitted, values are loaded from the site.
+	Pure overrides (bank_cash, cash_accounts, upcoming_payments, buffers) support
+	unit tests without DocType fixtures. When omitted, values are loaded from the site.
+
+	Drawn cash-credit / overdraft balances (negative) reduce bank cash. Unused CC
+	limit is never included in free cash.
 	"""
 	as_of = str(getdate(as_of or today()))
 	needs_policy = (
@@ -285,8 +307,13 @@ def compute_surplus(
 	else:
 		restricted_cash = flt(restricted_cash)
 
-	cash_accounts: list[dict[str, Any]] = []
-	if bank_cash is None:
+	if cash_accounts is not None:
+		cash_accounts = list(cash_accounts)
+		if bank_cash is None:
+			bank_cash = flt(sum(flt(r.get("balance")) for r in cash_accounts))
+		else:
+			bank_cash = flt(bank_cash)
+	elif bank_cash is None:
 		# Bank statements use T-1; planning as_of (commitments horizon) stays separate
 		from lyqd.cash.bank_cash import default_bank_statement_as_of
 
@@ -295,6 +322,7 @@ def compute_surplus(
 		cash_accounts = cash_info["accounts"]
 	else:
 		bank_cash = flt(bank_cash)
+		cash_accounts = []
 
 	if upcoming_payments is None:
 		upcoming_payments = get_planned_upcoming_payments(company, as_of, horizon_days)
@@ -320,24 +348,29 @@ def compute_surplus(
 	explanation: list[ExplanationLine] = []
 	if cash_accounts:
 		for row in cash_accounts:
+			bal = flt(row.get("balance"))
+			drawn = bal < -0.005
+			label = _bank_cash_explanation_label(row, drawn=drawn)
 			explanation.append(
 				ExplanationLine(
 					kind="cash",
-					label=f"Bank cash — {row.get('account_name') or row.get('bank_account')}",
-					amount=flt(row.get("balance")),
-					sign="+",
+					label=label,
+					amount=abs(bal),
+					sign="-" if drawn else "+",
 					ref_doctype="LYQD Bank Account",
 					ref_name=row.get("bank_account"),
 					notes=f"source={row.get('source')}",
+					category=(row.get("account_type") or None),
 				)
 			)
 	else:
+		drawn = flt(bank_cash) < -0.005
 		explanation.append(
 			ExplanationLine(
 				kind="cash",
-				label="Eligible bank cash",
-				amount=bank_cash,
-				sign="+",
+				label="Eligible bank cash" + (" (net drawn)" if drawn else ""),
+				amount=abs(flt(bank_cash)),
+				sign="-" if drawn else "+",
 			)
 		)
 

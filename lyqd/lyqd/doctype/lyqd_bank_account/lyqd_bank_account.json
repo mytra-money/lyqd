@@ -60,8 +60,10 @@
   },
   {
    "fieldname": "account_type",
-   "fieldtype": "Data",
-   "label": "Account Type"
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Account Type",
+   "options": "\nCurrent\nSavings\nCash Credit\nOverdraft"
   },
   {
    "fieldname": "bank_account_no",

@@ -8,7 +8,7 @@
     :description="description"
     :size="size"
     step="0.01"
-    min="0"
+    :min="allowNegative ? undefined : '0'"
     inputmode="decimal"
     @update:model-value="onInput"
     @blur="onBlur"

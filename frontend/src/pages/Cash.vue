@@ -14,6 +14,12 @@
         <p class="mt-0.5 text-p-base text-gray-600">
           Total {{ formatINRCompact(cash.data?.total) }} as of {{ cash.data?.as_of || '—' }}
         </p>
+        <p class="mt-2 text-xs text-gray-500">
+          Enter drawn cash credit / overdraft as a
+          <span class="font-medium text-gray-700">negative</span>
+          balance. Unused CC limit is not free cash — do not add it here. Exclude a facility from
+          free cash under Settings → Banks if you manage it separately.
+        </p>
         <p
           v-if="cash.data?.message"
           class="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900"
@@ -48,7 +54,12 @@
             label="Date"
             @update:model-value="loadRemoteSuggestion"
           />
-          <CurrencyControl v-model="form.balance" label="Balance" />
+          <CurrencyControl
+            v-model="form.balance"
+            :label="balanceFieldLabel"
+            allow-negative
+            :description="balanceFieldHint"
+          />
 
           <div
             v-if="suggestionLoading"
@@ -128,10 +139,11 @@
             :options="['', 'Current', 'Savings', 'Cash Credit', 'Overdraft']"
           />
           <FormControl v-model="addBank.bank_account_no" label="Bank account no (optional)" />
-          <FormControl
-            v-model.number="addBank.opening_balance"
-            type="number"
+          <CurrencyControl
+            v-model="addBank.opening_balance"
             label="Opening balance (optional)"
+            allow-negative
+            description="For Cash Credit / Overdraft, enter drawn amount as negative."
           />
           <Checkbox v-model="addBank.is_default" label="Set as default" />
         </div>
@@ -226,6 +238,29 @@ const bankSelectOptions = computed(() =>
     label: b.account_name || b.name,
     value: b.name,
   })),
+)
+
+function isCreditFacility(accountType) {
+  const t = String(accountType || '')
+    .trim()
+    .toLowerCase()
+  return t === 'cash credit' || t === 'overdraft' || t === 'cc' || t === 'od'
+}
+
+const selectedBalanceAccount = computed(() =>
+  cashCards.value.find((c) => c.name === form.bank_account),
+)
+
+const balanceFieldLabel = computed(() =>
+  isCreditFacility(selectedBalanceAccount.value?.account_type)
+    ? 'Drawn balance'
+    : 'Balance',
+)
+
+const balanceFieldHint = computed(() =>
+  isCreditFacility(selectedBalanceAccount.value?.account_type)
+    ? 'Negative = utilised CC/OD. Unused limit is not free cash.'
+    : 'Negative balances are allowed for cash credit / overdraft accounts.',
 )
 
 async function loadCash(force = false) {

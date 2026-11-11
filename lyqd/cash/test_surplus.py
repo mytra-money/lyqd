@@ -265,3 +265,37 @@ class TestLYQDSurplusPure(unittest.TestCase):
 		)
 		self.assertTrue(result.is_shortfall)
 		self.assertEqual(result.investable_surplus, -1)
+
+	def test_cash_credit_drawn_reduces_free_cash(self):
+		"""Drawn CC (negative balance) lowers bank cash; unused limit is never added."""
+		result = compute_surplus(
+			company="TEST",
+			horizon_days=7,
+			as_of=today(),
+			bank_cash=80_000,  # CA 1L + CC drawn −20k
+			cash_accounts=[
+				{
+					"bank_account": "CA-1",
+					"account_name": "HDFC Current",
+					"account_type": "Current",
+					"balance": 100_000,
+					"source": "Bank Balance",
+				},
+				{
+					"bank_account": "CC-1",
+					"account_name": "HDFC Cash Credit",
+					"account_type": "Cash Credit",
+					"balance": -20_000,
+					"source": "Bank Balance",
+				},
+			],
+			upcoming_payments=[],
+			min_liquidity_buffer=0,
+			restricted_cash=0,
+		)
+		self.assertEqual(result.investable_surplus, 80_000)
+		self.assertFalse(result.is_shortfall)
+		cc_line = next(e for e in result.explanation if e.ref_name == "CC-1")
+		self.assertEqual(cc_line.sign, "-")
+		self.assertEqual(cc_line.amount, 20_000)
+		self.assertIn("CC drawn", cc_line.label)

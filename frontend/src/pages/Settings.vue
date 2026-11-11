@@ -357,10 +357,11 @@
             :options="['', 'Current', 'Savings', 'Cash Credit', 'Overdraft']"
           />
           <FormControl v-model="addBank.bank_account_no" label="Bank account no (optional)" />
-          <FormControl
-            v-model.number="addBank.opening_balance"
-            type="number"
+          <CurrencyControl
+            v-model="addBank.opening_balance"
             label="Opening balance (optional)"
+            allow-negative
+            description="For Cash Credit / Overdraft, enter drawn amount as negative."
           />
           <Checkbox v-model="addBank.is_default" label="Set as default bank account" />
         </div>
@@ -380,6 +381,7 @@ import { call, createResource } from 'frappe-ui'
 import { toast } from '@/utils/toast'
 import PageHeader from '@/components/PageHeader.vue'
 import BankAccountCards from '@/components/BankAccountCards.vue'
+import CurrencyControl from '@/components/CurrencyControl.vue'
 import { useCompanyStore } from '@/stores/company'
 import { LYQD_INVESTMENT_ACCOUNT_WHATSAPP_URL } from '@/utils/investmentAccount'
 

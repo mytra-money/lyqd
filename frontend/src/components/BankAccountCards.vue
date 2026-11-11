@@ -64,16 +64,20 @@
           v-if="ba.balance != null"
           class="mt-3 border-t border-gray-100 pt-2"
         >
-          <div class="flex items-baseline justify-between">
-            <span class="text-xs text-gray-500">{{ ba.source || 'Balance' }}</span>
-            <span class="text-sm font-semibold tabular-nums text-gray-900">
+          <div class="flex items-baseline justify-between gap-2">
+            <span class="text-xs text-gray-500">
+              {{ balanceCaption(ba) }}
+            </span>
+            <span
+              class="text-sm font-semibold tabular-nums"
+              :class="Number(ba.balance) < 0 ? 'text-red-700' : 'text-gray-900'"
+            >
               {{ formatINR(ba.balance) }}
             </span>
           </div>
           <div
             v-if="ba.balance_date"
-            class="mt-0.5 text-xs"
-            :class="'text-gray-500'"
+            class="mt-0.5 text-xs text-gray-500"
           >
             As of {{ ba.balance_date }}
           </div>
@@ -118,6 +122,19 @@ function isSelected(name) {
 function initials(ba) {
   const raw = (ba.bank || ba.account_name || ba.name || 'B').trim()
   return raw.slice(0, 2).toUpperCase()
+}
+
+function isCreditFacility(accountType) {
+  const t = String(accountType || '')
+    .trim()
+    .toLowerCase()
+  return t === 'cash credit' || t === 'overdraft' || t === 'cc' || t === 'od'
+}
+
+function balanceCaption(ba) {
+  if (isCreditFacility(ba.account_type) && Number(ba.balance) < 0) return 'Drawn'
+  if (isCreditFacility(ba.account_type)) return ba.source || 'Balance'
+  return ba.source || 'Balance'
 }
 
 function openDesk() {

@@ -10,6 +10,11 @@
   "column_break_defaults",
   "default_restricted_cash",
   "in_beta",
+  "proposal_illustration_section",
+  "illustrative_idle_yield_pct",
+  "illustrative_fd_yield_pct",
+  "column_break_illustration",
+  "illustrative_liquid_yield_pct",
   "legacy_section",
   "tagline",
   "display_scheme_label",
@@ -53,6 +58,43 @@
    "label": "In Beta"
   },
   {
+   "description": "Stated annual rates for Proposal comparison cards only — not forecasts or guarantees.",
+   "fieldname": "proposal_illustration_section",
+   "fieldtype": "Section Break",
+   "label": "Proposal illustration rates"
+  },
+  {
+   "default": "0",
+   "description": "Typical idle current-account yield (illustrative).",
+   "fieldname": "illustrative_idle_yield_pct",
+   "fieldtype": "Float",
+   "label": "Idle current account % p.a.",
+   "non_negative": 1,
+   "precision": "2"
+  },
+  {
+   "default": "3",
+   "description": "Hypothetical short-term bank FD rate for examples.",
+   "fieldname": "illustrative_fd_yield_pct",
+   "fieldtype": "Float",
+   "label": "Short-term bank FD % p.a.",
+   "non_negative": 1,
+   "precision": "2"
+  },
+  {
+   "fieldname": "column_break_illustration",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "5.5",
+   "description": "Hypothetical liquid-fund stated rate — not a performance forecast.",
+   "fieldname": "illustrative_liquid_yield_pct",
+   "fieldtype": "Float",
+   "label": "Liquid mutual fund % p.a.",
+   "non_negative": 1,
+   "precision": "2"
+  },
+  {
    "collapsible": 1,
    "fieldname": "legacy_section",
    "fieldtype": "Section Break",
@@ -89,7 +131,7 @@
  ],
  "issingle": 1,
  "links": [],
- "modified": "2026-11-04 16:30:00.000000",
+ "modified": "2026-11-10 14:55:00.000000",
  "modified_by": "Administrator",
  "module": "LYQD",
  "name": "LYQD Settings",

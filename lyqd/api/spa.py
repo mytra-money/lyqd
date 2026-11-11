@@ -31,11 +31,19 @@ def get_boot_data() -> dict:
 		s = frappe.get_single("LYQD Settings")
 		settings = {
 			"default_forecast_horizon_days": s.default_forecast_horizon_days,
-			"enable_draft_proposals": s.enable_draft_proposals,
 			"in_beta": int(getattr(s, "in_beta", 1) or 0),
 			"tagline": s.tagline,
 			"display_scheme_label": s.display_scheme_label,
 			"display_scheme_isin": s.display_scheme_isin,
+			"illustrative_idle_yield_pct": float(
+				getattr(s, "illustrative_idle_yield_pct", 0) or 0
+			),
+			"illustrative_fd_yield_pct": float(
+				getattr(s, "illustrative_fd_yield_pct", 3) or 3
+			),
+			"illustrative_liquid_yield_pct": float(
+				getattr(s, "illustrative_liquid_yield_pct", 5.5) or 5.5
+			),
 		}
 	# Per-company books + investment overlay for the active company
 	company_settings = settings_for_api(default_company) if default_company else {}
@@ -271,23 +279,26 @@ def get_morning_mis(company: str | None = None, horizon_days: int | str = 7) -> 
 	cash_gap = max(0.0, required - bank_cash)
 	redemption_need = min(cash_gap, liquid_total) if liquid_total else cash_gap
 
-	# Only open requests — Cancelled must not compare vs free cash
+	# Open instruction is the durable intent; proposal is only its frozen snapshot.
 	planned_investment = 0.0
 	planned_ref = None
 	planned_status = None
 	planned_request_type = None
-	proposal = frappe.get_all(
-		"LYQD Draft Proposal",
-		filters={"company": company, "status": ("in", ["Draft", "Frozen"])},
-		fields=["name", "proposed_amount", "status", "request_type", "creation"],
+	planned_proposal = None
+	open_instr = frappe.get_all(
+		"LYQD Investment Instruction",
+		filters={"company": company, "status": ("in", ["Draft", "Approved", "Ready"])},
+		fields=["name", "amount", "status", "side", "proposal", "creation"],
 		order_by="creation desc",
 		limit=1,
 	)
-	if proposal:
-		planned_investment = flt(proposal[0].proposed_amount)
-		planned_ref = proposal[0].name
-		planned_status = proposal[0].status
-		planned_request_type = proposal[0].request_type or "Invest"
+	if open_instr:
+		row = open_instr[0]
+		planned_investment = flt(row.amount)
+		planned_ref = row.name
+		planned_status = row.status
+		planned_request_type = "Redeem" if (row.side or "") == "Redeem" else "Invest"
+		planned_proposal = row.proposal
 
 	# Actual free cash = position − commitments − policy (incoming excluded).
 	# Expected free cash = actual + expected incoming (probability-weighted).
@@ -357,6 +368,7 @@ def get_morning_mis(company: str | None = None, horizon_days: int | str = 7) -> 
 		"planned_ref": planned_ref,
 		"planned_status": planned_status,
 		"planned_request_type": planned_request_type,
+		"planned_proposal": planned_proposal,
 		"over_allocated": over_allocated,
 		"invest_flipped_to_shortfall": invest_flipped_to_shortfall,
 		"redeem_no_longer_needed": redeem_no_longer_needed,
@@ -1182,14 +1194,22 @@ def save_settings(doc: str | dict) -> dict:
 		"default_forecast_horizon_days",
 		"default_min_liquidity_buffer",
 		"default_restricted_cash",
-		"enable_draft_proposals",
 		"in_beta",
 		"tagline",
 		"display_scheme_label",
 		"display_scheme_isin",
+		"illustrative_idle_yield_pct",
+		"illustrative_fd_yield_pct",
+		"illustrative_liquid_yield_pct",
 	):
 		if key in doc:
-			s.set(key, doc.get(key))
+			val = doc.get(key)
+			if key.endswith("_yield_pct") and val is not None:
+				try:
+					val = max(0.0, min(100.0, float(val)))
+				except (TypeError, ValueError):
+					continue
+			s.set(key, val)
 	s.save()
 	return s.as_dict()
 
@@ -1281,23 +1301,6 @@ def _supersede_open_investment_requests(company: str) -> list[str]:
 	return cancelled
 
 
-def _open_proposal_matching_run(company: str, run_name: str, request_type: str) -> dict | None:
-	open_props = frappe.get_all(
-		"LYQD Draft Proposal",
-		filters={"company": company, "status": ("in", ["Draft", "Frozen"])},
-		fields=["name", "surplus_run", "request_type", "proposed_amount"],
-		order_by="creation desc",
-	)
-	for row in open_props:
-		if row.surplus_run == run_name and (row.request_type or "Invest") == request_type:
-			out = frappe.get_doc("LYQD Draft Proposal", row.name).as_dict()
-			out["superseded"] = []
-			out["unchanged"] = True
-			out["surplus_run_reused"] = True
-			return out
-	return None
-
-
 def _scheme_from_largest_holding(company: str) -> tuple[str | None, str | None]:
 	from lyqd.mytra.portfolio import get_portfolio
 
@@ -1316,134 +1319,42 @@ def _liquid_holdings_total(company: str) -> float:
 	return flt(get_portfolio(company).get("liquid_total") or 0)
 
 
-@frappe.whitelist()
-def create_proposal_from_surplus(
-	company: str | None = None,
-	horizon_days: int | str = 7,
-	freeze: int | str = 1,
-) -> dict:
-	"""Create Surplus Run + Invest request; supersedes any prior open request for the company.
-
-	Reuses an identical Surplus Run when free-cash math is unchanged. If an open Invest
-	request already points at that run, returns it without creating duplicates.
-	"""
-	company = company or _default_company()
-	horizon_days = parse_horizon_days(horizon_days)
-	run = create_surplus_run_doc(company=company, horizon_days=horizon_days)
-	if run.is_shortfall:
-		if not getattr(run.flags, "reused", False):
-			frappe.delete_doc("LYQD Surplus Run", run.name, force=1, ignore_permissions=True)
-		frappe.throw(_("No free cash to invest for this horizon (liquidity shortfall)."))
-
-	invest_amount = flt(run.investable_surplus)
-	if invest_amount <= 0.01:
-		if not getattr(run.flags, "reused", False):
-			frappe.delete_doc("LYQD Surplus Run", run.name, force=1, ignore_permissions=True)
-		frappe.throw(_("No free cash to invest for this horizon (amount is zero)."))
-
-	matched = _open_proposal_matching_run(company, run.name, "Invest")
-	if matched:
-		return matched
-
-	superseded = _supersede_open_investment_requests(company)
-
-	doc = frappe.get_doc(
-		{
-			"doctype": "LYQD Draft Proposal",
-			"company": company,
-			"status": "Draft",
-			"request_type": "Invest",
-			"surplus_run": run.name,
-			"horizon_days": run.horizon_days,
-			"as_of": run.as_of,
-			"notes": (
-				_("Replaces {0}").format(", ".join(superseded)) if superseded else None
-			),
-		}
+def _open_instruction_for_company(company: str) -> dict | None:
+	rows = frappe.get_all(
+		"LYQD Investment Instruction",
+		filters={"company": company, "status": ("in", ["Draft", "Approved", "Ready"])},
+		fields=[
+			"name",
+			"status",
+			"side",
+			"amount",
+			"proposal",
+			"surplus_run",
+			"as_of",
+			"horizon_days",
+			"scheme_label",
+			"scheme_isin",
+			"notes",
+		],
+		order_by="creation desc",
+		limit=1,
 	)
-	doc.apply_surplus_run(run)
-	if int(freeze or 0):
-		doc.status = "Frozen"
-	doc.insert()
-	out = doc.as_dict()
-	out["superseded"] = superseded
-	out["unchanged"] = False
-	out["surplus_run_reused"] = bool(getattr(run.flags, "reused", False))
-	return out
+	return rows[0] if rows else None
 
 
-@frappe.whitelist()
-def create_proposal_from_shortfall(
-	company: str | None = None,
-	horizon_days: int | str = 7,
-	freeze: int | str = 1,
-) -> dict:
-	"""Create Surplus Run + Redeem request capped at min(|shortfall|, liquid holdings)."""
-	company = company or _default_company()
-	horizon_days = parse_horizon_days(horizon_days)
-	run = create_surplus_run_doc(company=company, horizon_days=horizon_days)
-	if not run.is_shortfall:
-		if not getattr(run.flags, "reused", False):
-			# Keep the run — it is a valid free-cash snapshot — but do not create redeem.
-			pass
-		frappe.throw(_("No liquidity shortfall for this horizon — use Invest instead."))
-
-	shortfall = abs(flt(run.investable_surplus))
-	liquid_total = _liquid_holdings_total(company)
-	redemption_need = min(shortfall, liquid_total) if liquid_total else 0.0
-	if redemption_need <= 0.01:
+def _assert_no_open_instruction(company: str) -> None:
+	existing = _open_instruction_for_company(company)
+	if existing:
 		frappe.throw(
 			_(
-				"No liquid fund holdings to redeem. Top up the bank from elsewhere, "
-				"or wait until holdings are available on Portfolio."
-			)
+				"Instruction {0} is already open ({1}). Finish or cancel it on Instructions "
+				"before creating another."
+			).format(existing.name, existing.status)
 		)
 
-	matched = _open_proposal_matching_run(company, run.name, "Redeem")
-	if matched and abs(flt(matched.get("proposed_amount")) - redemption_need) < 0.005:
-		return matched
 
-	superseded = _supersede_open_investment_requests(company)
-	scheme_label, scheme_isin = _scheme_from_largest_holding(company)
-	settings = frappe.get_single("LYQD Settings")
-	if not scheme_label:
-		scheme_label = settings.display_scheme_label
-	if not scheme_isin:
-		scheme_isin = settings.display_scheme_isin
-
-	doc = frappe.get_doc(
-		{
-			"doctype": "LYQD Draft Proposal",
-			"company": company,
-			"status": "Draft",
-			"request_type": "Redeem",
-			"surplus_run": run.name,
-			"horizon_days": run.horizon_days,
-			"as_of": run.as_of,
-			"display_scheme_label": scheme_label,
-			"display_scheme_isin": scheme_isin,
-			"notes": (
-				_("Replaces {0}").format(", ".join(superseded)) if superseded else None
-			),
-		}
-	)
-	doc.apply_surplus_run(run, proposed_amount=redemption_need)
-	if int(freeze or 0):
-		doc.status = "Frozen"
-	doc.insert()
-	out = doc.as_dict()
-	out["superseded"] = superseded
-	out["unchanged"] = False
-	out["surplus_run_reused"] = bool(getattr(run.flags, "reused", False))
-	out["redemption_need"] = redemption_need
-	out["liquid_total"] = liquid_total
-	out["shortfall"] = shortfall
-	return out
-
-
-@frappe.whitelist()
-def create_instruction_from_proposal(proposal: str) -> dict:
-	prop = frappe.get_doc("LYQD Draft Proposal", proposal)
+def _build_instruction_from_proposal(prop) -> dict:
+	"""Insert Draft instruction linked to a Frozen proposal snapshot."""
 	if not _investment_account_active(prop.company):
 		frappe.throw(
 			_(
@@ -1452,28 +1363,26 @@ def create_instruction_from_proposal(proposal: str) -> dict:
 			)
 		)
 	if prop.status == "Cancelled":
-		frappe.throw(_("Cannot create an instruction from a cancelled request."))
+		frappe.throw(_("Cannot create an instruction from a cancelled snapshot."))
 	if prop.status != "Frozen":
-		frappe.throw(_("Confirm the request before creating an instruction."))
+		frappe.throw(_("Snapshot must be Frozen before creating an instruction."))
 	if flt(prop.proposed_amount) <= 0.01:
-		frappe.throw(_("Cannot create an instruction for a zero-amount proposal."))
+		frappe.throw(_("Cannot create an instruction for a zero amount."))
 	if not prop.surplus_run:
-		frappe.throw(_("Request is missing a Surplus Run. Create a new request from free cash."))
+		frappe.throw(_("Snapshot is missing a Surplus Run."))
 	existing = frappe.db.exists(
 		"LYQD Investment Instruction",
-		{"proposal": proposal, "status": ("in", ["Draft", "Approved", "Ready"])},
+		{"proposal": prop.name, "status": ("in", ["Draft", "Approved", "Ready"])},
 	)
 	if existing:
 		frappe.throw(
-			_("Instruction {0} already exists for this request. Open Instructions to continue.").format(
+			_("Instruction {0} already exists for this snapshot. Open Instructions to continue.").format(
 				existing
 			)
 		)
 	settings = frappe.get_single("LYQD Settings")
 	scheme_isin = (
-		prop.display_scheme_isin
-		or settings.display_scheme_isin
-		or "INF109K01VQ1"
+		prop.display_scheme_isin or settings.display_scheme_isin or "INF109K01VQ1"
 	)
 	scheme_label = (
 		prop.display_scheme_label
@@ -1496,7 +1405,7 @@ def create_instruction_from_proposal(proposal: str) -> dict:
 			"horizon_days": prop.horizon_days,
 			"proposal": prop.name,
 			"surplus_run": prop.surplus_run,
-			"notes": _("Created from {0} request").format(request_type),
+			"notes": _("Created from live {0} proposal snapshot").format(request_type),
 		}
 	)
 	doc.insert()
@@ -1504,11 +1413,117 @@ def create_instruction_from_proposal(proposal: str) -> dict:
 
 
 @frappe.whitelist()
-def freeze_proposal(name: str) -> dict:
-	doc = frappe.get_doc("LYQD Draft Proposal", name)
-	doc.freeze_from_surplus()
-	doc.reload()
-	return doc.as_dict()
+def create_instruction_from_proposal(proposal: str) -> dict:
+	"""Desk / legacy: create instruction from an existing Frozen proposal snapshot."""
+	prop = frappe.get_doc("LYQD Draft Proposal", proposal)
+	_assert_no_open_instruction(prop.company)
+	return _build_instruction_from_proposal(prop)
+
+
+@frappe.whitelist()
+def create_instruction_from_live(
+	company: str | None = None,
+	horizon_days: int | str = 7,
+	request_type: str | None = "Invest",
+) -> dict:
+	"""Live Proposal → atomic Frozen snapshot + Draft instruction.
+
+	Proposal page stays live; the Draft Proposal row is only the audit snapshot
+	linked to the instruction.
+	"""
+	company = company or _default_company()
+	request_type = (request_type or "Invest").strip() or "Invest"
+	if request_type not in ("Invest", "Redeem"):
+		frappe.throw(_("request_type must be Invest or Redeem"))
+
+	_assert_no_open_instruction(company)
+
+	horizon_days = parse_horizon_days(horizon_days)
+	run = create_surplus_run_doc(company=company, horizon_days=horizon_days)
+
+	if request_type == "Invest":
+		if run.is_shortfall:
+			if not getattr(run.flags, "reused", False):
+				frappe.delete_doc("LYQD Surplus Run", run.name, force=1, ignore_permissions=True)
+			frappe.throw(_("No free cash to invest for this horizon (liquidity shortfall)."))
+		amount = flt(run.investable_surplus)
+		if amount <= 0.01:
+			if not getattr(run.flags, "reused", False):
+				frappe.delete_doc("LYQD Surplus Run", run.name, force=1, ignore_permissions=True)
+			frappe.throw(_("No free cash to invest for this horizon (amount is zero)."))
+		scheme_label = None
+		scheme_isin = None
+	else:
+		if not run.is_shortfall:
+			frappe.throw(_("No liquidity shortfall for this horizon — use Invest instead."))
+		shortfall = abs(flt(run.investable_surplus))
+		liquid_total = _liquid_holdings_total(company)
+		amount = min(shortfall, liquid_total) if liquid_total else 0.0
+		if amount <= 0.01:
+			frappe.throw(
+				_(
+					"No liquid fund holdings to redeem. Top up the bank from elsewhere, "
+					"or wait until holdings are available on Portfolio."
+				)
+			)
+		scheme_label, scheme_isin = _scheme_from_largest_holding(company)
+
+	settings = frappe.get_single("LYQD Settings")
+	if not scheme_label:
+		scheme_label = settings.display_scheme_label
+	if not scheme_isin:
+		scheme_isin = settings.display_scheme_isin
+
+	# Drop orphan Draft/Frozen snapshots that never became instructions
+	superseded = _supersede_open_investment_requests(company)
+
+	prop = frappe.get_doc(
+		{
+			"doctype": "LYQD Draft Proposal",
+			"company": company,
+			"status": "Frozen",
+			"request_type": request_type,
+			"surplus_run": run.name,
+			"horizon_days": run.horizon_days,
+			"as_of": run.as_of,
+			"display_scheme_label": scheme_label,
+			"display_scheme_isin": scheme_isin,
+			"notes": (
+				_("Snapshot for instruction · replaced {0}").format(", ".join(superseded))
+				if superseded
+				else _("Snapshot for instruction")
+			),
+		}
+	)
+	prop.apply_surplus_run(run, proposed_amount=amount)
+	prop.status = "Frozen"
+	prop.insert()
+
+	instruction = _build_instruction_from_proposal(prop)
+	out = {
+		"instruction": instruction,
+		"proposal": prop.as_dict(),
+		"superseded": superseded,
+		"surplus_run_reused": bool(getattr(run.flags, "reused", False)),
+	}
+	if request_type == "Redeem":
+		out["redemption_need"] = amount
+		out["liquid_total"] = _liquid_holdings_total(company)
+		out["shortfall"] = abs(flt(run.investable_surplus))
+	return out
+
+
+@frappe.whitelist()
+def get_open_instruction(company: str | None = None) -> dict | None:
+	"""Return the company's open investment instruction + linked snapshot, if any."""
+	company = company or _default_company()
+	row = _open_instruction_for_company(company)
+	if not row:
+		return None
+	out = dict(row)
+	if row.proposal and frappe.db.exists("LYQD Draft Proposal", row.proposal):
+		out["proposal_doc"] = frappe.get_doc("LYQD Draft Proposal", row.proposal).as_dict()
+	return out
 
 
 @frappe.whitelist()

@@ -66,7 +66,7 @@
         </Button>
       </div>
 
-      <!-- Plan drift — Invest or Redeem open request vs this horizon -->
+      <!-- Drift — open instruction snapshot vs this horizon -->
       <div
         v-if="d.planned_investment > 0"
         class="mb-4 rounded-md border border-gray-200 bg-white px-4 py-3 text-sm"
@@ -75,14 +75,14 @@
           <div class="font-medium text-gray-900">
             {{
               (d.planned_request_type || 'Invest') === 'Redeem'
-                ? 'Redeem proposal vs this horizon'
+                ? 'Redeem instruction vs this horizon'
                 : d.invest_flipped_to_shortfall
-                  ? 'Invest proposal vs shortfall today'
-                  : 'Invest proposal vs free cash today'
+                  ? 'Invest instruction vs shortfall today'
+                  : 'Invest instruction vs free cash today'
             }}
           </div>
           <div class="tabular-nums text-gray-700">
-            Proposal {{ formatINR(d.planned_investment) }}
+            Instruction {{ formatINR(d.planned_investment) }}
             <span v-if="d.planned_ref" class="text-xs text-gray-500">· {{ d.planned_ref }}</span>
             <template v-if="(d.planned_request_type || 'Invest') === 'Redeem'">
               → need {{ formatINR(d.is_shortfall ? d.redemption_need : 0) }}
@@ -95,45 +95,37 @@
             </template>
           </div>
         </div>
-        <!-- Invest open, but this horizon is a shortfall → replace with redeem -->
         <p v-if="d.invest_flipped_to_shortfall" class="mt-1 text-p-base text-amber-800">
-          Do not invest
+          Do not deploy
           {{ formatINR(d.planned_investment) }}. This horizon needs
           {{ formatINR(d.redemption_need || Math.abs(d.investable_surplus || 0)) }} more cash —
-          cancel the invest proposal and create a redeem proposal instead.
+          cancel the invest instruction and create a redeem instead.
         </p>
-        <!-- Redeem: horizon flipped to free cash -->
         <p v-else-if="d.redeem_no_longer_needed" class="mt-1 text-p-base text-amber-800">
           This horizon now shows free cash
           {{ formatINR(Math.max(0, d.investable_surplus || 0)) }} — the open redeem may no longer be
-          needed. Review or cancel it on Proposal before acting.
+          needed. Review or cancel it on Instructions before acting.
         </p>
-        <!-- Redeem: still short but request larger than today’s need -->
         <p v-else-if="d.redeem_over_need > 0" class="mt-1 text-p-base text-amber-800">
           Today’s shortfall need is
           {{ formatINR(d.redemption_need) }} — the open redeem is
-          {{ formatINR(d.redeem_over_need) }} higher. Confirm the amount on Proposal before creating
-          an instruction.
+          {{ formatINR(d.redeem_over_need) }} higher than today’s need.
         </p>
-        <!-- Redeem: still short but request smaller than today’s need -->
         <p v-else-if="d.redeem_under_need > 0" class="mt-1 text-p-base text-amber-800">
           Today’s shortfall need is
           {{ formatINR(d.redemption_need) }} — the open redeem is
-          {{ formatINR(d.redeem_under_need) }} short. Refresh the amount on Proposal before creating
-          an instruction.
+          {{ formatINR(d.redeem_under_need) }} short of today’s need.
         </p>
-        <!-- Invest: free cash still positive but below the open request -->
         <p v-else-if="d.over_allocated > 0" class="mt-1 text-p-base text-amber-800">
-          Cash moved since the proposal. Free cash is
-          {{ formatINR(d.over_allocated) }} lower — do not deploy the full amount; refresh the
-          proposal on Proposal before creating an instruction.
+          Cash moved since the instruction snapshot. Free cash is
+          {{ formatINR(d.over_allocated) }} lower — do not deploy the full amount.
         </p>
         <p v-else class="mt-1 text-p-base text-gray-600">
           <template v-if="(d.planned_request_type || 'Invest') === 'Redeem'">
             Open redeem still covers today’s shortfall need for this horizon.
           </template>
           <template v-else>
-            Proposal still fits today’s free cash after the daily balance update.
+            Instruction still fits today’s free cash after the daily balance update.
           </template>
         </p>
         <div class="mt-2 flex flex-wrap gap-2">
@@ -141,12 +133,12 @@
             v-if="d.invest_flipped_to_shortfall && d.liquid_fund_total"
             size="sm"
             variant="solid"
-            @click="$router.push({ path: '/proposal', query: { start: 'redeem' } })"
+            @click="$router.push('/proposal')"
           >
-            Replace with redeem
+            Review redeem
           </Button>
-          <Button size="sm" variant="outline" @click="$router.push('/proposal')">
-            Open proposal
+          <Button size="sm" variant="outline" @click="$router.push('/instructions')">
+            Open instruction
           </Button>
         </div>
       </div>
@@ -170,7 +162,7 @@
             v-if="!d.has_open_request && d.liquid_fund_total"
             size="sm"
             variant="solid"
-            @click="$router.push({ path: '/proposal', query: { start: 'redeem' } })"
+            @click="$router.push('/proposal')"
           >
             Start redeem
           </Button>

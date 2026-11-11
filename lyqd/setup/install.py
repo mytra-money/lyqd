@@ -74,6 +74,21 @@ def ensure_settings() -> None:
 	if not frappe.db.exists("Singles", {"doctype": "LYQD Settings", "field": "in_beta"}):
 		settings.in_beta = 1
 		dirty = True
+	if not frappe.db.exists(
+		"Singles", {"doctype": "LYQD Settings", "field": "illustrative_idle_yield_pct"}
+	):
+		settings.illustrative_idle_yield_pct = 0
+		dirty = True
+	if not frappe.db.exists(
+		"Singles", {"doctype": "LYQD Settings", "field": "illustrative_fd_yield_pct"}
+	):
+		settings.illustrative_fd_yield_pct = 3
+		dirty = True
+	if not frappe.db.exists(
+		"Singles", {"doctype": "LYQD Settings", "field": "illustrative_liquid_yield_pct"}
+	):
+		settings.illustrative_liquid_yield_pct = 5.5
+		dirty = True
 	if dirty:
 		settings.flags.ignore_permissions = True
 		settings.save()

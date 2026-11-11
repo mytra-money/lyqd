@@ -288,7 +288,7 @@ const pageHint = computed(() => {
     '/': 'Morning cash position · liquidity · invest / redeem',
     '/upcoming': 'Near-term payment commitments (incl. overdue)',
     '/surplus': 'Free cash = position − commitments − policy reserves',
-    '/proposal': 'Invest or redeem proposals from free cash',
+    '/proposal': 'Live free cash options — instruction freezes a snapshot',
     '/holdings': 'Liquid fund portfolio',
     '/settings': 'Banks, policy, ERPNext integration',
   }

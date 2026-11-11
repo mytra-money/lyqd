@@ -15,7 +15,7 @@
 ![Cash position](docs/screenshots/cash-position-pwctech-laptop.jpg)
 
 
-LYQD helps finance teams see bank cash, upcoming payments, and free cash in one place — then create an **Invest** or **Redeem** proposal when they’re ready.
+LYQD helps finance teams see bank cash, upcoming payments, and free cash in one place — then create an **Invest** or **Redeem** instruction when they’re ready.
 
 It is built for companies that collect money before payroll, vendors, and taxes are due, and want a clear answer to: *“How much free cash does the business have (to park in a liquid fund) until the next payment?”*
 
@@ -30,7 +30,7 @@ It is built for companies that collect money before payroll, vendors, and taxes 
 2. Create your **company** (name is enough to start). You can also **Connect your ERPNext Site** on LYQD to get recommendations.
 3. Add or select **bank accounts**, then enter today’s **statement balances**.
 4. Add **upcoming payments** (or connect books later — optional).
-5. Check **Free cash**, then create an **Invest** or **Redeem** proposal when it makes sense.
+5. Check **Free cash**, then open **Proposal** and create an **Invest** or **Redeem** instruction when it makes sense.
 
 You can install LYQD on your phone with **Add to Home Screen** for a simple app-like experience.
 
@@ -82,23 +82,21 @@ In plain words:
 
 If free cash is negative, LYQD shows a **shortfall** — useful when you may need to redeem investments before a due date.
 
-### Optional: Proposal (Invest / Redeem)
+### Proposal (Invest / Redeem)
 
-When free cash looks good, create an **Invest** proposal.
-When the horizon shows a shortfall, create a **Redeem** proposal (limited by what you hold).
+Proposal is a **live** view of free cash for the selected horizon — suggested amount, the four building blocks (cash position, commitments, policy reserves, free cash), and short-term options (idle current account, short bank FD, liquid mutual fund). Illustrative horizon returns are shown for comparison only.
 
-![Proposal](docs/screenshots/proposal.jpg)
+When you create an instruction, LYQD freezes a snapshot of that free-cash math. Until then, numbers stay live as banks, the plan, or the horizon change.
 
-Only one open proposal is kept at a time. Review it, then send it forward once your investment account is activated by Mytra (AMFI Registered Mutual Fund Distributor).
+![Proposal](docs/screenshots/proposal-pwctech-laptop.jpg)
 
----
+- **Invest** when free cash is positive for the horizon
+- **Redeem** when the horizon shows a shortfall (capped by liquid holdings)
+- Only one open instruction at a time — finish or cancel it on **Instructions** before creating another
+- Creating an instruction needs a Mytra-activated investment account (AMFI Registered Mutual Fund Distributor)
 
->## Why liquid funds?
+Human approval always comes before investment instructions. Mutual fund investments are subject to market risks; read all scheme-related documents carefully.
 
->Idle money in a current account often earns little between known payment dates. LYQD is built around **short-term surplus** — cash you may need again for payroll, taxes, or vendors within days or weeks.
-
->Human approval always comes before investment instructions. Mutual fund investments are subject to market risks; read all scheme-related documents carefully.
----
 ### Portfolio
 
 See holdings and recent investment activity in one place.
@@ -174,7 +172,7 @@ Only **Planned** outflows in the forecast horizon reserve free cash. Inflows are
 - Choosing which suggestions to **Add** or **Ignore**
 - **Sync** when books change (morning cash position does not sync the plan by itself)
 - Recurring rows such as rent or payroll when not driven from an Account grain
-- Invest / Redeem **proposals** and instructions (Mytra handoff is soft-launch gated)
+- Invest / Redeem **instructions** (Mytra handoff is soft-launch gated)
 
 ---
 
@@ -194,8 +192,8 @@ Only **Planned** outflows in the forecast horizon reserve free cash. Inflows are
 
 | Role | Typical use |
 |------|-------------|
-| **LYQD User** | Day-to-day: commitments, free cash, view proposals and portfolio |
-| **LYQD Manager** | Company settings, banks, confirm proposals (default on signup) |
+| **LYQD User** | Day-to-day: commitments, free cash, view proposal and portfolio |
+| **LYQD Manager** | Company settings, banks, confirm instructions (default on signup) |
 | **System Manager** | Full access including Desk (for administrators) |
 
 Day-to-day work happens in the LYQD app (`/lyqd`), not in Desk.

@@ -319,6 +319,28 @@
               label="Restricted cash"
             />
           </div>
+
+          <div class="border-t border-gray-100 pt-4 space-y-3">
+            <h4 class="text-sm font-medium text-gray-900">Proposal illustration rates</h4>
+            <p class="text-xs text-gray-500">
+              Stated % p.a. for the Proposal comparison cards only — not forecasts or guarantees.
+            </p>
+            <FormControl
+              v-model.number="productForm.illustrative_idle_yield_pct"
+              type="number"
+              label="Idle current account % p.a."
+            />
+            <FormControl
+              v-model.number="productForm.illustrative_fd_yield_pct"
+              type="number"
+              label="Short-term bank FD % p.a."
+            />
+            <FormControl
+              v-model.number="productForm.illustrative_liquid_yield_pct"
+              type="number"
+              label="Liquid mutual fund % p.a."
+            />
+          </div>
         </div>
       </div>
     </div>
@@ -532,6 +554,9 @@ const productForm = reactive({
   default_forecast_horizon_days: 7,
   default_min_liquidity_buffer: 0,
   default_restricted_cash: 0,
+  illustrative_idle_yield_pct: 0,
+  illustrative_fd_yield_pct: 3,
+  illustrative_liquid_yield_pct: 5.5,
 })
 
 const addBank = reactive({
@@ -783,6 +808,9 @@ async function loadSiteDefaults() {
       default_forecast_horizon_days: data.default_forecast_horizon_days,
       default_min_liquidity_buffer: data.default_min_liquidity_buffer,
       default_restricted_cash: data.default_restricted_cash,
+      illustrative_idle_yield_pct: data.illustrative_idle_yield_pct ?? 0,
+      illustrative_fd_yield_pct: data.illustrative_fd_yield_pct ?? 3,
+      illustrative_liquid_yield_pct: data.illustrative_liquid_yield_pct ?? 5.5,
     })
   } catch (e) {
     /* keep defaults */
@@ -923,13 +951,24 @@ async function savePolicy() {
 
 async function saveProduct() {
   // Site defaults only — investment activation is per LYQD Company (ops-owned).
-  await call('lyqd.api.spa.save_settings', {
+  const saved = await call('lyqd.api.spa.save_settings', {
     doc: {
       default_forecast_horizon_days: productForm.default_forecast_horizon_days,
       default_min_liquidity_buffer: productForm.default_min_liquidity_buffer,
       default_restricted_cash: productForm.default_restricted_cash,
+      illustrative_idle_yield_pct: productForm.illustrative_idle_yield_pct,
+      illustrative_fd_yield_pct: productForm.illustrative_fd_yield_pct,
+      illustrative_liquid_yield_pct: productForm.illustrative_liquid_yield_pct,
     },
   })
+  // Keep SPA Proposal cards in sync without a full reload
+  if (saved && company.settings) {
+    Object.assign(company.settings, {
+      illustrative_idle_yield_pct: saved.illustrative_idle_yield_pct,
+      illustrative_fd_yield_pct: saved.illustrative_fd_yield_pct,
+      illustrative_liquid_yield_pct: saved.illustrative_liquid_yield_pct,
+    })
+  }
   // Refresh company investment stamp (not written by save_settings)
   if (company.current) await loadCompanyErp(company.current)
 }

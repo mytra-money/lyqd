@@ -11,22 +11,21 @@
         <Button
           v-if="hasOpenRequest"
           variant="solid"
+          @click="$router.push('/instructions')"
+        >
+          Continue instruction
+        </Button>
+        <Button
+          v-else-if="r && !r.is_shortfall && Number(r.investable_surplus || 0) > 0.01"
+          variant="solid"
           @click="$router.push('/proposal')"
         >
           Open proposal
         </Button>
         <Button
-          v-else-if="r && !r.is_shortfall && Number(r.investable_surplus || 0) > 0.01"
-          variant="solid"
-          :loading="investing"
-          @click="investNow"
-        >
-          Invest this free cash
-        </Button>
-        <Button
           v-else-if="r && r.is_shortfall"
           variant="solid"
-          @click="$router.push({ path: '/proposal', query: { start: 'redeem' } })"
+          @click="$router.push('/proposal')"
         >
           Start redeem
         </Button>
@@ -69,19 +68,19 @@
           <button
             type="button"
             class="ml-1 font-medium underline"
-            @click="$router.push('/proposal')"
+            @click="$router.push('/instructions')"
           >
-            Open the existing proposal
+            Continue the open instruction
           </button>
-          instead of starting another redeem.
+          instead of creating another.
         </template>
         <template v-else>
           <button
             type="button"
             class="ml-1 font-medium underline"
-            @click="$router.push({ path: '/proposal', query: { start: 'redeem' } })"
+            @click="$router.push('/proposal')"
           >
-            Start redeem on Proposal
+            Review redeem on Proposal
           </button>
           if you have liquid holdings, or review commitments.
         </template>
@@ -101,10 +100,7 @@
 </template>
 
 <script setup>
-import { computed, onActivated, ref, watch } from 'vue'
-import { call } from 'frappe-ui'
-import { toast } from '@/utils/toast'
-import { useRouter } from 'vue-router'
+import { computed, onActivated, watch } from 'vue'
 import PageHeader from '@/components/PageHeader.vue'
 import MetricCard from '@/components/MetricCard.vue'
 import ExplanationTable from '@/components/ExplanationTable.vue'
@@ -117,10 +113,7 @@ defineOptions({ name: 'Surplus' })
 
 const company = useCompanyStore()
 const cache = useTreasuryCacheStore()
-const router = useRouter()
 const { horizon } = useHorizon()
-const investing = ref(false)
-
 const r = computed(() => cache.getSurplus(company.current, horizon.value))
 const mis = computed(() => cache.getMis(company.current, horizon.value))
 const hasOpenRequest = computed(() => !!mis.value?.has_open_request || !!mis.value?.planned_ref)
@@ -158,30 +151,4 @@ watch(
 onActivated(() => {
   loadSurplus(false)
 })
-
-async function investNow() {
-  investing.value = true
-  try {
-    const doc = await call('lyqd.api.spa.create_proposal_from_surplus', {
-      company: company.current,
-      horizon_days: horizon.value,
-      freeze: 1,
-    })
-    if (doc.unchanged) {
-      toast.success('Open proposal already matches today’s free cash')
-    } else {
-      const n = (doc.superseded || []).length
-      toast.success(
-        n
-          ? `Proposal updated · superseded ${n} prior open proposal(s)`
-          : 'Proposal created',
-      )
-    }
-    router.push('/proposal')
-  } catch (e) {
-    toast.error(e.messages?.[0] || e.message || 'Could not create proposal')
-  } finally {
-    investing.value = false
-  }
-}
 </script>

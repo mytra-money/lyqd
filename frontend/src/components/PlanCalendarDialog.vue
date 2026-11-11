@@ -211,9 +211,7 @@ function calendarSignedNet(row) {
 }
 
 const activePlanRows = computed(() =>
-  (fullPlanRows.value || []).filter((r) =>
-    ['Planned', 'Paid'].includes(r.status || 'Planned'),
-  ),
+  (fullPlanRows.value || []).filter((r) => (r.status || 'Planned') === 'Planned'),
 )
 
 const nestedCalendarPlan = computed(() => {

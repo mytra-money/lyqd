@@ -94,7 +94,8 @@ def seed_portfolio_demo(company: str | None = None) -> dict:
 		)
 		created.append({"name": doc.name, "skipped": False, "ref": spec["ref"]})
 
-	frappe.db.commit()
+	# bench execute does not auto-commit; persist demo seed after CLI exit
+	frappe.db.commit()  # nosemgrep
 	return {
 		"company": company,
 		"investment_account_activated": 1,

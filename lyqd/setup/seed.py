@@ -47,7 +47,8 @@ def seed_demo(force: bool = False) -> dict:
 		"upcoming_7d": s7.upcoming_total,
 		"upcoming_30d": s30.upcoming_total,
 	}
-	frappe.db.commit()
+	# bench execute does not auto-commit; persist demo seed after CLI exit
+	frappe.db.commit()  # nosemgrep
 	print(_format_summary(summary))
 	return summary
 
@@ -79,7 +80,6 @@ def ensure_company() -> str:
 		}
 	)
 	doc.insert(ignore_permissions=True)
-	frappe.db.commit()
 	return doc.name
 
 

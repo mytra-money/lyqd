@@ -155,8 +155,9 @@ def get_planned_upcoming_payments(
 	Includes overdue (due_date < as_of) — still Planned means cash is still committed.
 	Excludes Paid / Cancelled.
 
-	Recurring Outflow series: one doc; ``amount`` is expanded to the sum of cycles
-	that fall in the horizon (period amount kept as ``period_amount``).
+	Recurring Outflow / Inflow series: one doc; ``amount`` is expanded to the sum
+	of cycles that fall in the horizon (period amount kept as ``period_amount``).
+	Only Outflow totals reserve free cash; Inflow totals feed expected incoming.
 	"""
 	from lyqd.cash.recurring import expand_recurring_row
 

@@ -5,7 +5,7 @@
  * semantics so calendar + free-cash horizon stay aligned.
  */
 
-export const FREQUENCIES = ['Weekly', 'Monthly', 'Quarterly']
+export const FREQUENCIES = ['Daily', 'Weekly', 'Monthly', 'Quarterly']
 
 export function parseISODate(iso) {
   const [y, m, d] = String(iso).slice(0, 10).split('-').map(Number)
@@ -39,6 +39,7 @@ export function addMonthsISO(iso, months) {
 /** Advance one period from ``due`` — mirrors ``next_due_after``. */
 export function nextDueAfter(due, frequency) {
   const freq = String(frequency || 'Monthly').trim()
+  if (freq === 'Daily') return addDaysISO(due, 1)
   if (freq === 'Weekly') return addDaysISO(due, 7)
   if (freq === 'Quarterly') return addMonthsISO(due, 3)
   return addMonthsISO(due, 1)

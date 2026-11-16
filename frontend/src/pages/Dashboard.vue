@@ -389,7 +389,7 @@
               type="select"
               label="Cash effect"
               :options="cashEffectOptions"
-              :disabled="!!form.parent_payment || !!form.is_recurring"
+              :disabled="!!form.parent_payment || !!form.source_doctype"
               @update:model-value="onCashEffectChange"
             />
             <FormControl
@@ -424,10 +424,14 @@
               v-if="
                 !form.source_doctype &&
                 !form.parent_payment &&
-                (form.cash_effect === 'Outflow' || form.is_recurring)
+                (form.cash_effect === 'Outflow' ||
+                  form.cash_effect === 'Inflow' ||
+                  form.is_recurring)
               "
               v-model="form.is_recurring"
-              label="Repeats (outgoing)"
+              :label="
+                form.cash_effect === 'Inflow' ? 'Repeats (incoming)' : 'Repeats (outgoing)'
+              "
               @update:model-value="onRecurringToggle"
             />
             <FormControl
@@ -480,7 +484,12 @@ import { useHorizon } from '@/composables/useHorizon'
 import { usePlanCalendar } from '@/composables/usePlanCalendar'
 import { formatDate, formatINR } from '@/utils/format'
 import { frequencyUnit, isOverdue as isOverdueDue } from '@/utils/commitment'
-import { groupMembers, nestPlanRows, planSignedNet } from '@/utils/planNest'
+import {
+  enrichRecurringOccurrences,
+  groupMembers,
+  nestPlanRows,
+  planSignedNet,
+} from '@/utils/planNest'
 
 defineOptions({ name: 'Dashboard' })
 
@@ -512,7 +521,7 @@ const cashEffectOptions = [
   { label: 'Outflow (pay)', value: 'Outflow' },
   { label: 'Inflow (receive)', value: 'Inflow' },
 ]
-const frequencyOptions = ['Weekly', 'Monthly', 'Quarterly'].map((f) => ({
+const frequencyOptions = ['Daily', 'Weekly', 'Monthly', 'Quarterly'].map((f) => ({
   label: f,
   value: f,
 }))
@@ -596,13 +605,17 @@ function onCategoryChange(value) {
 
 function onRecurringToggle() {
   if (form.is_recurring) {
-    form.cash_effect = 'Outflow'
+    // Manual Outflow or Inflow only — never Setoff / books rows
+    if (form.cash_effect !== 'Outflow' && form.cash_effect !== 'Inflow') {
+      form.cash_effect = 'Outflow'
+    }
     if (!form.frequency) form.frequency = 'Monthly'
   }
 }
 
 function onCashEffectChange(value) {
-  if (value !== 'Outflow' && form.is_recurring) {
+  // Setoff is not repeatable; Outflow ↔ Inflow may keep Repeat
+  if (value !== 'Outflow' && value !== 'Inflow' && form.is_recurring) {
     form.is_recurring = false
   }
 }
@@ -733,7 +746,7 @@ function filterNestedPlan(nestedRoots) {
 }
 
 const nestedCommitments = computed(() =>
-  filterNestedPlan(nestPlanRows(planRows.value)),
+  filterNestedPlan(enrichRecurringOccurrences(nestPlanRows(planRows.value))),
 )
 
 function isGroupExpanded(name) {
@@ -920,10 +933,9 @@ async function savePayment() {
         company: company.current,
         title: form.title,
         category: form.category,
-        cash_effect: form.is_recurring ? 'Outflow' : form.cash_effect || 'Outflow',
+        cash_effect: form.cash_effect || 'Outflow',
         probability:
           !isSplitEdit &&
-          !form.is_recurring &&
           (form.cash_effect === 'Inflow' || form.cash_effect === 'Setoff')
             ? Number(form.probability ?? 100)
             : undefined,

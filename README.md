@@ -60,7 +60,7 @@ You can:
 
 - **Add a payment** yourself (amount, due date, category)
 - Mark payments **Paid** when done
-- Set a payment to **repeat** (for example monthly rent)
+- Set a **manual** payment to **repeat** (outgoing or incoming — for example monthly rent or a recurring receipt; not Setoff / books rows)
 - Open the **Plan calendar** from the header on Cash position or Commitments (hover an event for details; drag the next due to reschedule)
 - Related payments (for example tax groups) can appear nested so the plan stays readable
 - With books connected: review **From books** suggestions, **Add to plan**, or **Ignore** (see [ERPNext integration](#erpnext-integration) below)

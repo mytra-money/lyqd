@@ -159,7 +159,7 @@
    "fieldtype": "Select",
    "label": "Frequency",
    "mandatory_depends_on": "eval:doc.is_recurring",
-   "options": "Weekly\nMonthly\nQuarterly"
+   "options": "Daily\nWeekly\nMonthly\nQuarterly"
   },
   {
    "depends_on": "eval:doc.is_recurring",

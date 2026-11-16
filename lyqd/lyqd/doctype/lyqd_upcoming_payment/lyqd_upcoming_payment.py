@@ -35,7 +35,7 @@ class LYQDUpcomingPayment(Document):
 		]
 		company: DF.Link
 		due_date: DF.Date
-		frequency: DF.Literal["Weekly", "Monthly", "Quarterly"] | None
+		frequency: DF.Literal["Daily", "Weekly", "Monthly", "Quarterly"] | None
 		is_recurring: DF.Check
 		last_synced_on: DF.Datetime | None
 		naming_series: DF.Literal["LYQD-UP-.YYYY.-.#####"]
@@ -72,15 +72,20 @@ class LYQDUpcomingPayment(Document):
 			else:
 				split.probability = 100
 		if cint(self.is_recurring):
-			if self.cash_effect != "Outflow":
-				frappe.throw(frappe._("Recurring series is only supported for Outflow payments."))
+			effect = self.cash_effect or "Outflow"
+			if effect not in ("Outflow", "Inflow"):
+				frappe.throw(
+					frappe._("Recurring series is only supported for Outflow or Inflow (not Setoff).")
+				)
+			if self.source_doctype:
+				frappe.throw(frappe._("Recurring series is only for manual plan rows."))
 			if self.parent_payment:
 				frappe.throw(frappe._("Nested plan rows cannot be recurring."))
 			if self.get("splits"):
 				frappe.throw(frappe._("GL split schedules cannot be recurring — clear Splits first."))
 			if not self.frequency:
 				self.frequency = "Monthly"
-			if self.frequency not in ("Weekly", "Monthly", "Quarterly"):
+			if self.frequency not in ("Daily", "Weekly", "Monthly", "Quarterly"):
 				frappe.throw(frappe._("Invalid recurrence frequency."))
 			if self.recurrence_end and self.due_date and self.recurrence_end < self.due_date:
 				frappe.throw(frappe._("Repeat Until cannot be before the next due date."))

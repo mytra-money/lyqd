@@ -43,6 +43,7 @@ export function dueLabel(due, asOf) {
 
 export function frequencyUnit(frequency) {
   const f = (frequency || 'Monthly').toLowerCase()
+  if (f === 'daily') return 'day'
   if (f === 'weekly') return 'week'
   if (f === 'quarterly') return 'quarter'
   return 'month'

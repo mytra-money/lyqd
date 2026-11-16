@@ -923,6 +923,7 @@ def save_upcoming_payment(doc: str | dict | None = None) -> dict:
 	company = doc.get("company") or _default_company()
 	name = doc.get("name")
 	allowed_effects = ("Outflow", "Setoff", "Inflow")
+	recurring_effects = ("Outflow", "Inflow")
 
 	if name:
 		payment = frappe.get_doc("LYQD Upcoming Payment", name)
@@ -948,9 +949,15 @@ def save_upcoming_payment(doc: str | dict | None = None) -> dict:
 		if "is_recurring" in doc:
 			payment.is_recurring = 1 if cint(doc.get("is_recurring")) else 0
 		if payment.is_recurring:
+			if payment.source_doctype:
+				frappe.throw(_("Repeat is only for manual plan rows (not books-sourced)."))
+			if payment.parent_payment:
+				frappe.throw(_("Repeat is only for top-level plan rows."))
+			effect = payment.cash_effect or "Outflow"
+			if effect not in recurring_effects:
+				frappe.throw(_("Repeat is only for Outflow or Inflow — not Setoff."))
 			payment.frequency = doc.get("frequency") or payment.frequency or "Monthly"
 			payment.recurrence_end = doc.get("recurrence_end") or None
-			payment.cash_effect = "Outflow"
 		elif "is_recurring" in doc:
 			payment.frequency = None
 			payment.recurrence_end = None
@@ -1009,7 +1016,9 @@ def save_upcoming_payment(doc: str | dict | None = None) -> dict:
 	cash_effect = doc.get("cash_effect") if doc.get("cash_effect") in allowed_effects else "Outflow"
 	is_recurring = 1 if cint(doc.get("is_recurring")) else 0
 	if is_recurring:
-		cash_effect = "Outflow"
+		# Create path is always manual / top-level; still reject Setoff repeats.
+		if cash_effect not in recurring_effects:
+			frappe.throw(_("Repeat is only for Outflow or Inflow — not Setoff."))
 	probability = 100
 	if cash_effect in ("Inflow", "Setoff"):
 		probability = min(max(flt(doc.get("probability") if doc.get("probability") is not None else 100), 0), 100)

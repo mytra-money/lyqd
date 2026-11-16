@@ -64,7 +64,8 @@ function datesForCalendarRow(row, asOf, horizonEnd) {
 function flattenPlanForCalendar(nestedRoots) {
   const out = []
   for (const root of nestedRoots || []) {
-    const kids = root._children || []
+    // Ignore synthetic recurring occurrence children (display-only on Plan lists)
+    const kids = (root._children || []).filter((c) => !c._recurring_occ)
     const scheduleKids = kids.filter((c) => c._schedule)
     if (scheduleKids.length) {
       for (const c of scheduleKids) {

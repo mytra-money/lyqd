@@ -103,11 +103,61 @@ export function nestPlanRows(rows) {
 }
 
 /**
+ * Attach expandable occurrence children for recurring series (home Plan / Commitments).
+ *
+ * Collapsed row keeps the horizon total; expand shows each due + period amount
+ * (calendar-style), without creating extra docs. Skips rows that are already
+ * groups / GL splits.
+ */
+export function enrichRecurringOccurrences(nestedRoots) {
+  return (nestedRoots || []).map((root) => {
+    if (!root || root._childCount > 0) return root
+    if (!root.is_recurring) return root
+    const dates = (root.occurrence_dates || [])
+      .map((d) => String(d || '').slice(0, 10))
+      .filter(Boolean)
+    if (dates.length <= 1) return root
+
+    const period =
+      root.period_amount != null && root.period_amount !== ''
+        ? Number(root.period_amount)
+        : (Number(root.amount) || 0) / dates.length
+
+    const kids = dates.map((date) => ({
+      name: `${root.name}::occ::${date}`,
+      title: root.title,
+      due_date: date,
+      amount: period,
+      period_amount: period,
+      cash_effect: root.cash_effect || 'Outflow',
+      status: 'Planned',
+      probability: root.probability,
+      category: root.category,
+      is_recurring: 0,
+      _recurring_occ: true,
+      _child: true,
+      _childCount: 0,
+      _groupNet: null,
+      _children: [],
+    }))
+
+    return {
+      ...root,
+      _recurring: true,
+      _childCount: kids.length,
+      _children: kids,
+      // Keep _groupNet null so the row amount stays the horizon total with inflow styling
+    }
+  })
+}
+
+/**
  * Parent + nested children for cascade actions (mark paid / refresh).
+ * Synthetic recurring occurrence rows are display-only and excluded.
  */
 export function groupMembers(row) {
   if (!row) return []
-  const kids = row._children || []
+  const kids = (row._children || []).filter((c) => !c._recurring_occ)
   return [row, ...kids]
 }
 

@@ -548,7 +548,7 @@
               type="select"
               label="Cash effect"
               :options="cashEffectOptions"
-              :disabled="!!form.parent_payment || !!form.is_recurring || !!form.source_doctype"
+              :disabled="!!form.parent_payment || !!form.source_doctype"
               @update:model-value="onCashEffectChange"
             />
             <FormControl
@@ -584,10 +584,14 @@
               v-if="
                 !form.source_doctype &&
                 !form.parent_payment &&
-                (form.cash_effect === 'Outflow' || form.is_recurring)
+                (form.cash_effect === 'Outflow' ||
+                  form.cash_effect === 'Inflow' ||
+                  form.is_recurring)
               "
               v-model="form.is_recurring"
-              label="Repeats (outgoing)"
+              :label="
+                form.cash_effect === 'Inflow' ? 'Repeats (incoming)' : 'Repeats (outgoing)'
+              "
               @update:model-value="onRecurringToggle"
             />
             <FormControl
@@ -877,6 +881,7 @@ import {
 } from '@/utils/commitment'
 import {
   groupMembers,
+  enrichRecurringOccurrences,
   nestPlanRows,
   nestRecommendationRows,
   planSignedNet,
@@ -999,7 +1004,7 @@ const cashEffectOptions = [
   { label: 'Outflow (pay)', value: 'Outflow' },
   { label: 'Inflow (receive)', value: 'Inflow' },
 ]
-const frequencyOptions = ['Weekly', 'Monthly', 'Quarterly'].map((f) => ({
+const frequencyOptions = ['Daily', 'Weekly', 'Monthly', 'Quarterly'].map((f) => ({
   label: f,
   value: f,
 }))
@@ -1061,13 +1066,17 @@ function onCategoryChange(value) {
 
 function onRecurringToggle() {
   if (form.is_recurring) {
-    form.cash_effect = 'Outflow'
+    // Manual Outflow or Inflow only — never Setoff / books rows
+    if (form.cash_effect !== 'Outflow' && form.cash_effect !== 'Inflow') {
+      form.cash_effect = 'Outflow'
+    }
     if (!form.frequency) form.frequency = 'Monthly'
   }
 }
 
 function onCashEffectChange(value) {
-  if (value !== 'Outflow' && form.is_recurring) {
+  // Setoff is not repeatable; Outflow ↔ Inflow may keep Repeat
+  if (value !== 'Outflow' && value !== 'Inflow' && form.is_recurring) {
     form.is_recurring = false
   }
 }
@@ -1215,7 +1224,7 @@ const filteredList = computed(() => {
 })
 
 const nestedFilteredList = computed(() => {
-  let nested = nestPlanRows(filteredList.value)
+  let nested = enrichRecurringOccurrences(nestPlanRows(filteredList.value))
   // Nest / split: direction uses signed group net, not parent cash_effect alone
   if (effectFilter.value === 'outflow') {
     nested = nested.filter((r) => planSignedNet(r) > 0.01)
@@ -2230,10 +2239,9 @@ async function save() {
         company: company.current,
         title: form.title,
         category: form.category,
-        cash_effect: form.is_recurring ? 'Outflow' : form.cash_effect || 'Outflow',
+        cash_effect: form.cash_effect || 'Outflow',
         probability:
           !isSplitEdit &&
-          !form.is_recurring &&
           (form.cash_effect === 'Inflow' || form.cash_effect === 'Setoff')
             ? Number(form.probability ?? 100)
             : undefined,

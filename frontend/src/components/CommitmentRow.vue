@@ -13,7 +13,15 @@
           type="button"
           class="flex h-6 w-6 items-center justify-center rounded text-gray-500 hover:bg-gray-100 hover:text-gray-800"
           :aria-expanded="expanded"
-          :aria-label="expanded ? 'Collapse group' : 'Expand group'"
+          :aria-label="
+            expanded
+              ? row._recurring
+                ? 'Collapse repeats'
+                : 'Collapse group'
+              : row._recurring
+                ? 'Expand repeats'
+                : 'Expand group'
+          "
           @click="emit('toggle-group')"
         >
           <FeatherIcon
@@ -32,7 +40,7 @@
             v-if="row._childCount"
             class="shrink-0 rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-gray-600"
           >
-            {{ row._has_splits ? 'Split' : 'Group' }} · {{ groupSize }}
+            {{ nestBadge }}
           </span>
           <Popover
             class="shrink-0 items-center"
@@ -247,7 +255,10 @@
             <span class="mr-1 text-gray-400">↳</span>
             {{ childDisplayTitle(child) }}
             <span
-              v-if="row._has_splits && splitPartLabel(childIdx + 1, row._children.length)"
+              v-if="
+                (row._has_splits || row._recurring) &&
+                splitPartLabel(childIdx + 1, row._children.length)
+              "
               class="ml-1 rounded bg-gray-100 px-1 py-px text-[10px] font-medium tabular-nums text-gray-600"
               >{{ splitPartLabel(childIdx + 1, row._children.length) }}</span
             >
@@ -366,11 +377,19 @@ const detailLines = computed(() => commitmentDetailLines(props.row, props.asOf))
 const amount = computed(() => displayPlanAmount(props.row))
 /** Titles keep the base name; `` · 1/3`` markers are display-only (or stripped). */
 const displayTitle = computed(() => stripSplitIndexSuffix(props.row?.title))
-/** Split schedule rows = installment count; Account nests = root + children. */
+/** Split / recurring = child count; Account nests = root + children. */
 const groupSize = computed(() => {
   const n = Number(props.row?._childCount || 0)
   if (!n) return 0
-  return props.row?._has_splits ? n : n + 1
+  if (props.row?._has_splits || props.row?._recurring) return n
+  return n + 1
+})
+const nestBadge = computed(() => {
+  if (props.row?._recurring) {
+    return `${props.row.frequency || 'Monthly'} · ${groupSize.value}`
+  }
+  if (props.row?._has_splits) return `Split · ${groupSize.value}`
+  return `Group · ${groupSize.value}`
 })
 const splitLabel = computed(() =>
   props.row?._has_splits || String(props.row?.source_row || '').startsWith('lyqd-split-')

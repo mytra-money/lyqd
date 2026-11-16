@@ -1,4 +1,7 @@
-"""Recurring Outflow series on LYQD Upcoming Payment (single row, live horizon expand).
+"""Recurring plan series on LYQD Upcoming Payment (single row, live horizon expand).
+
+Supports manual **Outflow** and **Inflow** series (not Setoff / books-sourced rows).
+Outflows reserve free cash; inflows expand into expected incoming only.
 
 JS mirror (keep in sync): ``apps/lyqd/frontend/src/utils/recurrence.js``.
 """
@@ -11,13 +14,15 @@ import frappe
 from frappe.utils import add_days, add_months, cint, flt, getdate
 
 
-FREQUENCIES = ("Weekly", "Monthly", "Quarterly")
+FREQUENCIES = ("Daily", "Weekly", "Monthly", "Quarterly")
 
 
 def next_due_after(due: str, frequency: str) -> str:
 	"""Advance one period from ``due``."""
 	d = getdate(due)
 	freq = (frequency or "Monthly").strip()
+	if freq == "Daily":
+		return str(add_days(d, 1))
 	if freq == "Weekly":
 		return str(add_days(d, 7))
 	if freq == "Quarterly":

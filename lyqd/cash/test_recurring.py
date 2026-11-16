@@ -19,6 +19,7 @@ from lyqd.cash.recurring import (
 class TestLYQDRecurring(UnitTestCase):
 	def test_next_due_frequencies(self):
 		base = "2026-01-15"
+		self.assertEqual(next_due_after(base, "Daily"), "2026-01-16")
 		self.assertEqual(next_due_after(base, "Weekly"), "2026-01-22")
 		self.assertEqual(next_due_after(base, "Monthly"), "2026-02-15")
 		self.assertEqual(next_due_after(base, "Quarterly"), "2026-04-15")
@@ -125,6 +126,50 @@ class TestLYQDInflowSurplus(UnitTestCase):
 		# Inflows do not change free cash: 100k - 40k = 60k
 		self.assertEqual(result.upcoming_total, 40_000)
 		self.assertEqual(result.investable_surplus, 60_000)
+
+	def test_recurring_inflow_expands_but_skips_free_cash(self):
+		"""Repeat Inflow multiplies horizon expected amount; free cash ignores it."""
+		from lyqd.cash.surplus import compute_surplus
+
+		as_of = today()
+		row = {
+			"name": "RENT-IN",
+			"title": "Sublease rent",
+			"amount": 10_000,
+			"due_date": as_of,
+			"category": "Other",
+			"cash_effect": "Inflow",
+			"is_recurring": 1,
+			"frequency": "Monthly",
+			"probability": 100,
+		}
+		expand_recurring_row(row, as_of, horizon_days=75)
+		self.assertGreaterEqual(row["occurrence_count"], 2)
+		horizon_in = flt(row["amount"])
+
+		result = compute_surplus(
+			company="TEST",
+			horizon_days=75,
+			as_of=as_of,
+			bank_cash=100_000,
+			upcoming_payments=[
+				{
+					"name": "OUT",
+					"title": "Vendor",
+					"amount": 20_000,
+					"due_date": add_days(as_of, 2),
+					"category": "Vendor",
+					"cash_effect": "Outflow",
+				},
+				dict(row),
+			],
+			min_liquidity_buffer=0,
+			restricted_cash=0,
+		)
+		self.assertEqual(result.upcoming_total, 20_000)
+		self.assertEqual(result.investable_surplus, 80_000)
+		# Expanded inflow still carries multiplied face for MIS expected incoming
+		self.assertEqual(horizon_in, flt(10_000 * row["occurrence_count"]))
 
 
 if __name__ == "__main__":

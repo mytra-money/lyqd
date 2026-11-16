@@ -19,6 +19,7 @@ function assertEqual(actual, expected, label) {
   }
 }
 
+assertEqual(nextDueAfter('2026-01-15', 'Daily'), '2026-01-16', 'daily')
 assertEqual(nextDueAfter('2026-01-15', 'Weekly'), '2026-01-22', 'weekly')
 assertEqual(nextDueAfter('2026-01-15', 'Monthly'), '2026-02-15', 'monthly')
 assertEqual(nextDueAfter('2026-01-15', 'Quarterly'), '2026-04-15', 'quarterly')

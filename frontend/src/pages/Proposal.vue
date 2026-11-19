@@ -1,9 +1,6 @@
 <template>
   <div>
-    <PageHeader
-      title="Proposal"
-      subtitle="Live free cash × horizon. Snapshot is saved only when you create an instruction."
-    >
+    <PageHeader title="Proposal" :subtitle="pageSubtitle">
       <Button variant="outline" @click="$router.push('/surplus')">Free cash</Button>
       <Button
         v-if="openInstruction"
@@ -149,7 +146,7 @@
     </section>
 
     <!-- Live treasury view: amount → metrics → options → waterfall -->
-    <section class="rounded-md border border-gray-200 bg-white">
+    <section id="lyqd-proposal-live" class="rounded-md border border-gray-200 bg-white">
       <header
         v-if="openInstruction"
         class="border-b border-gray-100 px-5 py-3"
@@ -182,33 +179,53 @@
           </p>
         </div>
 
+        <div v-else-if="liveShortfall" class="min-w-0">
+          <div class="text-xs text-gray-500">Funding need · {{ horizon }}d</div>
+          <div class="mt-1 text-3xl font-semibold tabular-nums tracking-tight text-red-700">
+            {{ formatINR(liveShortfallAmount) }}
+          </div>
+          <p class="mt-1 text-sm text-gray-600">
+            Free cash short
+            <template v-if="ccLimitTotal > 0.01">
+              · Available (CC) {{ formatINR(availableWithCc) }}
+              <span v-if="availableWithCcIsShortfall" class="text-red-700">· still short</span>
+              <span v-else class="text-emerald-700">· facility covers</span>
+            </template>
+          </p>
+        </div>
+
         <div
-          v-if="liveSurplus"
+          v-if="liveContextReady"
           class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"
-          :class="canInvest ? 'mt-5' : ''"
+          :class="canInvest || liveShortfall ? 'mt-5' : ''"
         >
           <MetricCard
             label="Cash position"
-            :value="liveSurplus.bank_cash"
+            :value="liveBankCash"
             hint="T-1 statements"
           />
           <MetricCard
-            :label="`Commitments (${liveSurplus.horizon_days || horizon}d)`"
-            :value="liveSurplus.upcoming_total"
+            :label="`Commitments (${liveHorizonDays}d)`"
+            :value="liveCommitments"
             hint="Planned + overdue"
           />
           <MetricCard
+            v-if="liveShortfall && ccLimitTotal > 0.01"
+            label="CC / OD limits"
+            :value="ccLimitTotal"
+            :hint="`Unused headroom ${formatINR(unusedCcHeadroom)}`"
+          />
+          <MetricCard
+            v-else
             label="Policy reserves"
-            :value="
-              (liveSurplus.min_liquidity_buffer || 0) + (liveSurplus.restricted_cash || 0)
-            "
+            :value="livePolicyReserves"
             hint="Buffer + restricted"
           />
           <MetricCard
-            :label="liveSurplus.is_shortfall ? 'Liquidity shortfall' : 'Free cash'"
-            :value="Math.abs(liveSurplus.investable_surplus || 0)"
-            :tone="liveSurplus.is_shortfall ? 'danger' : 'success'"
-            :hint="liveSurplus.is_shortfall ? 'Need cash / redeem' : 'Available to invest'"
+            :label="liveShortfall ? 'Liquidity shortfall' : 'Free cash'"
+            :value="Math.abs(signedInvestable)"
+            :tone="liveShortfall ? 'danger' : 'success'"
+            :hint="liveShortfall ? 'Need cash / structure' : 'Available to invest'"
           />
         </div>
 
@@ -234,42 +251,31 @@
           />
         </div>
 
-        <EmptyState
-          v-else-if="liveShortfall && canRedeem"
-          class="mt-5"
-          variant="invest"
-          title="Liquidity shortfall this horizon"
-          :description="`Suggest redeem ${formatINR(redemptionNeed)} from holdings (${formatINR(liquidTotal)} available) to cover commitments and reserves.`"
-        >
-          <template #actions>
-            <Button
-              variant="solid"
-              size="sm"
-              :loading="creating"
-              :disabled="!!openInstruction || !company.investmentAccountActivated"
-              @click="createFromLive('Redeem')"
-            >
-              Create redeem instruction
-            </Button>
-          </template>
-        </EmptyState>
+        <div v-else-if="liveShortfall" class="mt-5">
+          <ShortfallActionChooser
+            :shortfall-amount="liveShortfallAmount"
+            :unused-headroom="unusedCcHeadroom"
+            :available-with-cc="availableWithCc"
+            :available-with-cc-is-shortfall="availableWithCcIsShortfall"
+            :liquid-total="liquidTotal"
+            :redemption-need="redemptionNeed"
+            :creating="creating"
+            :create-disabled="!!openInstruction || !company.investmentAccountActivated"
+            :create-disabled-label="
+              openInstruction
+                ? 'Instruction already open'
+                : 'Activate account to redeem'
+            "
+            create-side="Redeem"
+            @use-facility="useFacility"
+            @create-redeem="createFromLive('Redeem')"
+            @funding-fit="openFundingFitWhatsApp"
+          />
+        </div>
 
-        <EmptyState
-          v-else-if="liveShortfall"
-          class="mt-5"
-          variant="invest"
-          title="Nothing to invest this horizon"
-          description="Free cash is negative and there are no liquid holdings to redeem. Review Free cash or top up the bank."
-        >
-          <template #actions>
-            <Button variant="outline" size="sm" @click="$router.push('/surplus')">
-              Review free cash
-            </Button>
-            <Button variant="ghost" size="sm" @click="$router.push('/holdings')">
-              Open holdings
-            </Button>
-          </template>
-        </EmptyState>
+        <div v-else-if="!liveContextReady" class="mt-5 text-sm text-gray-500">
+          Loading live free cash…
+        </div>
 
         <EmptyState
           v-else
@@ -290,7 +296,7 @@
       </div>
 
       <div
-        v-if="liveSurplus && liveExplanationLines.length"
+        v-if="liveContextReady && liveExplanationLines.length"
         class="border-t border-gray-100 px-5 py-4"
       >
         <button
@@ -330,12 +336,16 @@ import PageHeader from '@/components/PageHeader.vue'
 import MetricCard from '@/components/MetricCard.vue'
 import ExplanationTable from '@/components/ExplanationTable.vue'
 import TreasuryActionChooser from '@/components/TreasuryActionChooser.vue'
+import ShortfallActionChooser from '@/components/ShortfallActionChooser.vue'
 import { useCompanyStore } from '@/stores/company'
 import { useTreasuryCacheStore } from '@/stores/treasuryCache'
 import { useHorizon } from '@/composables/useHorizon'
 import { formatDate, formatINR } from '@/utils/format'
 import { surplusRunExplanationLines } from '@/utils/explanationNest'
-import { LYQD_INVESTMENT_ACCOUNT_WHATSAPP_URL } from '@/utils/investmentAccount'
+import {
+  LYQD_FUNDING_FIT_WHATSAPP_URL,
+  LYQD_INVESTMENT_ACCOUNT_WHATSAPP_URL,
+} from '@/utils/investmentAccount'
 import { resolveIllustrativeRates, schemeInfoUrl } from '@/utils/scheme'
 
 const company = useCompanyStore()
@@ -359,12 +369,20 @@ const runResource = createResource({
   auto: false,
 })
 
-async function reloadContext() {
+async function reloadContext(force = false) {
   if (!company.current) return
   await Promise.all([
-    cache.ensureSurplus({ company: company.current, horizonDays: horizon.value }),
-    cache.ensureMis({ company: company.current, horizonDays: horizon.value }),
-    cache.ensurePlan({ company: company.current }),
+    cache.ensureSurplus({
+      company: company.current,
+      horizonDays: horizon.value,
+      force,
+    }),
+    cache.ensureMis({
+      company: company.current,
+      horizonDays: horizon.value,
+      force,
+    }),
+    cache.ensurePlan({ company: company.current, force }),
     loadOpenInstruction(),
   ])
 }
@@ -385,14 +403,13 @@ async function loadOpenInstruction() {
 
 watch(
   () => company.current,
-  () => reloadContext(),
+  () => reloadContext(true),
   { immediate: true },
 )
 
 watch(horizon, () => {
   if (!company.current) return
-  cache.ensureSurplus({ company: company.current, horizonDays: horizon.value })
-  cache.ensureMis({ company: company.current, horizonDays: horizon.value })
+  reloadContext(true)
 })
 
 watch(
@@ -404,21 +421,73 @@ watch(
   { immediate: true },
 )
 
-onMounted(() => reloadContext())
+onMounted(() => reloadContext(true))
 
 const liveSurplus = computed(() => cache.getSurplus(company.current, horizon.value))
 const liveMis = computed(() => cache.getMis(company.current, horizon.value))
-const liveShortfall = computed(() => !!liveSurplus.value?.is_shortfall)
-const liveFreeCash = computed(() =>
-  Math.max(
-    0,
-    Number(liveSurplus.value?.investable_surplus || liveMis.value?.investable_surplus || 0),
+const liveContextReady = computed(() => !!(liveSurplus.value || liveMis.value))
+/** Prefer MIS (includes CC) when present; surplus alone can be briefly stale. */
+const liveShortfall = computed(() => {
+  if (liveMis.value && liveMis.value.is_shortfall != null) return !!liveMis.value.is_shortfall
+  return !!liveSurplus.value?.is_shortfall
+})
+const signedInvestable = computed(() =>
+  Number(
+    liveMis.value?.investable_surplus ?? liveSurplus.value?.investable_surplus ?? 0,
   ),
 )
+const liveFreeCash = computed(() => Math.max(0, signedInvestable.value))
+const liveShortfallAmount = computed(() => Math.abs(Math.min(0, signedInvestable.value)))
+const liveBankCash = computed(() =>
+  Number(liveMis.value?.bank_cash ?? liveSurplus.value?.bank_cash ?? 0),
+)
+const liveHorizonDays = computed(() =>
+  Number(liveMis.value?.horizon_days || liveSurplus.value?.horizon_days || horizon.value),
+)
+const liveCommitments = computed(() =>
+  Number(
+    liveMis.value?.upcoming_total ??
+      liveSurplus.value?.upcoming_total ??
+      liveMis.value?.commitments_total ??
+      0,
+  ),
+)
+const livePolicyReserves = computed(() => {
+  const buffer = Number(
+    liveMis.value?.min_liquidity_buffer ?? liveSurplus.value?.min_liquidity_buffer ?? 0,
+  )
+  const restricted = Number(
+    liveMis.value?.restricted_cash ?? liveSurplus.value?.restricted_cash ?? 0,
+  )
+  return buffer + restricted
+})
 const liquidTotal = computed(() => Number(liveMis.value?.liquid_fund_total || 0))
 const redemptionNeed = computed(() => Number(liveMis.value?.redemption_need || 0))
 const canRedeem = computed(() => liquidTotal.value > 0.01 && redemptionNeed.value > 0.01)
 const canInvest = computed(() => !liveShortfall.value && liveFreeCash.value > 0.01)
+const ccLimitTotal = computed(() => Number(liveMis.value?.cc_limit_total || 0))
+const availableWithCc = computed(() => Number(liveMis.value?.available_with_cc || 0))
+const availableWithCcIsShortfall = computed(
+  () => !!liveMis.value?.available_with_cc_is_shortfall,
+)
+const unusedCcHeadroom = computed(() => {
+  let unused = 0
+  for (const ba of liveMis.value?.banks || []) {
+    const t = String(ba.account_type || '')
+      .trim()
+      .toLowerCase()
+    if (!(t === 'cash credit' || t === 'overdraft' || t === 'cc' || t === 'od')) continue
+    const limit = Math.max(0, Number(ba.credit_limit || 0))
+    const drawn = Math.max(0, -Number(ba.balance || 0))
+    unused += Math.max(0, limit - drawn)
+  }
+  return unused
+})
+const pageSubtitle = computed(() =>
+  liveShortfall.value
+    ? 'Live shortfall × horizon. Cover from facility, redeem, or review funding fit.'
+    : 'Live free cash × horizon. Snapshot is saved only when you create an instruction.',
+)
 const canCreateInstruction = computed(() => {
   if (openInstruction.value) return false
   if (!company.investmentAccountActivated) return false
@@ -447,7 +516,8 @@ const yieldRates = computed(() => resolveIllustrativeRates(company.settings))
 
 const primaryCtaLabel = computed(() => {
   if (liveShortfall.value && canRedeem.value) return 'Create redeem instruction'
-  if (liveShortfall.value) return 'Review free cash'
+  if (liveShortfall.value && unusedCcHeadroom.value > 0.01) return 'Review funding options'
+  if (liveShortfall.value) return 'Review funding fit'
   if (!canInvest.value) return 'No free cash'
   return 'Create liquid fund instruction'
 })
@@ -516,9 +586,25 @@ function openActivationWhatsApp() {
   window.open(LYQD_INVESTMENT_ACCOUNT_WHATSAPP_URL, '_blank', 'noopener,noreferrer')
 }
 
+function openFundingFitWhatsApp() {
+  window.open(LYQD_FUNDING_FIT_WHATSAPP_URL, '_blank', 'noopener,noreferrer')
+}
+
+function useFacility() {
+  toast.success('Use unused CC / OD headroom with your bank — outside LYQD')
+  router.push('/cash')
+}
+
 function leaveInBank() {
   toast.success('Leaving free cash in the bank — no instruction created')
   router.push('/surplus')
+}
+
+function scrollToLiveOptions() {
+  document.getElementById('lyqd-proposal-live')?.scrollIntoView({
+    behavior: 'smooth',
+    block: 'start',
+  })
 }
 
 async function primaryCreate() {
@@ -528,7 +614,8 @@ async function primaryCreate() {
   }
   if (liveShortfall.value && canRedeem.value) return createFromLive('Redeem')
   if (liveShortfall.value) {
-    router.push('/surplus')
+    if (unusedCcHeadroom.value < 0.01) openFundingFitWhatsApp()
+    else scrollToLiveOptions()
     return
   }
   if (!canInvest.value) {

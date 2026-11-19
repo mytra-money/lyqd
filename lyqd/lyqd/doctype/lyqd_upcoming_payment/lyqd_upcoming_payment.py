@@ -151,17 +151,26 @@ class LYQDUpcomingPayment(Document):
 	def on_update(self):
 		from lyqd.recommendations.core import refresh_upcoming_group_net
 
-		# Cascade due / freeze to nest children (parent is source of truth for those).
+		# Nest root is source of truth: status / due / freeze apply to every child.
 		if not self.parent_payment:
 			children = frappe.get_all(
 				"LYQD Upcoming Payment",
-				filters={
-					"parent_payment": self.name,
-					"status": "Planned",
-				},
+				filters={"parent_payment": self.name},
 				pluck="name",
 			)
 			if children:
+				if self.has_value_changed("status") and self.status:
+					for child_name in children:
+						values = {"status": self.status}
+						# Ignored rows leave the nest (same as SPA save on a root).
+						if self.status == "Ignored":
+							values["parent_payment"] = None
+						frappe.db.set_value(
+							"LYQD Upcoming Payment",
+							child_name,
+							values,
+							update_modified=True,
+						)
 				if self.has_value_changed("due_date") and self.due_date:
 					for child_name in children:
 						frappe.db.set_value(

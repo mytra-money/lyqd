@@ -161,14 +161,134 @@ export function groupMembers(row) {
   return [row, ...kids]
 }
 
+function isRealChild(row) {
+  return !!row && !row._recurring_occ
+}
+
+function memberStatus(row) {
+  return row?.status || 'Planned'
+}
+
+function recomputeVisibleGroupNet(root, kids) {
+  if (root?._has_splits) {
+    return kids
+      .filter((c) => memberStatus(c) === 'Planned')
+      .reduce((s, c) => s + signedAmount(c), 0)
+  }
+  if (!(kids || []).length) return null
+  return signedAmount(root) + kids.reduce((s, c) => s + signedAmount(c), 0)
+}
+
+/**
+ * Nest first, then filter groups by view — keeps nest roots intact when only some
+ * members are Paid (avoids orphan children on the Paid tab).
+ *
+ * @param {Array} allRows full plan list (all statuses)
+ * @param {'active'|'overdue'|'paid'|'ignored'} view
+ * @param {(due: string) => boolean} [isOverdueFn]
+ */
+export function filterPlanGroupsByView(allRows, view, isOverdueFn) {
+  const nested = nestPlanRows(allRows || [])
+  const out = []
+
+  for (const root of nested) {
+    const allKids = (root._children || []).filter(isRealChild)
+    const schedule = !!root._has_splits
+
+    if (view === 'paid') {
+      const paidKids = allKids.filter((c) => memberStatus(c) === 'Paid')
+      const rootPaid = memberStatus(root) === 'Paid'
+      if (!rootPaid && !paidKids.length) continue
+      const kids = paidKids
+      let paidNet = kids.reduce((s, c) => s + signedAmount(c), 0)
+      if (rootPaid) paidNet += signedAmount(root)
+      out.push({
+        ...root,
+        _childCount: kids.length,
+        _groupNet: schedule || kids.length || rootPaid ? paidNet : null,
+        _children: kids.map((child) => ({
+          ...child,
+          _child: true,
+          _childCount: 0,
+          _groupNet: null,
+          _children: [],
+        })),
+      })
+      continue
+    }
+
+    if (view === 'ignored') {
+      const ignoredKids = allKids.filter((c) => memberStatus(c) === 'Ignored')
+      const rootIgnored = memberStatus(root) === 'Ignored'
+      if (!rootIgnored && !ignoredKids.length) continue
+      const kids = ignoredKids
+      out.push({
+        ...root,
+        _childCount: kids.length,
+        _groupNet: recomputeVisibleGroupNet(root, kids),
+        _children: kids.map((child) => ({
+          ...child,
+          _child: true,
+          _childCount: 0,
+          _groupNet: null,
+          _children: [],
+        })),
+      })
+      continue
+    }
+
+    // active / overdue — Planned members only
+    const plannedKids = allKids.filter((c) => memberStatus(c) === 'Planned')
+    const rootPlanned = memberStatus(root) === 'Planned'
+    if (!rootPlanned && !plannedKids.length) continue
+
+    let kids = plannedKids
+    if (view === 'overdue') {
+      const overdueFn = typeof isOverdueFn === 'function' ? isOverdueFn : () => false
+      const rootOverdue = rootPlanned && overdueFn(root.due_date)
+      kids = plannedKids.filter((c) => overdueFn(c.due_date))
+      if (!rootOverdue && !kids.length) continue
+    }
+
+    out.push({
+      ...root,
+      status: rootPlanned ? root.status : kids[0]?.status || root.status,
+      _childCount: kids.length,
+      _groupNet: recomputeVisibleGroupNet(
+        root,
+        // Active display net from Planned kids (+ root grain when Planned)
+        rootPlanned ? kids : kids,
+      ),
+      _children: kids.map((child) => ({
+        ...child,
+        _child: true,
+        _childCount: 0,
+        _groupNet: null,
+        _children: [],
+      })),
+    })
+  }
+
+  return out
+}
+
 /**
  * Signed reserve for filters: nest/split ``_groupNet`` when present, else row amount.
  * Outflow net &gt; 0; Inflow/Setoff net &lt; 0.
+ *
+ * Recurring series get synthetic occurrence children (``_childCount``) but keep
+ * ``_groupNet`` null on purpose — use the horizon ``amount`` + ``cash_effect``.
  */
 export function planSignedNet(row) {
   if (!row) return 0
-  const group = Number(row._groupNet)
-  if (row._childCount && Number.isFinite(group)) return group
+  if (
+    row._childCount &&
+    row._groupNet != null &&
+    row._groupNet !== '' &&
+    Number.isFinite(Number(row._groupNet))
+  ) {
+    return Number(row._groupNet)
+  }
   return signedCashAmount(row.amount, row.cash_effect)
 }
 

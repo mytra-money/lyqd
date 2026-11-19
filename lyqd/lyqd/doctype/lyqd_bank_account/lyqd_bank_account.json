@@ -5,7 +5,7 @@
  "creation": "2026-11-03 12:00:00.000000",
  "doctype": "DocType",
  "engine": "InnoDB",
- "field_order": [
+  "field_order": [
   "company",
   "account_name",
   "is_active",
@@ -13,6 +13,7 @@
   "column_break_top",
   "bank",
   "account_type",
+  "credit_limit",
   "bank_account_no",
   "currency",
   "books_section",
@@ -66,6 +67,14 @@
    "options": "\nCurrent\nSavings\nCash Credit\nOverdraft"
   },
   {
+   "depends_on": "eval:doc.account_type==\"Cash Credit\" || doc.account_type==\"Overdraft\"",
+   "description": "Sanctioned facility limit. Unused headroom is not free cash to invest; it feeds Available (CC) on home.",
+   "fieldname": "credit_limit",
+   "fieldtype": "Currency",
+   "label": "Credit Limit",
+   "non_negative": 1
+  },
+  {
    "fieldname": "bank_account_no",
    "fieldtype": "Data",
    "label": "Account No"
@@ -95,7 +104,7 @@
   }
  ],
  "links": [],
- "modified": "2026-11-03 12:00:00.000000",
+ "modified": "2026-11-18 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "LYQD",
  "name": "LYQD Bank Account",

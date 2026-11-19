@@ -882,6 +882,7 @@ import {
 import {
   groupMembers,
   enrichRecurringOccurrences,
+  filterPlanGroupsByView,
   nestPlanRows,
   nestRecommendationRows,
   planSignedNet,
@@ -1123,20 +1124,15 @@ const activePlanCount = computed(
 )
 
 const plannedStatusOptions = computed(() => {
-  const rows = allRows.value
-  const active = rows.filter((r) => r.status === 'Planned')
-  const ignored = rows.filter((r) => r.status === 'Ignored')
+  const activeGroups = filterPlanGroupsByView(allRows.value, 'active', isOverdue)
+  const overdueGroups = filterPlanGroupsByView(allRows.value, 'overdue', isOverdue)
+  const paidGroups = filterPlanGroupsByView(allRows.value, 'paid', isOverdue)
+  const ignoredGroups = filterPlanGroupsByView(allRows.value, 'ignored', isOverdue)
   return [
-    { label: `Active (${active.length})`, value: 'active' },
-    {
-      label: `Overdue (${active.filter((r) => isOverdue(r.due_date)).length})`,
-      value: 'overdue',
-    },
-    {
-      label: `Paid (${rows.filter((r) => r.status === 'Paid').length})`,
-      value: 'paid',
-    },
-    { label: `Ignored (${ignored.length})`, value: 'ignored' },
+    { label: `Active (${activeGroups.length})`, value: 'active' },
+    { label: `Overdue (${overdueGroups.length})`, value: 'overdue' },
+    { label: `Paid (${paidGroups.length})`, value: 'paid' },
+    { label: `Ignored (${ignoredGroups.length})`, value: 'ignored' },
   ]
 })
 
@@ -1205,26 +1201,24 @@ const plannedFiltersActive = computed(
     !!plannedQuery.value.trim(),
 )
 
-const filteredList = computed(() => {
-  const q = plannedQuery.value.trim().toLowerCase()
-  return allRows.value.filter((r) => {
-    if (plannedView.value === 'active' && r.status !== 'Planned') return false
-    if (plannedView.value === 'overdue') {
-      if (r.status !== 'Planned' || !isOverdue(r.due_date)) return false
-    }
-    if (plannedView.value === 'paid' && r.status !== 'Paid') return false
-    if (plannedView.value === 'ignored' && r.status !== 'Ignored') return false
-    if (categoryFilter.value !== 'all' && r.category !== categoryFilter.value) return false
-    if (q) {
-      const hay = `${r.title || ''} ${r.category || ''} ${r.source_name || ''}`.toLowerCase()
-      if (!hay.includes(q)) return false
-    }
-    return true
-  })
-})
-
 const nestedFilteredList = computed(() => {
-  let nested = enrichRecurringOccurrences(nestPlanRows(filteredList.value))
+  const q = plannedQuery.value.trim().toLowerCase()
+  let nested = enrichRecurringOccurrences(
+    filterPlanGroupsByView(allRows.value, plannedView.value, isOverdue),
+  )
+  if (categoryFilter.value !== 'all') {
+    nested = nested.filter((r) => r.category === categoryFilter.value)
+  }
+  if (q) {
+    nested = nested.filter((r) => {
+      const hay = `${r.title || ''} ${r.category || ''} ${r.source_name || ''}`.toLowerCase()
+      if (hay.includes(q)) return true
+      return (r._children || []).some((c) => {
+        const ch = `${c.title || ''} ${c.category || ''} ${c.source_name || ''}`.toLowerCase()
+        return ch.includes(q)
+      })
+    })
+  }
   // Nest / split: direction uses signed group net, not parent cash_effect alone
   if (effectFilter.value === 'outflow') {
     nested = nested.filter((r) => planSignedNet(r) > 0.01)
@@ -1233,6 +1227,9 @@ const nestedFilteredList = computed(() => {
   }
   return nested
 })
+
+/** Flat length for empty-state checks (groups, not orphaned children). */
+const filteredList = computed(() => nestedFilteredList.value)
 
 const filteredRecs = computed(() => {
   const q = recQuery.value.trim().toLowerCase()

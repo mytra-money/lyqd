@@ -17,8 +17,9 @@
         <p class="mt-2 text-xs text-gray-500">
           Enter drawn cash credit / overdraft as a
           <span class="font-medium text-gray-700">negative</span>
-          balance. Unused CC limit is not free cash — do not add it here. Exclude a facility from
-          free cash under Settings → Banks if you manage it separately.
+          balance. Set the sanctioned
+          <span class="font-medium text-gray-700">credit limit</span>
+          on the facility — unused headroom feeds Available (CC) on home, not free cash.
         </p>
         <p
           v-if="cash.data?.message"
@@ -46,7 +47,7 @@
             type="select"
             label="Bank account"
             :options="bankSelectOptions"
-            @update:model-value="loadRemoteSuggestion"
+            @update:model-value="onBalanceAccountChange"
           />
           <FormControl
             v-model="form.as_on"
@@ -54,11 +55,24 @@
             label="Date"
             @update:model-value="loadRemoteSuggestion"
           />
+          <FormControl
+            v-model="form.account_type"
+            type="select"
+            label="Account type"
+            :options="['', 'Current', 'Savings', 'Cash Credit', 'Overdraft']"
+            description="Set Cash Credit / Overdraft here for mirrored ERPNext banks — type is local to LYQD."
+          />
           <CurrencyControl
             v-model="form.balance"
             :label="balanceFieldLabel"
             allow-negative
             :description="balanceFieldHint"
+          />
+          <CurrencyControl
+            v-if="isCreditFacility(form.account_type)"
+            v-model="form.credit_limit"
+            label="Credit limit"
+            description="Sanctioned CC/OD limit (local). Unused headroom is Available (CC), not free cash."
           />
 
           <div
@@ -145,6 +159,12 @@
             allow-negative
             description="For Cash Credit / Overdraft, enter drawn amount as negative."
           />
+          <CurrencyControl
+            v-if="isCreditFacility(addBank.account_type)"
+            v-model="addBank.credit_limit"
+            label="Credit limit"
+            description="Sanctioned facility limit (feeds Available (CC) on home)."
+          />
           <Checkbox v-model="addBank.is_default" label="Set as default" />
         </div>
       </template>
@@ -180,13 +200,20 @@ const adding = ref(false)
 const suggestionLoading = ref(false)
 const suggestion = ref(null)
 let suggestionSeq = 0
-const form = reactive({ bank_account: '', as_on: '', balance: 0 })
+const form = reactive({
+  bank_account: '',
+  as_on: '',
+  balance: 0,
+  account_type: '',
+  credit_limit: 0,
+})
 const addBank = reactive({
   account_name: '',
   bank: '',
   account_type: '',
   bank_account_no: '',
   opening_balance: 0,
+  credit_limit: 0,
   is_default: false,
 })
 
@@ -226,6 +253,7 @@ const cashCards = computed(() =>
     bank: row.bank,
     is_default: row.is_default,
     account_type: row.account_type,
+    credit_limit: row.credit_limit,
     bank_account_no: row.bank_account_no,
     balance: row.balance,
     balance_date: row.balance_date,
@@ -252,13 +280,11 @@ const selectedBalanceAccount = computed(() =>
 )
 
 const balanceFieldLabel = computed(() =>
-  isCreditFacility(selectedBalanceAccount.value?.account_type)
-    ? 'Drawn balance'
-    : 'Balance',
+  isCreditFacility(form.account_type) ? 'Drawn balance' : 'Balance',
 )
 
 const balanceFieldHint = computed(() =>
-  isCreditFacility(selectedBalanceAccount.value?.account_type)
+  isCreditFacility(form.account_type)
     ? 'Negative = utilised CC/OD. Unused limit is not free cash.'
     : 'Negative balances are allowed for cash credit / overdraft accounts.',
 )
@@ -294,12 +320,22 @@ function openBalanceFor(ba) {
   const name = ba?.name || ba?.bank_account || ''
   form.bank_account = name || bankSelectOptions.value[0]?.value || ''
   form.as_on = cash.value.data?.as_of || new Date().toISOString().slice(0, 10)
-  form.balance =
-    ba?.balance != null
-      ? ba.balance
-      : cashCards.value.find((c) => c.name === name)?.balance || 0
+  const card = ba?.balance != null ? ba : cashCards.value.find((c) => c.name === name)
+  form.balance = card?.balance != null ? card.balance : 0
+  form.account_type = card?.account_type || ''
+  form.credit_limit = Number(card?.credit_limit || 0)
   suggestion.value = null
   show.value = true
+  loadRemoteSuggestion()
+}
+
+function onBalanceAccountChange() {
+  const card = cashCards.value.find((c) => c.name === form.bank_account)
+  if (card) {
+    form.balance = card.balance != null ? card.balance : 0
+    form.account_type = card.account_type || ''
+    form.credit_limit = Number(card.credit_limit || 0)
+  }
   loadRemoteSuggestion()
 }
 
@@ -345,6 +381,7 @@ function openAddBank() {
   addBank.account_type = ''
   addBank.bank_account_no = ''
   addBank.opening_balance = 0
+  addBank.credit_limit = 0
   addBank.is_default = false
   showAdd.value = true
 }
@@ -363,6 +400,7 @@ async function createBank() {
       account_type: addBank.account_type || null,
       bank_account_no: addBank.bank_account_no || null,
       opening_balance: addBank.opening_balance || 0,
+      credit_limit: isCreditFacility(addBank.account_type) ? addBank.credit_limit || 0 : null,
       is_default: addBank.is_default ? 1 : 0,
       add_to_policy: 1,
     })
@@ -380,11 +418,16 @@ async function createBank() {
 async function save() {
   saving.value = true
   try {
-    await call('lyqd.api.spa.set_daily_bank_balance', {
+    const payload = {
       bank_account: form.bank_account,
       balance: form.balance,
       as_of: form.as_on,
-    })
+      account_type: form.account_type || '',
+    }
+    if (isCreditFacility(form.account_type)) {
+      payload.credit_limit = form.credit_limit || 0
+    }
+    await call('lyqd.api.spa.set_daily_bank_balance', payload)
     // Close first so a toast glitch cannot leave the dialog stuck open.
     show.value = false
     toast.success('Statement balance saved')

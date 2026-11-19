@@ -82,6 +82,8 @@ def get_boot():
 		except Exception:
 			pass
 
+	from lyqd.setup.permissions import user_has_desk_access
+
 	return frappe._dict(
 		{
 			"frappe_version": frappe.__version__,
@@ -99,6 +101,7 @@ def get_boot():
 			"companies": companies,
 			"default_company": default_company,
 			"roles": frappe.get_roles(),
+			"has_desk_access": user_has_desk_access(),
 			"developer_mode": bool(frappe.conf.developer_mode),
 			"tagline": "Make idle cash work smarter.",
 			"app_name": "LYQD by Mytra",

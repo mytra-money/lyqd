@@ -30,40 +30,56 @@ import { Dropdown } from 'frappe-ui'
 import { useCompanyStore } from '@/stores/company'
 import { useSessionStore } from '@/stores/session'
 
+const DOCS_URL = 'https://docs.mytra.money/lyqd'
+
 const company = useCompanyStore()
 const session = useSessionStore()
 const router = useRouter()
 const logoUrl = '/assets/lyqd/images/lyqd.svg?v=3'
 
-const dropdownOptions = computed(() => [
-  {
-    group: 'Navigate',
-    hideLabel: true,
-    items: [
-      {
-        icon: 'grid',
-        label: 'Desk',
-        onClick: () => {
-          window.location.href = '/app'
+const dropdownOptions = computed(() => {
+  const navigateItems = []
+  if (company.hasDeskAccess) {
+    navigateItems.push({
+      icon: 'grid',
+      label: 'Desk',
+      onClick: () => {
+        window.location.href = '/app'
+      },
+    })
+  }
+  navigateItems.push(
+    {
+      icon: 'book-open',
+      label: 'View Documentation',
+      onClick: () => {
+        window.open(DOCS_URL, '_blank', 'noopener,noreferrer')
+      },
+    },
+    {
+      icon: 'settings',
+      label: 'Settings',
+      onClick: () => router.push('/settings'),
+    },
+  )
+
+  return [
+    {
+      group: 'Navigate',
+      hideLabel: true,
+      items: navigateItems,
+    },
+    {
+      group: 'Account',
+      hideLabel: true,
+      items: [
+        {
+          icon: 'log-out',
+          label: 'Log out',
+          onClick: () => session.logout.submit(),
         },
-      },
-      {
-        icon: 'settings',
-        label: 'Settings',
-        onClick: () => router.push('/settings'),
-      },
-    ],
-  },
-  {
-    group: 'Account',
-    hideLabel: true,
-    items: [
-      {
-        icon: 'log-out',
-        label: 'Log out',
-        onClick: () => session.logout.submit(),
-      },
-    ],
-  },
-])
+      ],
+    },
+  ]
+})
 </script>

@@ -8,10 +8,9 @@
         :value="modelValue"
         type="number"
         min="1"
-        max="365"
         step="1"
         inputmode="numeric"
-        class="horizon-days w-11 border-0 bg-transparent px-1.5 py-1.5 text-center text-sm tabular-nums text-gray-900 focus:outline-none focus:ring-0 sm:w-12 sm:px-2"
+        class="horizon-days w-12 border-0 bg-transparent px-1.5 py-1.5 text-center text-sm tabular-nums text-gray-900 focus:outline-none focus:ring-0 sm:w-14 sm:px-2"
         aria-label="Forecast horizon in days"
         @input="onInput"
         @blur="normalize"
@@ -57,7 +56,6 @@ const emit = defineEmits(['update:modelValue'])
 function clamp(n) {
   const v = Math.round(Number(n))
   if (!Number.isFinite(v) || v < 1) return 1
-  if (v > 365) return 365
   return v
 }
 

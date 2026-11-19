@@ -10,6 +10,14 @@ class LYQDBankAccount(Document):
 		self.account_name = (self.account_name or "").strip()
 		if not self.account_name:
 			frappe.throw(frappe._("Account Name is required"))
+		from frappe.utils import flt
+
+		from lyqd.cash.bank_cash import is_credit_facility
+
+		if not is_credit_facility(self.account_type):
+			self.credit_limit = 0
+		elif flt(self.credit_limit) < 0:
+			frappe.throw(frappe._("Credit Limit cannot be negative"))
 		if self.is_default:
 			frappe.db.sql(
 				"""

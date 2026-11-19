@@ -22,12 +22,108 @@ from lyqd.cash.bank_cash import get_eligible_bank_cash
 
 
 def parse_horizon_days(horizon_days: int | str | None, default: int = 7) -> int:
-	"""Free-form forecast horizon: 1–365 days (UI may suggest 7/14/30/60)."""
+	"""Free-form forecast horizon in days (UI may suggest 7/14/30/60). Minimum 1."""
 	try:
 		n = int(horizon_days if horizon_days is not None else default)
 	except (TypeError, ValueError):
 		n = default
-	return max(1, min(365, n))
+	return max(1, n)
+
+
+def _cash_effect(row: dict[str, Any] | None) -> str:
+	return (row or {}).get("cash_effect") or "Outflow"
+
+
+def _is_nest_child(row: dict[str, Any] | None) -> bool:
+	"""Account-nest child (not a GL schedule installment)."""
+	if not row:
+		return False
+	if row.get("_schedule"):
+		return False
+	parent = row.get("parent_payment")
+	return bool(parent)
+
+
+def _signed_plan_amount(row: dict[str, Any] | None) -> float:
+	"""Outflow +; Inflow/Setoff − — same as nest ``group_net``."""
+	amt = flt((row or {}).get("amount"))
+	if _cash_effect(row) in ("Inflow", "Setoff"):
+		return -amt
+	return amt
+
+
+def nest_group_maps(
+	payments: list[dict[str, Any]] | None,
+) -> tuple[dict[str, list[dict[str, Any]]], set[str]]:
+	"""Map nest root → children; set of nest-child names (exclude schedule lines)."""
+	payments = payments or []
+	by_name = {p.get("name"): p for p in payments if p.get("name")}
+	children_of: dict[str, list[dict[str, Any]]] = {}
+	child_names: set[str] = set()
+	for p in payments:
+		if not _is_nest_child(p):
+			continue
+		parent = p.get("parent_payment")
+		if parent and parent in by_name and parent != p.get("name"):
+			children_of.setdefault(parent, []).append(p)
+			if p.get("name"):
+				child_names.add(p["name"])
+	return children_of, child_names
+
+
+def plan_card_totals(payments: list[dict[str, Any]] | None) -> dict[str, float]:
+	"""Commitments / incoming card totals with nested GL collapsed to ``group_net``.
+
+	Nest children are not counted on their own. A nest root contributes its signed
+	group net once (positive → commitments, negative → incoming). Plain roots and
+	GL schedule installments keep their own cash_effect.
+	"""
+	payments = payments or []
+	children_of, child_names = nest_group_maps(payments)
+	commitments_total = 0.0
+	incoming_total = 0.0
+	incoming_expected = 0.0
+
+	def _prob(row: dict[str, Any]) -> float:
+		prob = row.get("probability")
+		if prob is None or prob == "":
+			prob = 100
+		return min(max(flt(prob), 0), 100) / 100.0
+
+	for p in payments:
+		name = p.get("name")
+		if name and name in child_names:
+			continue
+		if _is_nest_child(p):
+			continue
+
+		kids = children_of.get(name or "", []) or []
+		if kids:
+			# Net from rows in this Planned list only (Paid nest kids are already excluded)
+			net = _signed_plan_amount(p) + sum(_signed_plan_amount(c) for c in kids)
+			if net > 0.01:
+				commitments_total += net
+			elif net < -0.01:
+				face = abs(net)
+				incoming_total += face
+				incoming_expected += face * _prob(p)
+			continue
+
+		effect = _cash_effect(p)
+		amt = flt(p.get("amount"))
+		if effect == "Outflow":
+			commitments_total += amt
+		elif effect in ("Inflow", "Setoff"):
+			incoming_total += amt
+			incoming_expected += amt * _prob(p)
+
+	return {
+		"commitments_total": flt(commitments_total),
+		"incoming_total": flt(incoming_total),
+		"incoming_expected": flt(incoming_expected),
+		# Free-cash reserve matches Commitments (outflow-side nest nets + plain outflows)
+		"upcoming_total": flt(commitments_total),
+	}
 
 
 @dataclass
@@ -128,8 +224,9 @@ def get_policy(company: str) -> frappe._dict:
 
 def _is_credit_facility(account_type: str | None) -> bool:
 	"""Cash Credit / Overdraft — drawn balances reduce free cash; unused limit does not."""
-	t = (account_type or "").strip().lower()
-	return t in {"cash credit", "overdraft", "cc", "od"}
+	from lyqd.cash.bank_cash import is_credit_facility
+
+	return is_credit_facility(account_type)
 
 
 def _bank_cash_explanation_label(row: dict[str, Any], *, drawn: bool) -> str:
@@ -183,6 +280,7 @@ def get_planned_upcoming_payments(
 			"source_name",
 			"source_account",
 			"parent_payment",
+			"group_net",
 			"is_recurring",
 			"frequency",
 			"recurrence_end",
@@ -329,19 +427,15 @@ def compute_surplus(
 		upcoming_payments = get_planned_upcoming_payments(company, as_of, horizon_days)
 
 	def _signed_commitment(p: dict[str, Any]) -> float:
-		"""Free cash = position − commitments − policy.
-
-		Only Outflow reserves cash. Inflow / Setoff are tracked as Incoming and
-		do not change free cash today.
-		"""
+		"""Outflow grain only (legacy helper for explanation children)."""
 		amt = flt(p.get("amount"))
 		effect = p.get("cash_effect") or "Outflow"
 		if effect in ("Inflow", "Setoff"):
 			return 0.0
 		return amt
 
-	# Commitments for free cash = outflows only (matches home Commitments card)
-	upcoming_total = flt(sum(_signed_commitment(p) for p in upcoming_payments))
+	# Nested GL collapses to group_net — children are not separate commitments/incoming.
+	upcoming_total = flt(plan_card_totals(upcoming_payments)["upcoming_total"])
 
 	# Free cash = bank position − commitments − policy reserves
 	investable = flt(bank_cash) - upcoming_total - min_liquidity_buffer - restricted_cash
@@ -423,32 +517,31 @@ def compute_surplus(
 			gl_sign=gl_sign,
 		)
 
-	by_name = {p.get("name"): p for p in upcoming_payments if p.get("name")}
-	children_of: dict[str, list[dict[str, Any]]] = {}
+	children_of, child_names = nest_group_maps(upcoming_payments)
 	roots: list[dict[str, Any]] = []
 	for p in upcoming_payments:
-		parent = p.get("parent_payment")
 		name = p.get("name")
-		if parent and parent in by_name and parent != name:
-			children_of.setdefault(parent, []).append(p)
-		else:
-			roots.append(p)
+		if name and name in child_names:
+			continue
+		if _is_nest_child(p):
+			continue
+		roots.append(p)
 
 	for root in roots:
-		# Incoming (Inflow / Setoff) shown on Cash position separately — not in free cash
-		if (root.get("cash_effect") or "Outflow") in ("Inflow", "Setoff"):
+		# Standalone incoming roots are shown on Cash position Incoming — not free cash
+		kids = children_of.get(root.get("name") or "", []) or []
+		if not kids and _cash_effect(root) in ("Inflow", "Setoff"):
 			continue
-		kids = [
-			c
-			for c in children_of.get(root.get("name") or "", [])
-			if (c.get("cash_effect") or "Outflow") not in ("Inflow", "Setoff")
-		]
 		if kids:
-			signed_net = _signed_commitment(root) + sum(_signed_commitment(c) for c in kids)
+			signed_net = _signed_plan_amount(root) + sum(
+				_signed_plan_amount(c) for c in kids
+			)
+			# Only nest groups that still reserve cash (net outflow) belong in free-cash waterfall
+			if signed_net <= 0.01:
+				continue
 			line = _upcoming_line(root, signed_net=signed_net)
 			line.child_count = len(kids)
 			line.children = [_upcoming_line(c) for c in kids]
-			# Group label: keep parent title, note it's a net reserve
 			title = root.get("title") or root.get("name") or "Upcoming payment"
 			due = root.get("due_date")
 			overdue = bool(due and getdate(due) < getdate(as_of))

@@ -45,10 +45,19 @@
           to="/surplus"
         />
         <MetricCard
+          v-if="showAvailableWithCc"
+          label="Available (CC)"
+          :value="Math.abs(d.available_with_cc || 0)"
+          :tone="d.available_with_cc_is_shortfall ? 'danger' : 'success'"
+          :hint="availableWithCcHint"
+          :info="availableWithCcInfo"
+          to="/cash"
+        />
+        <MetricCard
           v-if="showExpectedLiquidity"
           :label="expectedLiquidityLabel"
-          :value="Math.abs(d.expected_free_cash || 0)"
-          :tone="d.expected_is_shortfall ? 'danger' : 'success'"
+          :value="Math.abs(expectedLiquidityValue)"
+          :tone="expectedLiquidityIsShortfall ? 'danger' : 'success'"
           :hint="expectedLiquidityHint"
           :info="expectedLiquidityInfo"
           to="/upcoming"
@@ -563,12 +572,45 @@ const incomingInfo = computed(() => {
   return 'Expected receipts this horizon. Not included in free cash.'
 })
 
-/** Show expected liquidity when there is incoming, or actual is short. */
+/** Show CC drawing-power card when sanctioned facility limits are set. */
+const showAvailableWithCc = computed(() => Number(d.value?.cc_limit_total || 0) > 0.01)
+
+const availableWithCcHint = computed(() => {
+  const data = d.value
+  if (!data) return 'With facility'
+  if (data.available_with_cc_is_shortfall) return 'Still short'
+  return 'With facility'
+})
+
+const availableWithCcInfo = computed(() => {
+  const limit = Number(d.value?.cc_limit_total || 0)
+  return `CC limits + bank − commitments − policy (= free cash + ${formatINR(limit)}). Unused limit is not free cash to invest.`
+})
+
+/** Show expected liquidity when there is incoming, or actual is short (free cash or with CC). */
 const showExpectedLiquidity = computed(() => {
   const data = d.value
   if (!data) return false
   if (data.is_shortfall) return true
+  if (data.available_with_cc_is_shortfall) return true
   return Number(data.incoming_expected || 0) > 0.01
+})
+
+const expectedLiquidityValue = computed(() => {
+  const data = d.value
+  if (!data) return 0
+  if (data.expected_liquidity != null) return Number(data.expected_liquidity || 0)
+  // Fallback if older MIS payload
+  const free = Number(data.expected_free_cash || 0)
+  const limits = Number(data.cc_limit_total || 0)
+  return limits > 0.01 ? free + limits : free
+})
+
+const expectedLiquidityIsShortfall = computed(() => {
+  const data = d.value
+  if (!data) return false
+  if (data.expected_liquidity_is_shortfall != null) return !!data.expected_liquidity_is_shortfall
+  return expectedLiquidityValue.value < -0.01
 })
 
 const expectedLiquidityLabel = computed(() => {
@@ -579,21 +621,32 @@ const expectedLiquidityLabel = computed(() => {
 const expectedLiquidityHint = computed(() => {
   const data = d.value
   if (!data) return 'With incoming'
-  if (data.incoming_covers_shortfall) return 'Covers shortfall'
-  if (data.expected_is_shortfall) return 'Still short'
-  return 'With incoming'
+  const withCc = Number(data.cc_limit_total || 0) > 0.01
+  const covers = withCc
+    ? data.incoming_covers_shortfall_with_cc
+    : data.incoming_covers_shortfall
+  if (covers) return 'Covers shortfall'
+  if (expectedLiquidityIsShortfall.value) return 'Still short'
+  return withCc ? 'With facility + incoming' : 'With incoming'
 })
 
 const expectedLiquidityInfo = computed(() => {
   const data = d.value
   if (!data) return ''
-  if (data.incoming_covers_shortfall) {
-    return 'Bank − commitments + expected incoming − policy. Receipts this horizon cover the gap if they land.'
+  const withCc = Number(data.cc_limit_total || 0) > 0.01
+  const base = withCc
+    ? 'CC limits + bank − commitments + expected incoming − policy.'
+    : 'Bank − commitments + expected incoming − policy.'
+  const covers = withCc
+    ? data.incoming_covers_shortfall_with_cc
+    : data.incoming_covers_shortfall
+  if (covers) {
+    return `${base} Receipts this horizon cover the gap if they land.`
   }
-  if (data.expected_is_shortfall) {
-    return 'Bank − commitments + expected incoming − policy. Still short after expected incoming.'
+  if (expectedLiquidityIsShortfall.value) {
+    return `${base} Still short after expected incoming.`
   }
-  return 'Bank − commitments + expected incoming − policy.'
+  return base
 })
 
 function onCategoryChange(value) {

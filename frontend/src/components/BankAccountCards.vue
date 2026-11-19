@@ -52,6 +52,14 @@
           <Badge v-if="ba.account_type" theme="gray" variant="subtle">
             {{ String(ba.account_type).slice(0, 24) }}
           </Badge>
+          <button
+            v-if="showEdit"
+            type="button"
+            class="ml-auto shrink-0 text-xs font-medium text-gray-600 underline-offset-2 hover:text-gray-900 hover:underline"
+            @click.stop="$emit('edit', ba)"
+          >
+            Facility
+          </button>
         </div>
 
         <div class="mt-1 line-clamp-1 text-xs text-gray-500">
@@ -81,6 +89,13 @@
           >
             As of {{ ba.balance_date }}
           </div>
+          <div
+            v-if="isCreditFacility(ba.account_type) && Number(ba.credit_limit) > 0"
+            class="mt-0.5 flex items-baseline justify-between gap-2 text-xs text-gray-500"
+          >
+            <span>Limit</span>
+            <span class="tabular-nums text-gray-700">{{ formatINR(ba.credit_limit) }}</span>
+          </div>
         </div>
       </button>
     </div>
@@ -97,6 +112,7 @@ const props = defineProps({
   selected: { type: Array, default: () => [] },
   selectable: { type: Boolean, default: false },
   showAdd: { type: Boolean, default: true },
+  showEdit: { type: Boolean, default: false },
   emptyTitle: { type: String, default: 'No bank accounts found' },
   emptyHint: {
     type: String,
@@ -108,7 +124,7 @@ const props = defineProps({
   showDesk: { type: Boolean, default: true },
 })
 
-defineEmits(['toggle', 'add'])
+defineEmits(['toggle', 'add', 'edit'])
 
 const company = useCompanyStore()
 

@@ -14,6 +14,19 @@ def has_app_permission() -> bool:
 	return bool(roles.intersection({"System Manager", "LYQD Manager", "LYQD User"}))
 
 
+def user_has_desk_access(user: str | None = None) -> bool:
+	"""True if any of the user's roles has Role.desk_access (Frappe Desk)."""
+	user = user or frappe.session.user
+	if not user or user == "Guest":
+		return False
+	if user == "Administrator":
+		return True
+	roles = [r for r in frappe.get_roles(user) if r]
+	if not roles:
+		return False
+	return bool(frappe.db.exists("Role", {"name": ("in", roles), "desk_access": 1}))
+
+
 def get_user_companies() -> list[str]:
 	"""LYQD Companies the current user may see.
 

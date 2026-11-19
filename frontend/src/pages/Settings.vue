@@ -263,10 +263,17 @@
           >
             {{ bankOptions.data.message }}
           </p>
+          <p class="text-xs text-gray-500">
+            For cash credit / overdraft, use
+            <span class="font-medium text-gray-700">Facility</span>
+            on a card to set account type and sanctioned limit (local to LYQD — not written to
+            ERPNext).
+          </p>
           <BankAccountCards
             :accounts="bankAccountList"
             :selected="policyForm.selectedBanks"
             selectable
+            show-edit
             :show-add="!banksFromRemote"
             :empty-title="banksFromRemote ? 'No bank accounts found' : 'No bank accounts found'"
             :empty-hint="bankEmptyHint"
@@ -275,6 +282,7 @@
             :show-desk="!banksFromRemote || !!remoteBankDeskUrl"
             @toggle="toggleBank"
             @add="showAddBank = true"
+            @edit="openFacilityEdit"
           />
         </div>
 
@@ -363,12 +371,48 @@
             allow-negative
             description="For Cash Credit / Overdraft, enter drawn amount as negative."
           />
+          <CurrencyControl
+            v-if="isAddBankCreditFacility"
+            v-model="addBank.credit_limit"
+            label="Credit limit"
+            description="Sanctioned facility limit (feeds Available (CC) on home)."
+          />
           <Checkbox v-model="addBank.is_default" label="Set as default bank account" />
         </div>
       </template>
       <template #actions>
         <Button variant="solid" :loading="addingBank" @click="createBank">Create</Button>
         <Button variant="outline" @click="showAddBank = false">Cancel</Button>
+      </template>
+    </Dialog>
+
+    <Dialog
+      v-model="showFacilityEdit"
+      :options="{ title: facilityEdit.account_name || 'Facility' }"
+    >
+      <template #body-content>
+        <div class="space-y-3">
+          <p class="text-xs text-gray-500">
+            Account type and credit limit are stored in LYQD only. Mirrored ERPNext banks keep their
+            books link; remirror does not overwrite these fields.
+          </p>
+          <FormControl
+            v-model="facilityEdit.account_type"
+            type="select"
+            label="Account type"
+            :options="['', 'Current', 'Savings', 'Cash Credit', 'Overdraft']"
+          />
+          <CurrencyControl
+            v-if="isFacilityEditCredit"
+            v-model="facilityEdit.credit_limit"
+            label="Credit limit"
+            description="Sanctioned facility limit (feeds Available (CC) on home)."
+          />
+        </div>
+      </template>
+      <template #actions>
+        <Button variant="solid" :loading="savingFacility" @click="saveFacilityEdit">Save</Button>
+        <Button variant="outline" @click="showFacilityEdit = false">Cancel</Button>
       </template>
     </Dialog>
   </div>
@@ -391,6 +435,14 @@ const saving = ref(false)
 const requestingAccount = ref(false)
 const showAddBank = ref(false)
 const addingBank = ref(false)
+const showFacilityEdit = ref(false)
+const savingFacility = ref(false)
+const facilityEdit = reactive({
+  bank_account: '',
+  account_name: '',
+  account_type: '',
+  credit_limit: 0,
+})
 const activeTab = ref('liquidity')
 
 const tabs = [
@@ -567,8 +619,49 @@ const addBank = reactive({
   account_type: '',
   bank_account_no: '',
   opening_balance: 0,
+  credit_limit: 0,
   is_default: false,
 })
+
+function isCreditFacilityType(accountType) {
+  const t = String(accountType || '')
+    .trim()
+    .toLowerCase()
+  return t === 'cash credit' || t === 'overdraft' || t === 'cc' || t === 'od'
+}
+
+const isAddBankCreditFacility = computed(() => isCreditFacilityType(addBank.account_type))
+const isFacilityEditCredit = computed(() => isCreditFacilityType(facilityEdit.account_type))
+
+function openFacilityEdit(ba) {
+  facilityEdit.bank_account = ba?.name || ba?.bank_account || ''
+  facilityEdit.account_name = ba?.account_name || facilityEdit.bank_account
+  facilityEdit.account_type = ba?.account_type || ''
+  facilityEdit.credit_limit = Number(ba?.credit_limit || 0)
+  showFacilityEdit.value = true
+}
+
+async function saveFacilityEdit() {
+  if (!facilityEdit.bank_account) return
+  savingFacility.value = true
+  try {
+    const payload = {
+      bank_account: facilityEdit.bank_account,
+      account_type: facilityEdit.account_type || '',
+    }
+    if (isFacilityEditCredit.value) {
+      payload.credit_limit = facilityEdit.credit_limit || 0
+    }
+    await call('lyqd.api.spa.update_bank_account_meta', payload)
+    toast.success('Facility saved')
+    showFacilityEdit.value = false
+    await bankOptions.reload()
+  } catch (e) {
+    toast.error(e.messages?.[0] || e.message || 'Save failed')
+  } finally {
+    savingFacility.value = false
+  }
+}
 
 function toggleBank(ba) {
   const name = ba.name
@@ -1107,6 +1200,7 @@ async function createBank() {
       account_type: addBank.account_type || null,
       bank_account_no: addBank.bank_account_no || null,
       opening_balance: addBank.opening_balance || 0,
+      credit_limit: isAddBankCreditFacility.value ? addBank.credit_limit || 0 : null,
       is_default: addBank.is_default ? 1 : 0,
       add_to_policy: 1,
     })
@@ -1121,6 +1215,7 @@ async function createBank() {
     addBank.account_type = ''
     addBank.bank_account_no = ''
     addBank.opening_balance = 0
+    addBank.credit_limit = 0
     addBank.is_default = false
     const parts = []
     if (created.created_gl_account) parts.push('Account')

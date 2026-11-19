@@ -43,6 +43,7 @@ export const useCompanyStore = defineStore('company', () => {
   })
   const companySettings = ref(window.company_settings || {})
   const roles = ref(window.roles || [])
+  const hasDeskAccess = ref(!!window.has_desk_access)
   const erpnextIntegrationEnabled = ref(!!window.erpnext_integration_enabled)
   const erpnextInstalled = ref(!!window.erpnext_installed)
   const showAddCompany = ref(false)
@@ -75,6 +76,7 @@ export const useCompanyStore = defineStore('company', () => {
       }
       companySettings.value = data.company_settings || {}
       roles.value = data.roles || []
+      hasDeskAccess.value = !!data.has_desk_access
       erpnextIntegrationEnabled.value = !!data.erpnext_integration_enabled
       erpnextInstalled.value = !!data.erpnext_installed
       applyCompanyOverlay(companySettings.value)
@@ -190,6 +192,7 @@ export const useCompanyStore = defineStore('company', () => {
     settings,
     companySettings,
     roles,
+    hasDeskAccess,
     erpnextIntegrationEnabled,
     erpnextInstalled,
     investmentAccountActivated,

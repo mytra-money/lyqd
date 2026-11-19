@@ -3,7 +3,7 @@ import { useStorage } from '@vueuse/core'
 import { useCompanyStore } from '@/stores/company'
 
 /**
- * Shared forecast horizon (days). Free-form 1–365; UI suggests 7/14/30/60.
+ * Shared forecast horizon (days). Free-form (≥1); UI suggests 7/14/30/60.
  * Persists in the browser so Cash position / Free cash / Invest stay aligned.
  */
 export function useHorizon() {
@@ -17,7 +17,7 @@ export function useHorizon() {
       if (!days) return
       try {
         if (localStorage.getItem('lyqd_horizon_days') == null) {
-          horizon.value = Math.min(365, Math.max(1, Number(days) || 7))
+          horizon.value = Math.max(1, Number(days) || 7)
         }
       } catch {
         /* ignore */

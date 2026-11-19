@@ -203,19 +203,19 @@ class TestLYQDSurplusFormula(UnitTestCase):
 			min_liquidity_buffer=0,
 			restricted_cash=0,
 		)
-		# Free cash commitments = outflows only (ITC/incoming excluded)
-		self.assertEqual(result.upcoming_total, 15_000)
+		# Nested GL collapses to group_net (10k + 5k − 2k ITC) — children not separate
+		self.assertEqual(result.upcoming_total, 13_000)
 		upcoming_lines = [e for e in result.explanation if e.kind == "upcoming"]
 		self.assertEqual(len(upcoming_lines), 1)
 		parent = upcoming_lines[0]
 		self.assertEqual(parent.ref_name, "P-IGST")
-		# Incoming child omitted from free-cash explanation nest
-		self.assertEqual(parent.child_count, 1)
-		self.assertEqual(flt(parent.amount), 15_000)
+		self.assertEqual(parent.child_count, 2)
+		self.assertEqual(flt(parent.amount), 13_000)
 		self.assertEqual(parent.sign, "-")
 		self.assertEqual(flt(parent.gl_amount), 10_000)
-		self.assertEqual(len(parent.children), 1)
-		self.assertEqual(parent.children[0].ref_name, "C-CGST")
+		self.assertEqual(len(parent.children), 2)
+		child_refs = {c.ref_name for c in parent.children}
+		self.assertEqual(child_refs, {"C-CGST", "C-ITC"})
 
 
 	def test_overdue_planned_still_reserves(self):
@@ -299,3 +299,51 @@ class TestLYQDSurplusPure(unittest.TestCase):
 		self.assertEqual(cc_line.sign, "-")
 		self.assertEqual(cc_line.amount, 20_000)
 		self.assertIn("CC drawn", cc_line.label)
+
+	def test_available_with_cc_is_free_cash_plus_limits(self):
+		"""Home Available (CC) = free cash + sanctioned limits; free cash excludes unused limit."""
+		result = compute_surplus(
+			company="TEST",
+			horizon_days=7,
+			as_of=today(),
+			bank_cash=80_000,  # CA 1L + CC drawn −20k
+			cash_accounts=[
+				{
+					"bank_account": "CA-1",
+					"account_name": "HDFC Current",
+					"account_type": "Current",
+					"balance": 100_000,
+					"source": "Bank Balance",
+				},
+				{
+					"bank_account": "CC-1",
+					"account_name": "HDFC Cash Credit",
+					"account_type": "Cash Credit",
+					"balance": -20_000,
+					"credit_limit": 100_000,
+					"source": "Bank Balance",
+				},
+			],
+			upcoming_payments=[
+				{
+					"name": "UP-1",
+					"title": "Vendor",
+					"amount": 10_000,
+					"due_date": today(),
+					"cash_effect": "Outflow",
+				}
+			],
+			min_liquidity_buffer=5_000,
+			restricted_cash=0,
+		)
+		# Free cash = 80k − 10k − 5k = 65k (limit never in investable)
+		self.assertEqual(result.investable_surplus, 65_000)
+		cc_limit_total = 100_000
+		available_with_cc = result.investable_surplus + cc_limit_total
+		self.assertEqual(available_with_cc, 165_000)
+		# Expected with incoming 20k @ 100% = free + incoming + limits
+		incoming_expected = 20_000
+		expected_free_cash = result.investable_surplus + incoming_expected
+		expected_with_cc = available_with_cc + incoming_expected
+		self.assertEqual(expected_free_cash, 85_000)
+		self.assertEqual(expected_with_cc, 185_000)

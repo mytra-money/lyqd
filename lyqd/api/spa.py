@@ -61,6 +61,8 @@ def get_boot_data() -> dict:
 	user_image = None
 	if frappe.session.user and frappe.session.user != "Guest":
 		user_image = frappe.db.get_value("User", frappe.session.user, "user_image")
+	from lyqd.setup.permissions import user_has_desk_access
+
 	return {
 		"user": frappe.session.user,
 		"user_fullname": frappe.utils.get_fullname(frappe.session.user),
@@ -68,6 +70,7 @@ def get_boot_data() -> dict:
 		"companies": companies,
 		"default_company": default_company,
 		"roles": frappe.get_roles(),
+		"has_desk_access": user_has_desk_access(),
 		"settings": settings,
 		"tagline": settings.get("tagline") or "Make idle cash work smarter.",
 		"erpnext_integration_enabled": bool(company_settings.get("enabled")),
@@ -200,13 +203,43 @@ def set_daily_bank_balance(
 	bank_account: str,
 	balance: float | str,
 	as_of: str | None = None,
+	credit_limit: float | str | None = None,
+	account_type: str | None = None,
 ) -> dict:
-	"""Write today's (or as_of) statement closing on LYQD Bank Balance."""
-	from lyqd.cash.bank_cash import set_statement_balance
+	"""Write today's (or as_of) statement closing on LYQD Bank Balance.
+
+	Optional ``account_type`` / ``credit_limit`` update local facility fields (including
+	mirrored ERPNext banks — never written back to books).
+	"""
+	from lyqd.cash.bank_cash import set_statement_balance, update_bank_account_meta
 
 	if not frappe.has_permission("LYQD Bank Account", "write", doc=bank_account):
 		frappe.only_for(("System Manager", "LYQD Manager", "LYQD User"))
-	return set_statement_balance(bank_account, flt(balance), as_of)
+	out = set_statement_balance(bank_account, flt(balance), as_of)
+	if account_type is not None or (credit_limit is not None and credit_limit != ""):
+		meta = update_bank_account_meta(
+			bank_account,
+			account_type=account_type,
+			credit_limit=None if credit_limit is None or credit_limit == "" else flt(credit_limit),
+		)
+		out["account_type"] = meta.get("account_type")
+		out["credit_limit"] = meta.get("credit_limit")
+	return out
+
+
+@frappe.whitelist()
+def update_bank_account_meta(
+	bank_account: str,
+	account_type: str | None = None,
+	credit_limit: float | str | None = None,
+) -> dict:
+	"""Set local account type / CC limit (works for mirrored ERPNext banks)."""
+	from lyqd.cash.bank_cash import update_bank_account_meta as _update
+
+	if not frappe.has_permission("LYQD Bank Account", "write", doc=bank_account):
+		frappe.only_for(("System Manager", "LYQD Manager", "LYQD User"))
+	limit = None if credit_limit is None or credit_limit == "" else flt(credit_limit)
+	return _update(bank_account, account_type=account_type, credit_limit=limit)
 
 
 @frappe.whitelist()
@@ -249,20 +282,19 @@ def get_morning_mis(company: str | None = None, horizon_days: int | str = 7) -> 
 	upcoming = get_planned_upcoming_payments(company, as_of, horizon_days)
 
 	# Free cash = bank − commitments − policy. Incoming (Inflow/Setoff) is separate.
+	# Nested GL children stay on the lists so the Plan UI can nest them; card totals
+	# collapse each nest to group_net (children are not counted on their own).
+	from lyqd.cash.surplus import plan_card_totals
+
 	def _effect(r):
 		return r.get("cash_effect") or "Outflow"
 
 	commitments = [r for r in upcoming if _effect(r) == "Outflow"]
 	incoming = [r for r in upcoming if _effect(r) in ("Inflow", "Setoff")]
-	commitments_total = flt(sum(flt(r.get("amount")) for r in commitments))
-	incoming_total = flt(sum(flt(r.get("amount")) for r in incoming))
-	incoming_expected = 0.0
-	for r in incoming:
-		prob = r.get("probability")
-		if prob is None or prob == "":
-			prob = 100
-		incoming_expected += flt(r.get("amount")) * min(max(flt(prob), 0), 100) / 100.0
-	incoming_expected = flt(incoming_expected)
+	totals = plan_card_totals(upcoming)
+	commitments_total = flt(totals["commitments_total"])
+	incoming_total = flt(totals["incoming_total"])
+	incoming_expected = flt(totals["incoming_expected"])
 
 	from lyqd.mytra.portfolio import get_portfolio
 
@@ -276,6 +308,7 @@ def get_morning_mis(company: str | None = None, horizon_days: int | str = 7) -> 
 		+ flt(surplus.restricted_cash)
 	)
 	bank_cash = flt(cash.get("total"))
+	cc_limit_total = flt(cash.get("cc_limit_total"))
 	cash_gap = max(0.0, required - bank_cash)
 	redemption_need = min(cash_gap, liquid_total) if liquid_total else cash_gap
 
@@ -302,12 +335,26 @@ def get_morning_mis(company: str | None = None, horizon_days: int | str = 7) -> 
 
 	# Actual free cash = position − commitments − policy (incoming excluded).
 	# Expected free cash = actual + expected incoming (probability-weighted).
+	# Available with CC = free cash + sanctioned CC/OD limits (drawing power, not investable).
+	# Expected with CC = available with CC + expected incoming (same as expected free + limits).
 	signed_investable = flt(surplus.investable_surplus)
 	is_shortfall = bool(surplus.is_shortfall)
 	deployable = signed_investable if not is_shortfall else 0.0
 	expected_free_cash = flt(signed_investable + incoming_expected)
 	expected_is_shortfall = expected_free_cash < -0.01
 	incoming_covers_shortfall = bool(is_shortfall and not expected_is_shortfall)
+	available_with_cc = flt(signed_investable + cc_limit_total)
+	available_with_cc_is_shortfall = available_with_cc < -0.01
+	expected_with_cc = flt(available_with_cc + incoming_expected)
+	expected_with_cc_is_shortfall = expected_with_cc < -0.01
+	# Home "Expected" card: include limits whenever facilities are configured.
+	expected_display = expected_with_cc if cc_limit_total > 0.01 else expected_free_cash
+	expected_display_is_shortfall = (
+		expected_with_cc_is_shortfall if cc_limit_total > 0.01 else expected_is_shortfall
+	)
+	incoming_covers_shortfall_with_cc = bool(
+		available_with_cc_is_shortfall and not expected_with_cc_is_shortfall
+	)
 
 	# Drift vs open request for *this* horizon (Invest deploy vs Redeem need).
 	over_allocated = 0.0
@@ -344,6 +391,7 @@ def get_morning_mis(company: str | None = None, horizon_days: int | str = 7) -> 
 		"horizon_days": horizon_days,
 		"bank_cash": bank_cash,
 		"banks": cash.get("accounts") or [],
+		"cc_limit_total": cc_limit_total,
 		"liquid_fund_total": liquid_total,
 		"liquid_holdings": liquid_rows,
 		# Free-cash reserve (outflows − setoffs); never includes inflows
@@ -359,9 +407,17 @@ def get_morning_mis(company: str | None = None, horizon_days: int | str = 7) -> 
 		"required_cash": required,
 		"investable_surplus": signed_investable,
 		"is_shortfall": is_shortfall,
+		"available_with_cc": available_with_cc,
+		"available_with_cc_is_shortfall": available_with_cc_is_shortfall,
 		"expected_free_cash": expected_free_cash,
 		"expected_is_shortfall": expected_is_shortfall,
+		"expected_with_cc": expected_with_cc,
+		"expected_with_cc_is_shortfall": expected_with_cc_is_shortfall,
+		# Home Expected card value (includes CC limits when configured)
+		"expected_liquidity": expected_display,
+		"expected_liquidity_is_shortfall": expected_display_is_shortfall,
 		"incoming_covers_shortfall": incoming_covers_shortfall,
+		"incoming_covers_shortfall_with_cc": incoming_covers_shortfall_with_cc,
 		"cash_gap": cash_gap,
 		"redemption_need": redemption_need,
 		"planned_investment": planned_investment,
@@ -446,6 +502,7 @@ def create_surplus_bank_account(
 	account_type: str | None = None,
 	is_default: int | bool = 0,
 	bank_account_no: str | None = None,
+	credit_limit: float | None = None,
 ) -> dict:
 	"""Create LYQD Bank Account (no CoA); optionally pin on Policy."""
 	from lyqd.cash.bank_cash import create_company_bank_account
@@ -460,6 +517,7 @@ def create_surplus_bank_account(
 		account_type=account_type,
 		is_default=bool(int(is_default)),
 		bank_account_no=bank_account_no,
+		credit_limit=credit_limit,
 	)
 
 
@@ -972,6 +1030,11 @@ def save_upcoming_payment(doc: str | dict | None = None) -> dict:
 				for split in payment.get("splits") or []:
 					if (split.status or "Planned") == "Planned":
 						split.status = "Paid"
+			elif want == "Planned" and payment.get("splits"):
+				# Header Planned → reopen every Paid schedule line (mirror of Paid above).
+				for split in payment.get("splits") or []:
+					if (split.status or "Planned") == "Paid":
+						split.status = "Planned"
 			elif want == "Ignored" and payment.get("splits"):
 				frappe.throw(
 					_("Cannot ignore a payment that has a split schedule. Merge first.")

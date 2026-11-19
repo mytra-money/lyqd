@@ -8,6 +8,12 @@ import frappe
 from frappe.utils import add_days, flt, getdate, today
 
 
+def is_credit_facility(account_type: str | None) -> bool:
+	"""Cash Credit / Overdraft — drawn balances reduce free cash; unused limit does not."""
+	t = (account_type or "").strip().lower()
+	return t in {"cash credit", "overdraft", "cc", "od"}
+
+
 def default_bank_statement_as_of() -> str:
 	"""Morning liquidity planning uses T-1 statement balances (prior calendar day)."""
 	return str(getdate(add_days(today(), -1)))
@@ -46,6 +52,7 @@ def get_company_bank_accounts(
 			"bank",
 			"is_default",
 			"account_type",
+			"credit_limit",
 			"bank_account_no",
 			"company",
 			"currency",
@@ -143,6 +150,11 @@ def resolve_bank_account_cash(
 		"bank": bank_account_row.get("bank"),
 		"is_default": bank_account_row.get("is_default"),
 		"account_type": bank_account_row.get("account_type"),
+		"credit_limit": (
+			flt(bank_account_row.get("credit_limit"))
+			if is_credit_facility(bank_account_row.get("account_type"))
+			else 0.0
+		),
 		"bank_account_no": bank_account_row.get("bank_account_no"),
 		"currency": bank_account_row.get("currency") or bank_account_row.get("account_currency"),
 		"account_currency": bank_account_row.get("account_currency")
@@ -174,10 +186,12 @@ def get_eligible_bank_cash(company: str, as_of: str | None = None) -> dict[str, 
 	accounts = get_company_bank_accounts(company, selected=selected)
 	rows = []
 	total = 0.0
+	cc_limit_total = 0.0
 	for ba in accounts:
 		row = resolve_bank_account_cash(ba, company, as_of_s)
 		rows.append(row)
 		total += flt(row["balance"])
+		cc_limit_total += flt(row.get("credit_limit"))
 
 	return {
 		"company": company,
@@ -186,6 +200,7 @@ def get_eligible_bank_cash(company: str, as_of: str | None = None) -> dict[str, 
 		"remote_site_url": settings.get("remote_site_url") or "",
 		"as_of": as_of_s,
 		"total": flt(total),
+		"cc_limit_total": flt(cc_limit_total),
 		"accounts": rows,
 		"selection": "policy" if selected else "all_company_accounts",
 		"selected_bank_accounts": selected or [],
@@ -207,6 +222,7 @@ def create_company_bank_account(
 	account_type: str | None = None,
 	is_default: bool = False,
 	bank_account_no: str | None = None,
+	credit_limit: float | None = None,
 	allow_when_remote: bool = False,
 ) -> dict[str, Any]:
 	"""
@@ -238,6 +254,8 @@ def create_company_bank_account(
 	if not account_name:
 		frappe.throw(frappe._("Account name is required"))
 
+	limit = flt(credit_limit) if is_credit_facility(account_type) else 0.0
+
 	existing = frappe.db.get_value(
 		"LYQD Bank Account",
 		{"company": company, "account_name": account_name},
@@ -246,6 +264,12 @@ def create_company_bank_account(
 	created = False
 	if existing:
 		ba_name = existing
+		if credit_limit is not None and is_credit_facility(account_type):
+			doc = frappe.get_doc("LYQD Bank Account", ba_name)
+			doc.credit_limit = limit
+			if account_type:
+				doc.account_type = account_type
+			doc.save(ignore_permissions=True)
 	else:
 		doc = frappe.get_doc(
 			{
@@ -254,6 +278,7 @@ def create_company_bank_account(
 				"account_name": account_name,
 				"bank": (bank or "").strip() or None,
 				"account_type": account_type or None,
+				"credit_limit": limit,
 				"is_default": 1 if is_default else 0,
 				"bank_account_no": bank_account_no or None,
 				"is_active": 1,
@@ -284,6 +309,45 @@ def create_company_bank_account(
 		"created_gl_account": False,
 		"created_bank_account": created,
 	}
+
+
+def update_bank_account_meta(
+	bank_account: str,
+	account_type: str | None = None,
+	credit_limit: float | None = None,
+) -> dict[str, Any]:
+	"""Update local LYQD facility fields (type / sanctioned limit).
+
+	Safe for mirrored ERPNext banks — never writes back to books. Remirror does not
+	overwrite these once set on an existing local row.
+	"""
+	if not bank_account or not frappe.db.exists("LYQD Bank Account", bank_account):
+		frappe.throw(frappe._("Bank account not found"))
+	doc = frappe.get_doc("LYQD Bank Account", bank_account)
+	if account_type is not None:
+		doc.account_type = (account_type or "").strip() or None
+	if credit_limit is not None:
+		if not is_credit_facility(doc.account_type):
+			frappe.throw(
+				frappe._(
+					"Set Account Type to Cash Credit or Overdraft before entering a Credit Limit"
+				)
+			)
+		doc.credit_limit = max(0.0, flt(credit_limit))
+	doc.save(ignore_permissions=True)
+	return {
+		"bank_account": doc.name,
+		"account_type": doc.account_type,
+		"credit_limit": flt(doc.credit_limit),
+	}
+
+
+def update_bank_account_credit_limit(
+	bank_account: str,
+	credit_limit: float | None = None,
+) -> dict[str, Any]:
+	"""Set sanctioned CC/OD limit on a LYQD Bank Account (local only)."""
+	return update_bank_account_meta(bank_account, credit_limit=credit_limit)
 
 
 def suggest_remote_bank_balance(

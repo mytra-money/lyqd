@@ -1,5 +1,5 @@
 app_name = "lyqd"
-app_title = "LYQD by Mytra"
+app_title = "LYQD"
 app_publisher = "Mytra"
 app_description = "Corporate surplus-cash for ERPNext — policy, upcoming payments, explainable investable surplus"
 app_email = "hello@mytra.money"
@@ -13,7 +13,7 @@ add_to_apps_screen = [
 	{
 		"name": "lyqd",
 		"logo": "/assets/lyqd/images/lyqd.svg?v=3",
-		"title": "LYQD by Mytra",
+		"title": "LYQD",
 		"route": "/lyqd",
 		"has_permission": "lyqd.setup.permissions.has_app_permission",
 	}

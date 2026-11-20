@@ -1628,10 +1628,10 @@ def get_pwa_manifest():
 
 	from werkzeug.wrappers import Response
 
-	title = frappe.db.get_single_value("Website Settings", "app_name") or "LYQD by Mytra"
+	title = frappe.db.get_single_value("Website Settings", "app_name") or "LYQD"
 	# Prefer product name when Website Settings still says the site/desk title.
-	if title in ("Frappe", "ERPNext") or not title:
-		title = "LYQD by Mytra"
+	if title in ("Frappe", "ERPNext", "LYQD by Mytra") or not title:
+		title = "LYQD"
 	short = "LYQD" if len(title) > 12 else title
 	route = "/lyqd"
 	# Bump when icons change so installed PWAs / browsers pick up the new mark.
@@ -1640,7 +1640,7 @@ def get_pwa_manifest():
 	icon_512 = f"/assets/lyqd/manifest/manifest-icon-512.maskable.png?v={icon_v}"
 	manifest = {
 		"id": route,
-		"name": title if "LYQD" in title else "LYQD by Mytra",
+		"name": title if "LYQD" in title else "LYQD",
 		"short_name": short if "LYQD" in short else "LYQD",
 		"description": "Know what cash you can invest — and when you’ll need it.",
 		"start_url": f"{route}/",

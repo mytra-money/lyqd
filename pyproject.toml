@@ -3,7 +3,7 @@ name = "lyqd"
 authors = [
     { name = "Mytra", email = "hello@mytra.money" }
 ]
-description = "LYQD by Mytra — corporate liquidity and surplus cash for ERPNext"
+description = "LYQD — corporate liquidity and surplus cash for ERPNext"
 requires-python = ">=3.10"
 readme = "README.md"
 dynamic = ["version"]

@@ -18,7 +18,7 @@ def after_install() -> None:
 	create_roles()
 	ensure_settings()
 	ensure_custom_fields()
-	click.secho("LYQD by Mytra installed. Open the LYQD workspace to start.", fg="green")
+	click.secho("LYQD installed. Open the LYQD workspace to start.", fg="green")
 
 
 def after_migrate() -> None:

@@ -29,7 +29,7 @@ def get_context(context):
 	context.boot.csrf_token = csrf_token
 	context.csrf_token = csrf_token
 	context.build_version = frappe.utils.get_build_version()
-	context.app_name = "LYQD by Mytra"
+	context.app_name = "LYQD"
 	context.layout_direction = "rtl" if is_rtl() else "ltr"
 	context.lang = frappe.local.lang
 	return context
@@ -104,7 +104,7 @@ def get_boot():
 			"has_desk_access": user_has_desk_access(),
 			"developer_mode": bool(frappe.conf.developer_mode),
 			"tagline": "Make idle cash work smarter.",
-			"app_name": "LYQD by Mytra",
+			"app_name": "LYQD",
 			"in_beta": in_beta,
 			"erpnext_integration_enabled": bool(company_settings.get("enabled")),
 			"erpnext_installed": "erpnext" in frappe.get_installed_apps(),

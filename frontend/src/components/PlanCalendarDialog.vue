@@ -148,11 +148,7 @@ import { useCompanyStore } from '@/stores/company'
 import { useTreasuryCacheStore } from '@/stores/treasuryCache'
 import { formatDate, formatINR } from '@/utils/format'
 import { commitmentDetailLines, isOverdue as isOverdueDue } from '@/utils/commitment'
-import {
-  nestPlanRows,
-  planSignedNet,
-  signedCashAmount,
-} from '@/utils/planNest'
+import { nestPlanRows, planSignedNet } from '@/utils/planNest'
 import {
   calendarEventDetailLines,
   findPlanRowForEvent,
@@ -198,15 +194,7 @@ function isDueSoon(u) {
 }
 
 function calendarSignedNet(row) {
-  if (!row) return 0
-  if (row._childCount) return planSignedNet(row)
-  if (row.is_recurring) {
-    const period =
-      row.period_amount != null && row.period_amount !== ''
-        ? row.period_amount
-        : row.amount
-    return signedCashAmount(period, row.cash_effect)
-  }
+  // planSignedNet classifies recurring by cash_effect × amount/period.
   return planSignedNet(row)
 }
 

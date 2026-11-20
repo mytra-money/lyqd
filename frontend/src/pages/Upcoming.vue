@@ -883,7 +883,6 @@ import {
   groupMembers,
   enrichRecurringOccurrences,
   filterPlanGroupsByView,
-  nestPlanRows,
   nestRecommendationRows,
   planSignedNet,
   recommendationKey,
@@ -1137,7 +1136,10 @@ const plannedStatusOptions = computed(() => {
 })
 
 const plannedEffectOptions = computed(() => {
-  const nested = nestPlanRows(allRows.value)
+  // Same pipeline as the list — enrich repeats so direction counts include series.
+  const nested = enrichRecurringOccurrences(
+    filterPlanGroupsByView(allRows.value, plannedView.value, isOverdue),
+  )
   const outgoing = nested.filter((r) => planSignedNet(r) > 0.01).length
   const incoming = nested.filter((r) => planSignedNet(r) < -0.01).length
   return [

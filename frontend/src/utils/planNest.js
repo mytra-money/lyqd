@@ -146,7 +146,8 @@ export function enrichRecurringOccurrences(nestedRoots) {
       _recurring: true,
       _childCount: kids.length,
       _children: kids,
-      // Keep _groupNet null so the row amount stays the horizon total with inflow styling
+      // Never treat occurrence expand as an Account nest — direction uses cash_effect × amount.
+      _groupNet: null,
     }
   })
 }
@@ -276,11 +277,26 @@ export function filterPlanGroupsByView(allRows, view, isOverdueFn) {
  * Signed reserve for filters: nest/split ``_groupNet`` when present, else row amount.
  * Outflow net &gt; 0; Inflow/Setoff net &lt; 0.
  *
- * Recurring series get synthetic occurrence children (``_childCount``) but keep
- * ``_groupNet`` null on purpose — use the horizon ``amount`` + ``cash_effect``.
+ * Recurring series (incl. expanded occurrence children) always use
+ * ``cash_effect`` × horizon amount — or per-period amount when outside the
+ * forecast horizon (amount is ₹0). Never classify repeats via nest ``_groupNet``.
  */
 export function planSignedNet(row) {
   if (!row) return 0
+  if (row.is_recurring || row._recurring) {
+    const horizonAmt = Number(row.amount)
+    const period =
+      row.period_amount != null && row.period_amount !== ''
+        ? Number(row.period_amount)
+        : null
+    const amt =
+      Number.isFinite(horizonAmt) && Math.abs(horizonAmt) > 0.01
+        ? horizonAmt
+        : Number.isFinite(period)
+          ? period
+          : horizonAmt || 0
+    return signedCashAmount(amt, row.cash_effect)
+  }
   if (
     row._childCount &&
     row._groupNet != null &&

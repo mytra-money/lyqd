@@ -764,7 +764,7 @@ const planCategoryOptions = computed(() => [
 ])
 
 const planEffectOptions = computed(() => {
-  const nested = nestPlanRows(planRows.value)
+  const nested = enrichRecurringOccurrences(nestPlanRows(planRows.value))
   const outgoing = nested.filter((r) => planSignedNet(r) > 0.01).length
   const incoming = nested.filter((r) => planSignedNet(r) < -0.01).length
   return [

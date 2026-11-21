@@ -25,6 +25,29 @@ def after_migrate() -> None:
 	create_roles()
 	ensure_settings()
 	ensure_custom_fields()
+	ensure_payment_categories()
+
+
+def ensure_payment_categories() -> None:
+	"""Seed default categories per company and remap Upcoming Payment Select→Link values."""
+	try:
+		from lyqd.setup.payment_category import (
+			ensure_default_payment_categories,
+			migrate_upcoming_payment_categories,
+		)
+
+		if not frappe.db.exists("DocType", "LYQD Payment Category"):
+			return
+		for company in frappe.get_all("LYQD Company", pluck="name"):
+			ensure_default_payment_categories(company)
+		updated = migrate_upcoming_payment_categories()
+		if updated:
+			click.secho(
+				f"LYQD: remapped {updated} payment categor{'y' if updated == 1 else 'ies'} to Link.",
+				fg="green",
+			)
+	except Exception:
+		frappe.log_error(title="LYQD ensure payment categories")
 
 
 def ensure_custom_fields() -> None:

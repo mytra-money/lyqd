@@ -3,7 +3,10 @@
 Supports manual **Outflow** and **Inflow** series (not Setoff / books-sourced rows).
 Outflows reserve free cash; inflows expand into expected incoming only.
 
-JS mirror (keep in sync): ``apps/lyqd/frontend/src/utils/recurrence.js``.
+**Daily catch-up:** overdue Daily next-due snaps to ``as_of`` on MIS / plan load
+(missed days skipped). **Record daily** (mark paid) then advances to tomorrow.
+
+JS mirror (expand math): ``apps/lyqd/frontend/src/utils/recurrence.js``.
 """
 
 from __future__ import annotations
@@ -99,13 +102,26 @@ def expand_recurring_row(
 
 
 def advance_recurring_after_paid(payment) -> None:
-	"""Roll next due forward; keep series Planned (GL-style, not voucher Paid)."""
+	"""Roll next due forward; keep series Planned (GL-style, not voucher Paid).
+
+	For Daily series, first snap overdue next-due to today so one "Record daily"
+	moves yesterday → today → tomorrow (not +1 from a stale past due).
+	"""
 	if not cint(getattr(payment, "is_recurring", 0)):
 		return
 	freq = (getattr(payment, "frequency", None) or "Monthly").strip()
 	if freq not in FREQUENCIES:
 		freq = "Monthly"
-	payment.due_date = next_due_after(payment.due_date, freq)
+
+	from frappe.utils import today
+
+	as_of = getdate(today())
+	due = getdate(payment.due_date) if payment.due_date else as_of
+	# Daily catch-up before advance: missed days are skipped
+	if freq == "Daily" and due < as_of:
+		due = as_of
+
+	payment.due_date = next_due_after(str(due), freq)
 	payment.status = "Planned"
 	# Optional end: if next due past end, cancel series
 	end = getattr(payment, "recurrence_end", None)
@@ -114,3 +130,41 @@ def advance_recurring_after_paid(payment) -> None:
 		payment.notes = (payment.notes or "") + (
 			("\n" if payment.notes else "") + "Series ended after last paid cycle."
 		)
+
+
+def catch_up_daily_recurring(company: str, as_of: str | None = None) -> int:
+	"""Persist Daily series next-due when it has fallen behind ``as_of``.
+
+	Missed days are skipped (not stacked as expected cash). Returns rows updated.
+	Call before horizon expand / MIS so charts and plan lists stay on today.
+	"""
+	if not company or not frappe.db.exists("DocType", "LYQD Upcoming Payment"):
+		return 0
+
+	as_of_s = str(getdate(as_of) if as_of else frappe.utils.today())
+	rows = frappe.get_all(
+		"LYQD Upcoming Payment",
+		filters={
+			"company": company,
+			"status": "Planned",
+			"is_recurring": 1,
+			"frequency": "Daily",
+			"due_date": ("<", as_of_s),
+		},
+		fields=["name", "due_date", "recurrence_end"],
+	)
+	updated = 0
+	for row in rows:
+		new_due = as_of_s
+		end = row.get("recurrence_end")
+		values: dict[str, Any] = {"due_date": new_due}
+		if end and getdate(new_due) > getdate(end):
+			values["status"] = "Cancelled"
+		frappe.db.set_value(
+			"LYQD Upcoming Payment",
+			row.name,
+			values,
+			update_modified=True,
+		)
+		updated += 1
+	return updated

@@ -122,6 +122,10 @@ def get_lyqd_bank_account_query(user: str | None = None) -> str:
 	return _company_query_for("LYQD Bank Account", user)
 
 
+def get_lyqd_payment_category_query(user: str | None = None) -> str:
+	return _company_query_for("LYQD Payment Category", user)
+
+
 def get_lyqd_policy_query(user: str | None = None) -> str:
 	return _company_query_for("LYQD Policy", user)
 

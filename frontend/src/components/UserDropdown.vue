@@ -41,7 +41,7 @@ const dropdownOptions = computed(() => {
   const navigateItems = []
   if (company.hasDeskAccess) {
     navigateItems.push({
-      icon: 'grid',
+      icon: 'lucide-layout-grid',
       label: 'Desk',
       onClick: () => {
         window.location.href = '/app'
@@ -50,14 +50,14 @@ const dropdownOptions = computed(() => {
   }
   navigateItems.push(
     {
-      icon: 'book-open',
+      icon: 'lucide-book-open',
       label: 'View Documentation',
       onClick: () => {
         window.open(DOCS_URL, '_blank', 'noopener,noreferrer')
       },
     },
     {
-      icon: 'settings',
+      icon: 'lucide-settings',
       label: 'Settings',
       onClick: () => router.push('/settings'),
     },
@@ -67,14 +67,14 @@ const dropdownOptions = computed(() => {
     {
       group: 'Navigate',
       hideLabel: true,
-      items: navigateItems,
+      options: navigateItems,
     },
     {
       group: 'Account',
       hideLabel: true,
-      items: [
+      options: [
         {
-          icon: 'log-out',
+          icon: 'lucide-log-out',
           label: 'Log out',
           onClick: () => session.logout.submit(),
         },

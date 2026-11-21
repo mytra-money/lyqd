@@ -36,10 +36,11 @@
           :options="categoryOptions"
         />
       </div>
-      <div class="h-[min(65vh,34rem)] min-h-[22rem] overflow-hidden">
+      <div class="flex h-[min(65vh,34rem)] min-h-[22rem] flex-col overflow-hidden">
         <Calendar
           v-if="modelValue"
           :key="`plan-cal-${company.current}`"
+          class="min-h-0 flex-1"
           :events="calendarEvents"
           :config="calendarConfig"
           :on-dbl-click="onCalendarEventDblClick"
@@ -65,38 +66,29 @@
               <div class="flex shrink-0 flex-wrap items-center gap-1">
                 <Button
                   variant="ghost"
-                  icon="chevron-left"
+                  icon="lucide-chevron-left"
                   aria-label="Previous"
                   @click="decrement"
                 />
                 <Button variant="ghost" label="Today" @click="setCalendarDate()" />
                 <Button
                   variant="ghost"
-                  icon="chevron-right"
+                  icon="lucide-chevron-right"
                   aria-label="Next"
                   @click="increment"
                 />
-                <div
-                  v-if="enabledModes?.length > 1"
-                  class="ml-1 flex overflow-hidden rounded-md border border-gray-200"
-                  role="group"
-                  aria-label="Calendar view"
-                >
-                  <button
-                    v-for="mode in enabledModes"
-                    :key="mode.value"
-                    type="button"
-                    class="px-2 py-1 text-xs font-medium"
-                    :class="
-                      calendarViewIs(activeView, mode.value)
-                        ? 'bg-gray-900 text-white'
-                        : 'bg-white text-gray-600 hover:bg-gray-50'
-                    "
-                    @click="updateActiveView(mode.value)"
-                  >
-                    {{ mode.label }}
-                  </button>
-                </div>
+                <!--
+                  activeView arrives as a Ref via slot object literal (not
+                  auto-unwrapped). TabButtons + unwrap keeps Day/Week/Month in sync.
+                -->
+                <TabButtons
+                  v-if="(enabledModes || []).length > 1"
+                  class="ml-1"
+                  size="sm"
+                  :model-value="unwrapView(activeView)"
+                  :options="enabledModes"
+                  @update:model-value="(mode) => updateActiveView(mode)"
+                />
               </div>
             </div>
           </template>
@@ -142,7 +134,9 @@
 
 <script setup>
 import { computed, ref, watch } from 'vue'
-import { Button, Calendar, Dialog, FormControl, call } from 'frappe-ui'
+import { Button, FormControl, TabButtons, call } from 'frappe-ui'
+import { Calendar } from 'frappe-ui/experimental'
+import Dialog from '@/components/Dialog.vue'
 import { toast } from '@/utils/toast'
 import { useCompanyStore } from '@/stores/company'
 import { useTreasuryCacheStore } from '@/stores/treasuryCache'
@@ -171,9 +165,13 @@ const categoryFilter = ref('all')
 
 const calendarConfig = {
   defaultMode: 'Month',
+  disableModes: ['Agenda'],
   isEditMode: true,
   enableShortcuts: false,
   showIcon: false,
+  /** Plan dues are all-day; keep Day/Week scrolled near the top. */
+  scrollToHour: 8,
+  timeFormat: '24h',
 }
 
 const asOfDate = computed(() => new Date().toISOString().slice(0, 10))
@@ -261,9 +259,9 @@ watch(
   { immediate: true },
 )
 
-function calendarViewIs(activeView, mode) {
-  const current = activeView?.value ?? activeView
-  return current === mode
+/** Slot props nest refs in a plain object — they are not auto-unwrapped. */
+function unwrapView(activeView) {
+  return activeView?.value ?? activeView
 }
 
 function onCalendarCellClick() {}

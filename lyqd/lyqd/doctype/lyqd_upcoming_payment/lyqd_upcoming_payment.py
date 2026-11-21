@@ -22,17 +22,7 @@ class LYQDUpcomingPayment(Document):
 		cash_effect: DF.Literal["Outflow", "Setoff", "Inflow"]
 		group_net: DF.Currency | None
 		probability: DF.Percent | None
-		category: DF.Literal[
-			"Salary",
-			"Import-LC",
-			"Vendor",
-			"Customer",
-			"Tax",
-			"Loan",
-			"FD Maturity",
-			"Loan Proceeds",
-			"Other",
-		]
+		category: DF.Link
 		company: DF.Link
 		due_date: DF.Date
 		frequency: DF.Literal["Daily", "Weekly", "Monthly", "Quarterly"] | None
@@ -56,6 +46,7 @@ class LYQDUpcomingPayment(Document):
 			frappe.throw(frappe._("Amount cannot be negative"))
 		if not self.cash_effect:
 			self.cash_effect = "Outflow"
+		self._validate_category()
 		# Incoming (Inflow / Setoff) carries collection probability for expected cash.
 		if self.cash_effect in ("Inflow", "Setoff"):
 			if self.probability is None or self.probability == "":
@@ -122,6 +113,43 @@ class LYQDUpcomingPayment(Document):
 				self.balance_as_of = parent.balance_as_of
 
 		self._sync_from_splits()
+
+	def _validate_category(self):
+		from lyqd.setup.payment_category import resolve_payment_category
+
+		if not self.company:
+			return
+		# Accept label or Link name from SPA / import / recommendations
+		self.category = resolve_payment_category(
+			self.company,
+			self.category or "Other",
+			self.cash_effect,
+		)
+		row = frappe.db.get_value(
+			"LYQD Payment Category",
+			self.category,
+			["company", "disabled", "allow_outflow", "allow_inflow"],
+			as_dict=True,
+		)
+		if not row:
+			frappe.throw(frappe._("Payment Category {0} not found").format(self.category))
+		if row.company != self.company:
+			frappe.throw(frappe._("Category must belong to the same company as the payment."))
+		if int(row.disabled or 0):
+			frappe.throw(frappe._("Category {0} is disabled.").format(self.category))
+		effect = self.cash_effect or "Outflow"
+		if effect == "Outflow" and not int(row.allow_outflow or 0):
+			frappe.throw(
+				frappe._("Category {0} is not allowed for Outflow payments.").format(
+					self.category
+				)
+			)
+		if effect in ("Inflow", "Setoff") and not int(row.allow_inflow or 0):
+			frappe.throw(
+				frappe._("Category {0} is not allowed for Inflow payments.").format(
+					self.category
+				)
+			)
 
 	def _sync_from_splits(self):
 		"""Keep header amount / due / status aligned with the GL split schedule table."""

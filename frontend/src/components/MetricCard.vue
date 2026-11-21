@@ -12,29 +12,11 @@
     <div class="flex items-start justify-between gap-2">
       <div class="flex min-w-0 items-center gap-1">
         <div class="min-w-0 text-xs font-medium text-gray-500">{{ label }}</div>
-        <Popover
-          v-if="info"
-          class="shrink-0 items-center"
-          trigger="hover"
-          placement="bottom-start"
-          :leave-delay="0.12"
-        >
-          <template #target>
-            <button
-              type="button"
-              class="inline-flex size-5 shrink-0 items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-700"
-              aria-label="More details"
-              @click.stop.prevent
-            >
-              <FeatherIcon name="info" class="h-3.5 w-3.5" />
-            </button>
-          </template>
-          <template #body-main>
-            <div class="w-56 max-w-[85vw] p-3 text-left text-xs leading-relaxed text-gray-600">
-              {{ info }}
-            </div>
-          </template>
-        </Popover>
+        <InfoHover v-if="info" side="bottom" align="start">
+          <div class="w-56 max-w-[85vw] p-3 text-left text-xs leading-relaxed text-gray-600">
+            {{ info }}
+          </div>
+        </InfoHover>
       </div>
       <FeatherIcon
         v-if="to"
@@ -51,7 +33,7 @@
 
 <script setup>
 import { computed } from 'vue'
-import { Popover } from 'frappe-ui'
+import InfoHover from '@/components/InfoHover.vue'
 import { formatINRCompact } from '@/utils/format'
 
 const props = defineProps({

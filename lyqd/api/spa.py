@@ -864,10 +864,13 @@ def list_upcoming_payments(company: str | None = None) -> list[dict]:
 	"""SPA plan list: all statuses, with Planned recurring series expanded to the policy horizon."""
 	from frappe.utils import cint
 
-	from lyqd.cash.recurring import expand_recurring_row
+	from lyqd.cash.recurring import catch_up_daily_recurring, expand_recurring_row
 
 	company = company or _default_company()
 	as_of = today()
+	# Persist Daily catch-up so plan list / Record daily stay on today
+	if company:
+		catch_up_daily_recurring(company, as_of)
 	policy = get_policy(company)
 	horizon_days = parse_horizon_days(policy.get("default_forecast_horizon_days") or 7)
 	rows = frappe.get_all(
@@ -963,7 +966,113 @@ def list_upcoming_payments(company: str | None = None) -> list[dict]:
 			)
 		else:
 			row["_has_splits"] = 0
+
+	from lyqd.setup.payment_category import labelize_category_fields
+
+	labelize_category_fields(rows)
+	for row in rows:
+		if row.get("_children"):
+			labelize_category_fields(row["_children"])
 	return rows
+
+
+@frappe.whitelist()
+def list_payment_categories(
+	company: str | None = None,
+	cash_effect: str | None = None,
+	include_disabled: int | str | None = 0,
+) -> list[dict]:
+	"""SPA category picker / Settings: company-scoped, optional direction filter."""
+	from frappe.utils import cint
+
+	from lyqd.setup.payment_category import list_payment_categories as _list
+
+	company = company or _default_company()
+	return _list(
+		company,
+		cash_effect,
+		include_disabled=bool(cint(include_disabled)),
+	)
+
+
+@frappe.whitelist()
+def save_payment_category(
+	company: str | None = None,
+	category_name: str | None = None,
+	allow_outflow: int | str | None = 1,
+	allow_inflow: int | str | None = 0,
+	disabled: int | str | None = 0,
+	name: str | None = None,
+) -> dict:
+	"""Create or update a company Payment Category (SPA Link create + Settings)."""
+	from frappe.utils import cint
+
+	from lyqd.setup.payment_category import ensure_default_payment_categories
+
+	company = (company or _default_company() or "").strip()
+	if not company:
+		frappe.throw(_("Company is required"))
+	if not frappe.db.exists("LYQD Company", company):
+		frappe.throw(_("LYQD Company {0} not found").format(company))
+
+	ensure_default_payment_categories(company)
+	label = (category_name or "").strip()
+	if not label:
+		frappe.throw(_("Category name is required"))
+
+	allow_out = 1 if cint(allow_outflow) else 0
+	allow_in = 1 if cint(allow_inflow) else 0
+	if not allow_out and not allow_in:
+		frappe.throw(_("Enable Outflow and/or Inflow for this category."))
+
+	if name:
+		if not frappe.db.exists("LYQD Payment Category", name):
+			frappe.throw(_("Category {0} not found").format(name))
+		doc = frappe.get_doc("LYQD Payment Category", name)
+		if doc.company != company:
+			frappe.throw(_("Category belongs to another company"))
+		doc.category_name = label
+		doc.allow_outflow = allow_out
+		doc.allow_inflow = allow_in
+		doc.disabled = 1 if cint(disabled) else 0
+		doc.save()
+	else:
+		# Match existing by label → update flags instead of duplicate insert
+		existing = frappe.db.sql(
+			"""
+			select name from `tabLYQD Payment Category`
+			where company = %s and lower(category_name) = %s
+			limit 1
+			""",
+			(company, label.lower()),
+		)
+		if existing:
+			doc = frappe.get_doc("LYQD Payment Category", existing[0][0])
+			doc.allow_outflow = allow_out
+			doc.allow_inflow = allow_in
+			doc.disabled = 1 if cint(disabled) else 0
+			doc.save()
+		else:
+			doc = frappe.get_doc(
+				{
+					"doctype": "LYQD Payment Category",
+					"company": company,
+					"category_name": label,
+					"allow_outflow": allow_out,
+					"allow_inflow": allow_in,
+					"disabled": 1 if cint(disabled) else 0,
+				}
+			)
+			doc.insert()
+
+	return {
+		"name": doc.name,
+		"category_name": doc.category_name,
+		"allow_outflow": int(doc.allow_outflow or 0),
+		"allow_inflow": int(doc.allow_inflow or 0),
+		"disabled": int(doc.disabled or 0),
+		"company": doc.company,
+	}
 
 
 @frappe.whitelist()
@@ -989,7 +1098,17 @@ def save_upcoming_payment(doc: str | dict | None = None) -> dict:
 			# keep existing company; SPA may send current company selector
 			pass
 		payment.title = (doc.get("title") or payment.title or "").strip()
-		payment.category = doc.get("category") or payment.category or "Other"
+		from lyqd.setup.payment_category import (
+			get_category_label,
+			resolve_payment_category,
+		)
+
+		# SPA may send label or Link name; persist Link
+		raw_cat = doc.get("category") or get_category_label(payment.category) or "Other"
+		effect_hint = doc.get("cash_effect") or payment.cash_effect
+		payment.category = resolve_payment_category(
+			payment.company or company, raw_cat, effect_hint
+		)
 		has_schedule = bool(payment.get("splits"))
 		# Child due dates follow parent — ignore SPA edits on nested rows.
 		# Split schedules own amount / due via _sync_from_splits — ignore SPA amount.
@@ -1074,7 +1193,10 @@ def save_upcoming_payment(doc: str | dict | None = None) -> dict:
 		if not payment.title:
 			frappe.throw(_("Title is required"))
 		payment.save()
-		return payment.as_dict()
+		out = payment.as_dict()
+		out["category"] = get_category_label(payment.category)
+		out["category_id"] = payment.category
+		return out
 
 	cash_effect = doc.get("cash_effect") if doc.get("cash_effect") in allowed_effects else "Outflow"
 	is_recurring = 1 if cint(doc.get("is_recurring")) else 0
@@ -1085,12 +1207,17 @@ def save_upcoming_payment(doc: str | dict | None = None) -> dict:
 	probability = 100
 	if cash_effect in ("Inflow", "Setoff"):
 		probability = min(max(flt(doc.get("probability") if doc.get("probability") is not None else 100), 0), 100)
+	from lyqd.setup.payment_category import get_category_label, resolve_payment_category
+
+	category_link = resolve_payment_category(
+		company, doc.get("category") or "Other", cash_effect
+	)
 	payment = frappe.get_doc(
 		{
 			"doctype": "LYQD Upcoming Payment",
 			"company": company,
 			"title": (doc.get("title") or "").strip(),
-			"category": doc.get("category") or "Other",
+			"category": category_link,
 			"due_date": doc.get("due_date") or today(),
 			"amount": flt(doc.get("period_amount") if doc.get("period_amount") is not None else doc.get("amount")),
 			"cash_effect": cash_effect,
@@ -1107,7 +1234,10 @@ def save_upcoming_payment(doc: str | dict | None = None) -> dict:
 	if not payment.title:
 		frappe.throw(_("Title is required"))
 	payment.insert()
-	return payment.as_dict()
+	out = payment.as_dict()
+	out["category"] = get_category_label(payment.category)
+	out["category_id"] = payment.category
+	return out
 
 
 @frappe.whitelist()

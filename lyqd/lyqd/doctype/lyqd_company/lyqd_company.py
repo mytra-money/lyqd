@@ -167,3 +167,8 @@ class LYQDCompany(Document):
 
 	def before_insert(self):
 		self.apply_settings_defaults()
+
+	def after_insert(self):
+		from lyqd.setup.payment_category import ensure_default_payment_categories
+
+		ensure_default_payment_categories(self.name)

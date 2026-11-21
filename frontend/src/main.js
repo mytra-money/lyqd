@@ -8,9 +8,7 @@ import {
   FormControl,
   TextInput,
   Checkbox,
-  Dialog,
   Badge,
-  FeatherIcon,
   Avatar,
   Dropdown,
   setConfig,
@@ -19,6 +17,8 @@ import {
 
 import App from './App.vue'
 import router from './router'
+import Dialog from '@/components/Dialog.vue'
+import FeatherIcon from '@/components/FeatherIcon.vue'
 import { installToastAutoDismiss } from '@/utils/toast'
 
 installToastAutoDismiss()

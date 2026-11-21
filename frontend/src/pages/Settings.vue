@@ -2,9 +2,16 @@
   <div>
     <PageHeader
       title="Settings"
-      subtitle="Integrations, liquidity, banks, and investment account."
+      subtitle="Integrations, liquidity, banks, categories, and investment account."
     >
-      <Button variant="solid" :loading="saving" @click="saveActive">Save</Button>
+      <Button
+        v-if="activeTab !== 'categories'"
+        variant="solid"
+        :loading="saving"
+        @click="saveActive"
+      >
+        Save
+      </Button>
     </PageHeader>
 
     <div class="flex flex-col gap-4 lg:flex-row">
@@ -286,6 +293,92 @@
           />
         </div>
 
+        <!-- Payment categories -->
+        <div
+          v-else-if="activeTab === 'categories'"
+          class="space-y-4 rounded-md border border-gray-200 bg-white p-4"
+        >
+          <div class="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 class="text-base font-semibold text-gray-900">Payment categories</h2>
+              <p class="mt-1 text-xs text-gray-500">
+                Per company. Outgoing / incoming flags control which categories appear when
+                adding a payment. Defaults are seeded automatically.
+              </p>
+            </div>
+            <div class="flex shrink-0 flex-wrap items-center gap-2">
+              <FormControl
+                v-model="categoryFilter"
+                class="min-w-0 w-full sm:w-auto sm:min-w-[9.5rem] [&_button]:w-full"
+                type="select"
+                size="sm"
+                :options="categoryFilterOptions"
+              />
+              <Button
+                variant="outline"
+                :loading="categoriesLoading"
+                @click="loadCategories"
+              >
+                Reload
+              </Button>
+              <Button variant="solid" @click="openNewCategory">Add category</Button>
+            </div>
+          </div>
+
+          <p v-if="!company.current" class="text-sm text-gray-500">
+            Select a company to manage categories.
+          </p>
+          <p
+            v-else-if="!categoriesLoading && !categoryRows.length"
+            class="text-sm text-gray-500"
+          >
+            No categories yet.
+          </p>
+          <p
+            v-else-if="!categoriesLoading && !filteredCategoryRows.length"
+            class="text-sm text-gray-500"
+          >
+            No categories match this filter.
+          </p>
+          <ul
+            v-else
+            class="divide-y divide-gray-100 overflow-hidden rounded-md border border-gray-200"
+          >
+            <li
+              v-for="row in filteredCategoryRows"
+              :key="row.name"
+              class="flex flex-col gap-2 bg-white px-3 py-3 sm:flex-row sm:items-center sm:justify-between"
+              :class="{ 'opacity-60': row.disabled }"
+            >
+              <div class="min-w-0">
+                <div class="font-medium text-gray-900">{{ row.category_name }}</div>
+                <div class="mt-0.5 flex flex-wrap items-center gap-1">
+                  <span
+                    v-if="row.allow_outflow"
+                    class="rounded px-1 py-px text-[10px] font-medium leading-4 text-red-700 bg-red-50"
+                    >Outflow</span
+                  >
+                  <span
+                    v-if="row.allow_inflow"
+                    class="rounded px-1 py-px text-[10px] font-medium leading-4 text-green-800 bg-green-50"
+                    >Inflow</span
+                  >
+                  <span
+                    v-if="row.disabled"
+                    class="rounded bg-amber-50 px-1 py-px text-[10px] font-medium leading-4 text-amber-900"
+                    >Disabled</span
+                  >
+                </div>
+              </div>
+              <div class="flex shrink-0 gap-2">
+                <Button size="sm" variant="outline" @click="openEditCategory(row)">
+                  Edit
+                </Button>
+              </div>
+            </li>
+          </ul>
+        </div>
+
         <div v-else class="space-y-4 rounded-md border border-gray-200 bg-white p-4">
           <h3 class="text-sm font-semibold text-gray-900">Investment account</h3>
 
@@ -415,6 +508,43 @@
         <Button variant="outline" @click="showFacilityEdit = false">Cancel</Button>
       </template>
     </Dialog>
+
+    <Dialog
+      v-model="showCategoryEdit"
+      :options="{
+        title: categoryEdit.name ? 'Edit category' : 'New category',
+        size: 'sm',
+      }"
+    >
+      <template #body-content>
+        <div class="space-y-3">
+          <FormControl
+            v-model="categoryEdit.category_name"
+            label="Category name"
+            required
+          />
+          <Checkbox
+            v-model="categoryEdit.allow_outflow"
+            label="Allow for outgoing (pay)"
+          />
+          <Checkbox
+            v-model="categoryEdit.allow_inflow"
+            label="Allow for incoming (receive)"
+          />
+          <Checkbox
+            v-if="categoryEdit.name"
+            v-model="categoryEdit.disabled"
+            label="Disabled (hide from payment forms)"
+          />
+        </div>
+      </template>
+      <template #actions>
+        <Button variant="solid" :loading="savingCategory" @click="saveCategoryEdit">
+          Save
+        </Button>
+        <Button variant="outline" @click="showCategoryEdit = false">Cancel</Button>
+      </template>
+    </Dialog>
   </div>
 </template>
 
@@ -426,6 +556,7 @@ import { toast } from '@/utils/toast'
 import PageHeader from '@/components/PageHeader.vue'
 import BankAccountCards from '@/components/BankAccountCards.vue'
 import CurrencyControl from '@/components/CurrencyControl.vue'
+import Dialog from '@/components/Dialog.vue'
 import { useCompanyStore } from '@/stores/company'
 import { LYQD_INVESTMENT_ACCOUNT_WHATSAPP_URL } from '@/utils/investmentAccount'
 
@@ -449,8 +580,110 @@ const tabs = [
   { id: 'integrations', label: 'Integrations' },
   { id: 'liquidity', label: 'Liquidity' },
   { id: 'banks', label: 'Banks' },
+  { id: 'categories', label: 'Categories' },
   { id: 'investment', label: 'Investment account' },
 ]
+
+const categoriesLoading = ref(false)
+const categoryRows = ref([])
+const categoryFilter = ref('all')
+const showCategoryEdit = ref(false)
+const savingCategory = ref(false)
+const categoryEdit = reactive({
+  name: '',
+  category_name: '',
+  allow_outflow: true,
+  allow_inflow: false,
+  disabled: false,
+})
+
+const categoryFilterOptions = [
+  { label: 'All', value: 'all' },
+  { label: 'Outflow', value: 'outflow' },
+  { label: 'Inflow', value: 'inflow' },
+  { label: 'Disabled', value: 'disabled' },
+]
+
+const filteredCategoryRows = computed(() => {
+  const rows = categoryRows.value || []
+  const f = categoryFilter.value
+  if (f === 'outflow') return rows.filter((r) => r.allow_outflow)
+  if (f === 'inflow') return rows.filter((r) => r.allow_inflow)
+  if (f === 'disabled') return rows.filter((r) => r.disabled)
+  return rows
+})
+
+async function loadCategories() {
+  if (!company.current) {
+    categoryRows.value = []
+    return
+  }
+  categoriesLoading.value = true
+  try {
+    const rows = await call('lyqd.api.spa.list_payment_categories', {
+      company: company.current,
+      include_disabled: 1,
+    })
+    categoryRows.value = rows || []
+  } catch (e) {
+    toast.error(e?.messages?.[0] || e?.message || 'Could not load categories')
+    categoryRows.value = []
+  } finally {
+    categoriesLoading.value = false
+  }
+}
+
+function openNewCategory() {
+  Object.assign(categoryEdit, {
+    name: '',
+    category_name: '',
+    allow_outflow: true,
+    allow_inflow: true,
+    disabled: false,
+  })
+  showCategoryEdit.value = true
+}
+
+function openEditCategory(row) {
+  Object.assign(categoryEdit, {
+    name: row.name,
+    category_name: row.category_name,
+    allow_outflow: !!row.allow_outflow,
+    allow_inflow: !!row.allow_inflow,
+    disabled: !!row.disabled,
+  })
+  showCategoryEdit.value = true
+}
+
+async function saveCategoryEdit() {
+  const label = (categoryEdit.category_name || '').trim()
+  if (!label) {
+    toast.error('Category name is required')
+    return
+  }
+  if (!categoryEdit.allow_outflow && !categoryEdit.allow_inflow) {
+    toast.error('Enable Outflow and/or Inflow')
+    return
+  }
+  savingCategory.value = true
+  try {
+    await call('lyqd.api.spa.save_payment_category', {
+      company: company.current,
+      name: categoryEdit.name || undefined,
+      category_name: label,
+      allow_outflow: categoryEdit.allow_outflow ? 1 : 0,
+      allow_inflow: categoryEdit.allow_inflow ? 1 : 0,
+      disabled: categoryEdit.disabled ? 1 : 0,
+    })
+    toast.success('Category saved')
+    showCategoryEdit.value = false
+    await loadCategories()
+  } catch (e) {
+    toast.error(e?.messages?.[0] || e?.message || 'Could not save category')
+  } finally {
+    savingCategory.value = false
+  }
+}
 
 const accountSearch = ref('')
 const accountRootFilter = ref('All')
@@ -961,9 +1194,14 @@ watch(
     bankOptions.reload()
     loadCompanyErp(c)
     if (accountsPickerReady.value) accountOptions.reload()
+    if (activeTab.value === 'categories') loadCategories()
   },
   { immediate: true },
 )
+
+watch(activeTab, (tab) => {
+  if (tab === 'categories') loadCategories()
+})
 
 watch(
   () => erpForm.source,

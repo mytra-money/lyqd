@@ -1,53 +1,45 @@
 /**
- * frappe-ui toast + reka-ui ToastRoot can stay open when the viewport
- * pause/resume cycle sticks. Schedule an explicit remove so toasts dismiss.
- *
- * Always import `{ toast }` from `@/utils/toast` (not `frappe-ui`) so create
- * and `<Toasts />` share one toastsState instance.
+ * LYQD toast helper on frappe-ui 1.x (vue-sonner).
+ * Keeps the old call shape: toast.success(message) / toast.error(message).
  */
-import { toast as baseToast, Toasts } from '@/utils/frappeToastHost'
+import { toast as baseToast } from '@/utils/frappeToastHost'
 
-export { Toasts }
+export { ToastProvider } from '@/utils/frappeToastHost'
 
-const DEFAULT_SECONDS = 5
+const DEFAULT_MS = 5000
 
-/** Original create before any LYQD patching (avoids recursive install). */
-const originalCreate = baseToast.create.bind(baseToast)
-
-function dismissAfter(id, seconds) {
-  if (!id || !(seconds > 0)) return
-  window.setTimeout(() => {
-    try {
-      baseToast.remove(id)
-    } catch (_) {
-      /* toast already gone */
-    }
-  }, seconds * 1000)
-}
-
-function durationSeconds(options = {}) {
+function durationMs(options = {}) {
   if (options.duration != null && options.duration !== '') {
     const n = Number(options.duration)
-    return Number.isFinite(n) ? n : DEFAULT_SECONDS
+    // Legacy LYQD used seconds; sonner uses ms. Treat small numbers as seconds.
+    if (!Number.isFinite(n)) return DEFAULT_MS
+    return n > 0 && n <= 60 ? n * 1000 : n
   }
-  return DEFAULT_SECONDS
+  return DEFAULT_MS
+}
+
+function withDuration(options = {}) {
+  const { duration, ...rest } = options
+  return { ...rest, duration: durationMs(options) }
 }
 
 function show(type, message, options = {}) {
-  const id = originalCreate({ message, type, ...options })
-  dismissAfter(id, durationSeconds(options))
-  return id
+  const data = withDuration(options)
+  if (type === 'success') return baseToast.success(message, data)
+  if (type === 'error') return baseToast.error(message, data)
+  if (type === 'warning') return baseToast.warning(message, data)
+  if (type === 'info') return baseToast.info(message, data)
+  return baseToast(message, data)
 }
 
-/** Same API as frappe-ui `toast`, with guaranteed auto-dismiss. */
 export const toast = {
+  /** Legacy frappe-ui 0.1 shape: { message, type, duration? } */
   create: (options = {}) => {
-    const id = originalCreate(options)
-    dismissAfter(id, durationSeconds(options))
-    return id
+    const { message = '', type, ...rest } = options
+    return show(type, message, rest)
   },
-  remove: (...args) => baseToast.remove(...args),
-  removeAll: (...args) => baseToast.removeAll(...args),
+  remove: (...args) => baseToast.dismiss?.(...args),
+  removeAll: () => baseToast.dismiss?.(),
   promise: (...args) => baseToast.promise(...args),
   success: (message, options = {}) => show('success', message, options),
   error: (message, options = {}) => show('error', message, options),
@@ -55,14 +47,5 @@ export const toast = {
   info: (message, options = {}) => show('info', message, options),
 }
 
-/**
- * Patch the host toast object used by Toasts.
- * Also best-effort patch `frappe-ui`'s export for any leftover imports.
- */
-export function installToastAutoDismiss() {
-  baseToast.success = toast.success
-  baseToast.error = toast.error
-  baseToast.warning = toast.warning
-  baseToast.info = toast.info
-  baseToast.create = toast.create
-}
+/** No-op: sonner dismisses on its own; kept for main.js bootstrap. */
+export function installToastAutoDismiss() {}

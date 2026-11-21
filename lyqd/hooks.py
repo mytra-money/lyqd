@@ -31,6 +31,7 @@ after_migrate = "lyqd.setup.install.after_migrate"
 permission_query_conditions = {
 	"LYQD Company": "lyqd.setup.permissions.get_lyqd_company_list_query",
 	"LYQD Bank Account": "lyqd.setup.permissions.get_lyqd_bank_account_query",
+	"LYQD Payment Category": "lyqd.setup.permissions.get_lyqd_payment_category_query",
 	"LYQD Upcoming Payment": "lyqd.setup.permissions.get_lyqd_upcoming_payment_query",
 	"LYQD Surplus Run": "lyqd.setup.permissions.get_lyqd_surplus_run_query",
 	"LYQD Draft Proposal": "lyqd.setup.permissions.get_lyqd_draft_proposal_query",
@@ -41,6 +42,7 @@ permission_query_conditions = {
 has_permission = {
 	"LYQD Company": "lyqd.setup.permissions.has_company_permission",
 	"LYQD Bank Account": "lyqd.setup.permissions.has_company_permission",
+	"LYQD Payment Category": "lyqd.setup.permissions.has_company_permission",
 	"LYQD Upcoming Payment": "lyqd.setup.permissions.has_company_permission",
 	"LYQD Surplus Run": "lyqd.setup.permissions.has_company_permission",
 	"LYQD Draft Proposal": "lyqd.setup.permissions.has_company_permission",

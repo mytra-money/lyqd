@@ -44,11 +44,11 @@ Cash position  →  Commitments  →  Free cash  →  Proposal  →  Portfolio
 
 ### Cash position
 
-Your morning view: bank cash, portfolio, commitments in the next few days, and free cash (or shortfall).
+Your morning view: bank cash, incoming, commitments, free cash (or shortfall), and a cash-flow chart for the horizon.
 
 ![Cash position](docs/screenshots/cash-position-pwctech-laptop.jpg)
 
-Use the day picker (7 / 14 / 30 / 60 days) to change how far ahead you look.
+Use the day picker (7 / 14 / 30 / 60 days) — or type any horizon — to change how far ahead you look.
 
 ### Commitments
 
@@ -120,6 +120,7 @@ Open **Settings** from the menu to configure your company.
 | **Integrations** | Optional link to ERPNext (this site or another site) for payment suggestions and bank account names |
 | **Liquidity** | Safety buffer, restricted cash, and default forecast days |
 | **Banks** | Which bank accounts count toward free cash |
+| **Categories** | Payment categories per company (Outflow / Inflow flags); defaults are seeded automatically |
 | **Investment account** | Request activation (handled by Mytra) |
 
 You can manage more than one company. Switch companies from the top of the app.

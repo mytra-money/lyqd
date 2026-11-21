@@ -6,10 +6,11 @@ import unittest
 from types import SimpleNamespace
 
 from frappe.tests import UnitTestCase
-from frappe.utils import add_days, add_months, flt, today
+from frappe.utils import add_days, add_months, flt, getdate, today
 
 from lyqd.cash.recurring import (
 	advance_recurring_after_paid,
+	catch_up_daily_recurring,
 	expand_recurring_row,
 	iter_occurrence_dates,
 	next_due_after,
@@ -90,6 +91,21 @@ class TestLYQDRecurring(UnitTestCase):
 		)
 		advance_recurring_after_paid(payment)
 		self.assertEqual(payment.status, "Cancelled")
+
+	def test_advance_daily_snaps_overdue_then_tomorrow(self):
+		"""Record daily on a stale due: skip missed days → tomorrow from today."""
+		as_of = getdate(today())
+		payment = SimpleNamespace(
+			is_recurring=1,
+			frequency="Daily",
+			due_date=add_days(as_of, -5),
+			recurrence_end=None,
+			status="Planned",
+			notes="",
+		)
+		advance_recurring_after_paid(payment)
+		self.assertEqual(payment.status, "Planned")
+		self.assertEqual(str(payment.due_date), str(add_days(as_of, 1)))
 
 
 class TestLYQDInflowSurplus(UnitTestCase):

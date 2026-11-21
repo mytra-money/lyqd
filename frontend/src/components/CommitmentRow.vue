@@ -42,23 +42,8 @@
           >
             {{ nestBadge }}
           </span>
-          <Popover
-            class="shrink-0 items-center"
-            trigger="hover"
-            placement="bottom-end"
-            :leave-delay="0.12"
-          >
-            <template #target>
-              <button
-                type="button"
-                class="inline-flex size-5 shrink-0 items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-700"
-                aria-label="More details"
-                @click.stop.prevent
-              >
-                <FeatherIcon name="info" class="h-3.5 w-3.5" />
-              </button>
-            </template>
-            <template #body-main="{ close }">
+          <InfoHover side="bottom" align="end">
+            <template #default="{ close }">
               <div class="w-64 max-w-[85vw] p-3 text-left">
                 <div class="mb-2 text-sm font-semibold text-gray-900">{{ row.title }}</div>
                 <dl class="space-y-1.5 text-xs text-gray-600">
@@ -107,7 +92,7 @@
                 </div>
               </div>
             </template>
-          </Popover>
+          </InfoHover>
         </div>
 
         <div class="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-gray-500">
@@ -212,19 +197,27 @@
             :disabled="marking"
             :title="
               row.is_recurring
-                ? `Record ${(row.frequency || 'Monthly').toLowerCase()} · advance next due`
+                ? row.frequency === 'Daily'
+                  ? 'Record daily · mark today landed, next due tomorrow'
+                  : `Record ${(row.frequency || 'Monthly').toLowerCase()} · advance next due`
                 : 'Mark paid'
             "
             :aria-label="
               row.is_recurring
-                ? `Record ${(row.frequency || 'Monthly').toLowerCase()}`
+                ? row.frequency === 'Daily'
+                  ? 'Record daily'
+                  : `Record ${(row.frequency || 'Monthly').toLowerCase()}`
                 : 'Mark paid'
             "
             @click="emit('mark-paid')"
           >
             <FeatherIcon name="check" class="h-3.5 w-3.5" />
             <span class="hidden sm:inline">{{
-              row.is_recurring ? row.frequency || 'Monthly' : 'Paid'
+              row.is_recurring
+                ? row.frequency === 'Daily'
+                  ? 'Record daily'
+                  : row.frequency || 'Monthly'
+                : 'Paid'
             }}</span>
           </button>
           <button
@@ -335,7 +328,8 @@
 
 <script setup>
 import { computed } from 'vue'
-import { Button, Popover } from 'frappe-ui'
+import { Button } from 'frappe-ui'
+import InfoHover from '@/components/InfoHover.vue'
 import { isMobileView } from '@/composables/useMobile'
 import { formatDate, formatINR } from '@/utils/format'
 import {

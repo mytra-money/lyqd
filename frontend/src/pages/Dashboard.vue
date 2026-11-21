@@ -181,6 +181,62 @@
         </div>
       </div>
 
+      <!-- Horizon charts: full-width cash flow + category donuts.
+           Height must be on an outer box — ChartContainer is always h-full,
+           so class="h-80" on the chart itself loses to h-full and stays 0×0. -->
+      <div
+        v-if="cashFlowSeries.length || commitmentCategoryMix.length || incomingCategoryMix.length"
+        class="mb-5 space-y-3"
+      >
+        <div class="rounded-md border border-gray-200 bg-white p-4">
+          <div class="h-80 w-full">
+            <BarChart
+              title="Cash flow"
+              :subtitle="cashFlowSubtitle"
+              :data="cashFlowSeries"
+              x="label"
+              :y="['commitments', 'incoming']"
+              :y2="['free_cash', 'expected_cash']"
+              stacked
+              :series-config="cashFlowSeriesConfig"
+              :x-axis="{ type: 'category' }"
+              :y-axis="{ format: formatChartINR }"
+              :y2-axis="{ format: formatChartINR }"
+            />
+          </div>
+        </div>
+        <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+          <div class="rounded-md border border-gray-200 bg-white p-4">
+            <div class="h-72 w-full">
+              <DonutChart
+                title="Commitments by category"
+                :subtitle="`${d.horizon_days}d horizon`"
+                :data="commitmentCategoryMix"
+                category="category"
+                value="amount"
+                center-label="Commitments"
+                :format="formatChartINR"
+                :max-slices="7"
+              />
+            </div>
+          </div>
+          <div class="rounded-md border border-gray-200 bg-white p-4">
+            <div class="h-72 w-full">
+              <DonutChart
+                title="Incoming by category"
+                :subtitle="`${d.horizon_days}d · expected`"
+                :data="incomingCategoryMix"
+                category="category"
+                value="amount"
+                center-label="Incoming"
+                :format="formatChartINR"
+                :max-slices="7"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- Plan work surface: commitments + incoming in horizon -->
       <section id="commitments" class="rounded-md border border-gray-200 bg-white">
         <header class="border-b border-gray-100 px-4 py-3">
@@ -386,21 +442,20 @@
           </template>
           <template v-else>
             <FormControl
-              v-model="form.category"
-              type="select"
-              label="Category"
-              :options="categoryOptions"
-              @update:model-value="onCategoryChange"
-            />
-            <FormControl v-model="form.title" label="Title" />
-            <FormControl
               v-model="form.cash_effect"
               type="select"
-              label="Cash effect"
+              label="Type"
               :options="cashEffectOptions"
               :disabled="!!form.parent_payment || !!form.source_doctype"
               @update:model-value="onCashEffectChange"
             />
+            <PaymentCategoryLink
+              v-model="form.category"
+              :company="company.current"
+              :cash-effect="form.cash_effect"
+              @change="onCategoryChange"
+            />
+            <FormControl v-model="form.title" label="Title" />
             <FormControl
               v-model="form.due_date"
               type="date"
@@ -480,6 +535,7 @@
 <script setup>
 import { computed, onActivated, reactive, ref, watch } from 'vue'
 import { call } from 'frappe-ui'
+import { BarChart, DonutChart } from 'frappe-ui/charts'
 import { toast } from '@/utils/toast'
 import CommitmentRow from '@/components/CommitmentRow.vue'
 import CurrencyControl from '@/components/CurrencyControl.vue'
@@ -499,6 +555,15 @@ import {
   nestPlanRows,
   planSignedNet,
 } from '@/utils/planNest'
+import {
+  CASH_FLOW_MAX_BARS,
+  buildCommitmentCategoryMix,
+  buildHorizonCashFlowSeries,
+  buildIncomingCategoryMix,
+  formatChartINR,
+} from '@/utils/planCharts'
+import PaymentCategoryLink from '@/components/PaymentCategoryLink.vue'
+import { DEFAULT_CATEGORY_LABELS } from '@/utils/paymentCategories'
 
 defineOptions({ name: 'Dashboard' })
 
@@ -515,20 +580,9 @@ const expandedGroups = ref({})
 const showNew = ref(false)
 const saving = ref(false)
 const marking = ref(null)
-const categoryOptions = [
-  'Salary',
-  'Import-LC',
-  'Vendor',
-  'Customer',
-  'Tax',
-  'Loan',
-  'FD Maturity',
-  'Loan Proceeds',
-  'Other',
-].map((c) => ({ label: c, value: c }))
 const cashEffectOptions = [
-  { label: 'Outflow (pay)', value: 'Outflow' },
-  { label: 'Inflow (receive)', value: 'Inflow' },
+  { label: 'Outgoing (pay)', value: 'Outflow' },
+  { label: 'Incoming (receive)', value: 'Inflow' },
 ]
 const frequencyOptions = ['Daily', 'Weekly', 'Monthly', 'Quarterly'].map((f) => ({
   label: f,
@@ -536,7 +590,7 @@ const frequencyOptions = ['Daily', 'Weekly', 'Monthly', 'Quarterly'].map((f) => 
 }))
 const statusOptions = ['Planned', 'Paid', 'Cancelled'].map((s) => ({ label: s, value: s }))
 
-const categoryValues = categoryOptions.map((c) => c.value)
+const categoryValues = computed(() => DEFAULT_CATEGORY_LABELS)
 
 const emptyForm = () => ({
   name: null,
@@ -651,7 +705,7 @@ const expectedLiquidityInfo = computed(() => {
 
 function onCategoryChange(value) {
   const next = value || form.category
-  if (!form.title || categoryValues.includes(form.title)) {
+  if (!form.title || categoryValues.value.includes(form.title)) {
     form.title = next
   }
 }
@@ -730,6 +784,79 @@ const planRows = computed(() => {
   const incoming = d.value?.incoming || []
   return [...out, ...incoming]
 })
+
+const policyReserves = computed(
+  () =>
+    Number(d.value?.min_liquidity_buffer || 0) + Number(d.value?.restricted_cash || 0),
+)
+
+const cashFlowSeries = computed(() => {
+  if (!d.value) return []
+  return buildHorizonCashFlowSeries({
+    rows: planRows.value,
+    asOf: asOfDate.value,
+    horizonDays: d.value.horizon_days,
+    bankCash: d.value.bank_cash,
+    policyReserves: policyReserves.value,
+  })
+})
+
+const commitmentCategoryMix = computed(() => {
+  if (!d.value) return []
+  return buildCommitmentCategoryMix({
+    rows: planRows.value,
+    asOf: asOfDate.value,
+    horizonDays: d.value.horizon_days,
+  })
+})
+
+const incomingCategoryMix = computed(() => {
+  if (!d.value) return []
+  return buildIncomingCategoryMix({
+    rows: planRows.value,
+    asOf: asOfDate.value,
+    horizonDays: d.value.horizon_days,
+  })
+})
+
+const cashFlowSubtitle = computed(() => {
+  const days = d.value?.horizon_days
+  if (days == null) return 'Bars: flows · Lines: free cash & expected'
+  const totalDays = Math.max(1, Number(days) + 1)
+  const bars = Math.min(totalDays, CASH_FLOW_MAX_BARS)
+  const perBar = Math.ceil(totalDays / bars)
+  const grain =
+    perBar <= 1 ? '1d bars' : perBar === 7 ? '~1w bars' : `~${perBar}d bars`
+  return `${days}d · ${bars} ${grain} · free cash excludes incoming · expected adds it`
+})
+
+const cashFlowSeriesConfig = {
+  commitments: {
+    label: 'Commitments',
+    stackName: 'flows',
+    color: 'var(--chart-categorical-1, #6366f1)',
+  },
+  incoming: {
+    label: 'Incoming (expected)',
+    stackName: 'flows',
+    color: 'var(--chart-categorical-3, #34d399)',
+  },
+  free_cash: {
+    label: 'Free cash',
+    type: 'line',
+    smooth: true,
+    showDataPoints: false,
+    color: 'var(--chart-categorical-5, #f59e0b)',
+  },
+  expected_cash: {
+    label: 'Expected cash',
+    type: 'line',
+    smooth: true,
+    dashed: true,
+    showDataPoints: false,
+    color: 'var(--chart-categorical-2, #0ea5e9)',
+  },
+}
 
 function isOverdue(u) {
   return isOverdueDue(u.due_date, asOfDate.value)

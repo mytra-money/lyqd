@@ -256,7 +256,10 @@ def get_planned_upcoming_payments(
 	of cycles that fall in the horizon (period amount kept as ``period_amount``).
 	Only Outflow totals reserve free cash; Inflow totals feed expected incoming.
 	"""
-	from lyqd.cash.recurring import expand_recurring_row
+	from lyqd.cash.recurring import catch_up_daily_recurring, expand_recurring_row
+
+	# Daily sales / etc.: snap overdue next-due to as_of before expanding
+	catch_up_daily_recurring(company, as_of)
 
 	end = getdate(add_days(getdate(as_of), horizon_days))
 	rows = frappe.get_all(
@@ -287,6 +290,9 @@ def get_planned_upcoming_payments(
 		],
 		order_by="due_date asc, amount desc",
 	)
+	from lyqd.setup.payment_category import labelize_category_fields
+
+	labelize_category_fields(rows)
 	# GL / voucher split schedules (child table) — expand Planned lines by due date
 	split_parents = [r.name for r in rows]
 	splits_by_parent: dict[str, list] = {}

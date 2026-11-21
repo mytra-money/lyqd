@@ -462,12 +462,11 @@
 
           <!-- Parent with split schedule: read-only ladder + per-line probability -->
           <template v-else-if="form.edit_mode === 'split_schedule'">
-            <FormControl
+            <PaymentCategoryLink
               v-model="form.category"
-              type="select"
-              label="Category"
-              :options="categoryOptions"
-              @update:model-value="onCategoryChange"
+              :company="company.current"
+              :cash-effect="form.cash_effect"
+              @change="onCategoryChange"
             />
             <FormControl v-model="form.title" label="Title" />
             <div
@@ -536,21 +535,20 @@
           <!-- Normal payment / accept -->
           <template v-else>
             <FormControl
-              v-model="form.category"
-              type="select"
-              label="Category"
-              :options="categoryOptions"
-              @update:model-value="onCategoryChange"
-            />
-            <FormControl v-model="form.title" label="Title" />
-            <FormControl
               v-model="form.cash_effect"
               type="select"
-              label="Cash effect"
+              label="Type"
               :options="cashEffectOptions"
               :disabled="!!form.parent_payment || !!form.source_doctype"
               @update:model-value="onCashEffectChange"
             />
+            <PaymentCategoryLink
+              v-model="form.category"
+              :company="company.current"
+              :cash-effect="form.cash_effect"
+              @change="onCategoryChange"
+            />
+            <FormControl v-model="form.title" label="Title" />
             <FormControl
               v-model="form.due_date"
               type="date"
@@ -888,6 +886,8 @@ import {
   recommendationKey,
   signedCashAmount,
 } from '@/utils/planNest'
+import PaymentCategoryLink from '@/components/PaymentCategoryLink.vue'
+import { DEFAULT_CATEGORY_LABELS } from '@/utils/paymentCategories'
 
 defineOptions({ name: 'Upcoming' })
 
@@ -989,20 +989,9 @@ const commitmentsSubtitle = computed(() =>
     : 'Plan on the left reserves free cash. From books on the right is optional until you add to plan.',
 )
 
-const categoryOptions = [
-  'Salary',
-  'Import-LC',
-  'Vendor',
-  'Customer',
-  'Tax',
-  'Loan',
-  'FD Maturity',
-  'Loan Proceeds',
-  'Other',
-].map((c) => ({ label: c, value: c }))
 const cashEffectOptions = [
-  { label: 'Outflow (pay)', value: 'Outflow' },
-  { label: 'Inflow (receive)', value: 'Inflow' },
+  { label: 'Outgoing (pay)', value: 'Outflow' },
+  { label: 'Incoming (receive)', value: 'Inflow' },
 ]
 const frequencyOptions = ['Daily', 'Weekly', 'Monthly', 'Quarterly'].map((f) => ({
   label: f,
@@ -1013,7 +1002,7 @@ const statusOptions = ['Planned', 'Paid', 'Cancelled', 'Ignored'].map((s) => ({
   value: s,
 }))
 
-const categoryValues = categoryOptions.map((c) => c.value)
+const categoryValues = computed(() => DEFAULT_CATEGORY_LABELS)
 
 const empty = () => ({
   name: null,
@@ -1059,7 +1048,7 @@ const splitScheduleTotal = computed(() =>
 function onCategoryChange(value) {
   const next = value || form.category
   // Keep title in sync until the user types a custom name
-  if (!form.title || categoryValues.includes(form.title)) {
+  if (!form.title || categoryValues.value.includes(form.title)) {
     form.title = next
   }
 }

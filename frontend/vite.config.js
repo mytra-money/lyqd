@@ -5,9 +5,8 @@ import frappeui from 'frappe-ui/vite'
 import { VitePWA } from 'vite-plugin-pwa'
 
 /**
- * frappe-ui Select defaults to item-aligned menus. In dialogs (e.g. Add payment
- * Category with "Other" selected), that opens the list upward. Force popper +
- * bottom so menus open below the trigger when space allows.
+ * frappe-ui Select defaults to item-aligned menus (opens over the trigger).
+ * Force popper mode so menus open below in dialogs.
  */
 function lyqdSelectPopper() {
   return {
@@ -17,56 +16,141 @@ function lyqdSelectPopper() {
       if (!id.includes('/frappe-ui/') || !id.endsWith('/Select/Select.vue')) {
         return null
       }
-      if (!code.includes('<SelectContent') || code.includes('position="popper"')) {
-        return null
-      }
-      return code.replace(
-        '<SelectContent\n        data-slot="content"\n        class="z-[100] origin-[var(--reka-select-content-transform-origin)]"',
-        `<SelectContent
-        position="popper"
-        side="bottom"
-        :side-offset="4"
-        :avoid-collisions="true"
-        data-slot="content"
-        class="z-[100] min-w-[var(--reka-select-trigger-width)] origin-[var(--reka-select-content-transform-origin)]"`,
+      if (!code.includes('usesPopperPosition')) return null
+      const next = code.replace(
+        /const usesPopperPosition = computed\(\s*\(\)\s*=>\s*[\s\S]*?\)/,
+        `const usesPopperPosition = computed(() => true)`,
       )
+      return next === code ? null : next
     },
   }
 }
 
-/** Calendar events default to click-to-open popovers; LYQD uses hover like plan-list info. */
+/**
+ * Reka HoverCard only closes via a grace-area polygon between trigger and
+ * content. Large calendar event panels make that hull cover most of the
+ * dialog, so the card never dismisses. Start the close timer on trigger
+ * leave; content pointerenter still cancels it via onOpen.
+ */
+function lyqdHoverCardLeaveFix() {
+  return {
+    name: 'lyqd-hovercard-leave-fix',
+    enforce: 'pre',
+    transform(code, id) {
+      if (!id.includes('HoverCardTrigger') || id.includes('?')) return null
+      if (code.includes('/* lyqd-leave-fix */')) return null
+      // Always start close on trigger leave. Content pointerenter cancels via onOpen.
+      // Reka's grace-area hull is too large for calendar event panels and never exits.
+      const needle =
+        'if (!rootContext.isPointerInTransitRef.value && !rootContext.open.value)'
+      if (!code.includes(needle)) return null
+      const next = code.replace(
+        /function handleLeave\(\) \{[\s\S]*?\n\t\t\}\n\t\tfunction handleTouch/,
+        `function handleLeave() {\n\t\t\t/* lyqd-leave-fix */\n\t\t\trootContext.onClose();\n\t\t}\n\t\tfunction handleTouch`,
+      )
+      // Vue SFC uses 2-space indent
+      const next2 =
+        next === code
+          ? code.replace(
+              /function handleLeave\(\) \{[\s\S]*?\n\}\n\nfunction handleTouch/,
+              `function handleLeave() {\n  /* lyqd-leave-fix */\n  rootContext.onClose()\n}\n\nfunction handleTouch`,
+            )
+          : next
+      if (next2 === code) return null
+      return { code: next2, map: null }
+    },
+  }
+}
+
+/**
+ * Calendar events: use HoverCard (open/close on hover with leave delay) instead
+ * of click Popover. Also stop month/week pills from forcing open stuck true.
+ */
 function lyqdCalendarHoverPopover() {
   return {
     name: 'lyqd-calendar-hover-popover',
     enforce: 'pre',
     transform(code, id) {
-      if (!id.includes('/frappe-ui/') || !id.includes('/Calendar/')) return null
-      const isMonth = id.endsWith('/CalendarMonthEvent.vue')
-      const isWeek = id.endsWith('/CalendarWeekDayEvent.vue')
-      if (!isMonth && !isWeek) return null
-      if (code.includes('trigger="hover"')) return null
+      // Match absolute or bare package ids (e.g. frappe-ui/experimental/...).
+      const isFrappeUi = id.includes('frappe-ui/')
+      const isCalendar = id.includes('/Calendar/') || id.includes('Calendar/')
+      if (!isFrappeUi || !isCalendar) return null
 
-      let next = code
-      if (isMonth) {
+      const isPopoverFile =
+        id.includes('/CalendarEventPopover.vue') ||
+        id.endsWith('CalendarEventPopover.vue')
+      if (isPopoverFile && !id.includes('?')) {
+        if (code.includes('/* lyqd-hovercard */')) return null
+        let next = code
         next = next.replace(
-          '<Popover placement="left" transition="default"',
-          '<Popover trigger="hover" :leave-delay="0.2" placement="left" transition="default"',
+          "import Popover from '#components/Popover/Popover.vue'",
+          "import HoverCard from '#components/HoverCard/HoverCard.vue'",
         )
+        next = next.replace(/<Popover\b/g, '<HoverCard')
+        next = next.replace(/<\/Popover>/g, '</HoverCard>')
+        // Drop controlled :open so HoverCard can close on pointer leave.
+        // Still sync open/close up for delete-shortcut registration.
         next = next.replace(
-          '@click.stop="handleEventClick($event, togglePopover, isOpen)"',
-          '@click.stop',
+          `:open="open"
+    :side="side"
+    align="center"
+    @update:open="(value) => !value && emit('update:open', false)"
+    @open="emit('open')"
+    @close="emit('close')"`,
+          `:side="side"
+    align="center"
+    :hover-delay="80"
+    :leave-delay="200"
+    @update:open="(value) => { emit('update:open', value); value ? emit('open') : emit('close') }"`,
         )
-      } else {
+        if (next === code || !next.includes('HoverCard')) return null
         next = next.replace(
-          '<Popover\n    :placement="activeView === \'Week\' ? \'left\' : \'center\'"\n    transition="default"',
-          '<Popover\n    trigger="hover"\n    :leave-delay="0.2"\n    :placement="activeView === \'Week\' ? \'left\' : \'center\'"\n    transition="default"',
+          '<script setup lang="ts">',
+          '<script setup lang="ts">\n/* lyqd-hovercard */',
         )
-        next = next.replace(
-          '@click.prevent="handleEventClick($event, togglePopover)"',
-          '@click.prevent.stop',
-        )
+        return { code: next, map: null }
       }
-      return next === code ? null : next
+
+      // HoverCard owns open state — don't force-open via click/mouseenter.
+      if (
+        (id.includes('/CalendarMonthEvent.vue') ||
+          id.endsWith('CalendarMonthEvent.vue')) &&
+        !id.includes('?')
+      ) {
+        if (code.includes('data-lyqd-hovercard')) return null
+        let next = code.replace(
+          /@click\.stop="\s*handleEventClick\(\s*\$event,\s*\(\)\s*=>\s*\(isPopoverOpen\s*=\s*!isPopoverOpen\),\s*isPopoverOpen,\s*\)\s*"/,
+          'data-lyqd-hovercard @click.stop',
+        )
+        next = next
+          .replace('@mouseenter="isPopoverOpen = true"\n      @click.stop', 'data-lyqd-hovercard @click.stop')
+          .replace(/\s*@mouseenter="isPopoverOpen = true"/g, '')
+        return next === code ? null : { code: next, map: null }
+      }
+
+      if (
+        (id.includes('/CalendarWeekDayEvent.vue') ||
+          id.endsWith('CalendarWeekDayEvent.vue')) &&
+        !id.includes('?')
+      ) {
+        if (code.includes('data-lyqd-hovercard')) return null
+        let next = code.replace(
+          /@click\.stop\.prevent="\s*handleEventClick\(\$event,\s*\(\)\s*=>\s*\(isPopoverOpen\s*=\s*!isPopoverOpen\)\)\s*"/,
+          'data-lyqd-hovercard @click.stop.prevent',
+        )
+        next = next
+          .replace(/\n\s*@mouseenter="isPopoverOpen = true"/g, '')
+          .replace(/\n\s*@mouseenter\.self="isPopoverOpen = true"/g, '')
+        if (next !== code) {
+          next = next.replace(
+            '<script setup lang="ts">',
+            '<script setup lang="ts">\n// data-lyqd-hovercard',
+          )
+        }
+        return next === code ? null : { code: next, map: null }
+      }
+
+      return null
     },
   }
 }
@@ -74,6 +158,7 @@ function lyqdCalendarHoverPopover() {
 export default defineConfig({
   plugins: [
     lyqdSelectPopper(),
+    lyqdHoverCardLeaveFix(),
     lyqdCalendarHoverPopover(),
     frappeui({
       frappeProxy: true,
@@ -94,7 +179,6 @@ export default defineConfig({
         enabled: false,
       },
       workbox: {
-        // Avoid workbox+terser "Unexpected early exit" on some Node builds.
         mode: 'development',
         cleanupOutdatedCaches: true,
         maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
@@ -109,18 +193,12 @@ export default defineConfig({
           },
         ],
       },
-      // Manifest is served by lyqd.api.spa.get_pwa_manifest (LMS-style), not embedded.
       manifest: false,
     }),
   ],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, 'src'),
-      // frappe-ui 0.1.x: toast API is root-exported; Toasts host is not.
-      'frappe-ui/toasts': path.resolve(
-        __dirname,
-        'node_modules/frappe-ui/src/components/Toast/index.ts',
-      ),
     },
   },
   build: {

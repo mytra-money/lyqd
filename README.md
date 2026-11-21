@@ -12,7 +12,7 @@
 
 </div>
 
-![Cash position](docs/screenshots/cash-position-pwctech-laptop.jpg)
+![Cash position](docs/screenshots/cash-position-pwctech-laptop.jpg?v=charts)
 
 
 LYQD helps finance teams see bank cash, upcoming payments, and free cash in one place — then create an **Invest** or **Redeem** instruction when they’re ready.
@@ -46,7 +46,7 @@ Cash position  →  Commitments  →  Free cash  →  Proposal  →  Portfolio
 
 Your morning view: bank cash, incoming, commitments, free cash (or shortfall), and a cash-flow chart for the horizon.
 
-![Cash position](docs/screenshots/cash-position-pwctech-laptop.jpg)
+![Cash position](docs/screenshots/cash-position-pwctech-laptop.jpg?v=charts)
 
 Use the day picker (7 / 14 / 30 / 60 days) — or type any horizon — to change how far ahead you look.
 

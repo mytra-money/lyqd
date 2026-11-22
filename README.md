@@ -54,7 +54,7 @@ Use the day picker (7 / 14 / 30 / 60 days) — or type any horizon — to change
 
 The payment plan that reserves cash — salaries, vendors, taxes, rent, and anything else you expect to pay.
 
-![Commitments](docs/screenshots/commitments-pwctech-laptop.jpg)
+![Commitments](docs/screenshots/commitments.png)
 
 You can:
 
@@ -65,9 +65,9 @@ You can:
 - Related payments (for example tax groups) can appear nested so the plan stays readable
 - With books connected: review **From books** suggestions, **Add to plan**, or **Ignore** (see [ERPNext integration](#erpnext-integration) below)
 
-![Plan calendar](docs/screenshots/plan-calendar-pwctech-laptop.jpg)
+![Plan calendar](docs/screenshots/calendar-view.png)
 
-![Add a manual payment](docs/screenshots/add-payment.jpg)
+![Add a manual payment](docs/screenshots/add-payments.png)
 
 
 ### Free cash
@@ -84,11 +84,11 @@ If free cash is negative, LYQD shows a **shortfall** — useful when you may nee
 
 ### Proposal (Invest / Redeem)
 
-Proposal is a **live** view of free cash for the selected horizon — suggested amount, the four building blocks (cash position, commitments, policy reserves, free cash), and short-term options (idle current account, short bank FD, liquid mutual fund). Illustrative horizon returns are shown for comparison only.
+Proposal is a **live** view of free cash for the selected horizon — suggested amount, the four building blocks (cash position, commitments, policy reserves, free cash), and short-term options for surplus funds (idle current account, short bank FD, liquid mutual fund). Illustrative horizon returns are shown for comparison only.
 
 When you create an instruction, LYQD freezes a snapshot of that free-cash math. Until then, numbers stay live as banks, the plan, or the horizon change.
 
-![Proposal](docs/screenshots/proposal-pwctech-laptop.jpg)
+![Proposal](docs/screenshots/invest-proposal.png)
 
 - **Invest** when free cash is positive for the horizon
 - **Redeem** when the horizon shows a shortfall (capped by liquid holdings)
@@ -96,6 +96,10 @@ When you create an instruction, LYQD freezes a snapshot of that free-cash math. 
 - Creating an instruction needs a Mytra-activated investment account (AMFI Registered Mutual Fund Distributor)
 
 Human approval always comes before investment instructions. Mutual fund investments are subject to market risks; read all scheme-related documents carefully.
+
+![Proposal](docs/screenshots/finance-proposal.png)
+
+We are also looking to provide advisory for the financing needs of the businesses through our banking experts by suggesting various structured financial products to reduce your cost of borrowing.
 
 ### Portfolio
 
